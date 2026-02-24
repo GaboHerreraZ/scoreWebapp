@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(dir:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npx nest build:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(where:*)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" -v)",
+      "Bash(\"/c/ProgramData/nvm/v22.14.0/node.exe\" -v)",
+      "Bash(\"/c/Users/User/AppData/Roaming/nvm/v22.14.0/node.exe\" -v)",
+      "Bash(export PATH:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(npx prisma db execute:*)",
+      "Bash(npm run prisma:generate:*)",
+      "Bash(npm run prisma:migrate:dev:*)",
+      "Bash(npx prisma migrate resolve:*)",
+      "Bash(npx prisma db pull:*)",
+      "Bash(npm run prisma:migrate:reset:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Sí\" npx prisma migrate reset:*)"
+    ]
+  }
+}

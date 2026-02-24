@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Tabla maestra de parámetros (llave-valor) ─────────────
+
+model Parameter {
+  id          Int      @id @default(autoincrement())
+  type        String   @db.VarChar(50)
+  code        String   @db.VarChar(50)
+  label       String   @db.VarChar(150)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  parentId    Int?     @map("parent_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  parent   Parameter?  @relation("ParameterHierarchy", fields: [parentId], references: [id])
+  children Parameter[] @relation("ParameterHierarchy")
+
+  companiesBySector              Company[]     @relation("CompanySector")
+  customersByType                Customer[]    @relation("CustomerPersonType")
+  customersByEconomicActivity    Customer[]    @relation("CustomerEconomicActivity")
+  profilesByRole                 Profile[]     @relation("ProfileRole")
+  userCompaniesByRole            UserCompany[] @relation("UserCompanyRole")
+  creditStudiesByStatus          CreditStudy[] @relation("CreditStudyStatus")
+  creditStudiesByIncomeStatement CreditStudy[] @relation("CreditStudyIncomeStatement")
+  companySubscriptionsByStatus   CompanySubscription[] @relation("CompanySubscriptionStatus")
+  subscriptionsBySupportLevel    Subscription[] @relation("SubscriptionSupportLevel")
+  subscriptionsByDashboardLevel  Subscription[] @relation("SubscriptionDashboardLevel")
+
+  @@unique([type, code])
+  @@map("parameters")
+}
+
+// ─── Profile (extiende auth.users de Supabase) ─────────────
+
+model Profile {
+  id        String   @id @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  name      String?  @db.VarChar(150)
+  lastName  String?  @map("last_name") @db.VarChar(150)
+  phone     String?  @db.VarChar(50)
+  roleId    Int?     @map("role_id")
+  position  String?  @db.VarChar(150)
+  metadata  Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  role            Parameter?      @relation("ProfileRole", fields: [roleId], references: [id])
+  userCompanies   UserCompany[]   @relation("UserCompanyUser")
+  invitedUsers    UserCompany[]   @relation("UserCompanyInvitedBy")
+  createdCustomers Customer[]     @relation("CustomerCreatedBy")
+  updatedCustomers Customer[]     @relation("CustomerUpdatedBy")
+  createdStudies   CreditStudy[]  @relation("CreditStudyCreatedBy")
+  updatedStudies   CreditStudy[]  @relation("CreditStudyUpdatedBy")
+
+  @@map("profiles")
+}
+
+// ─── Suscripción ────────────────────────────────────────────
+
+model Subscription {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @db.VarChar(150)
+  description      String?  @db.VarChar(500)
+  price            Float?   @map("price")
+  isMonthly        Boolean  @default(true) @map("is_monthly")
+  maxUsers         Int      @map("max_users")
+  maxCompanies     Int      @map("max_companies")
+  maxCustomers     Int?     @map("max_customers")
+  maxStudiesPerMonth Int?   @map("max_studies_per_month")
+  dashboardLevelId Int      @map("dashboard_level_id")
+  excelReports     Boolean  @default(false) @map("excel_reports")
+  emailNotifications Boolean @default(false) @map("email_notifications")
+  themeCustomization Boolean @default(false) @map("theme_customization")
+  supportLevelId   Int      @map("support_level_id")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  dashboardLevel       Parameter @relation("SubscriptionDashboardLevel", fields: [dashboardLevelId], references: [id])
+  supportLevel         Parameter @relation("SubscriptionSupportLevel", fields: [supportLevelId], references: [id])
+  companySubscriptions CompanySubscription[]
+
+  @@map("subscriptions")
+}
+
+// ─── Empresa ────────────────────────────────────────────────
+
+model Company {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(255)
+  nit            String   @unique @db.VarChar(50)
+  sectorId       Int      @map("sector_id")
+  state          String   @db.VarChar(150)
+  city           String   @db.VarChar(150)
+  address        String   @db.VarChar(255)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  sector       Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
+  companySubscriptions CompanySubscription[]
+  userCompanies UserCompany[]
+  customers     Customer[]
+  creditStudies CreditStudy[]
+
+  @@map("companies")
+}
+
+// ─── Suscripción ↔ Empresa (historial) ──────────────────────
+
+model CompanySubscription {
+  id                String    @id @default(uuid()) @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  subscriptionId    String    @map("subscription_id") @db.Uuid
+  statusId          Int       @map("status_id")
+  startDate         DateTime  @map("start_date") @db.Date
+  endDate           DateTime  @map("end_date") @db.Date
+  isCurrent         Boolean   @default(true) @map("is_current")
+  paymentFrequency  String?   @map("payment_frequency") @db.VarChar(20)
+  pricePaid         Float?    @map("price_paid")
+  cancelledAt       DateTime? @map("cancelled_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  paymentId         String?   @map("payment_id") @db.VarChar(50)
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  status       Parameter    @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
+
+  @@map("company_subscriptions")
+}
+
+// ─── Permisos usuario ↔ empresa ─────────────────────────────
+
+model UserCompany {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  roleId    Int       @map("role_id")
+  isActive  Boolean   @default(true) @map("is_active")
+  invitedBy String?   @map("invited_by") @db.Uuid
+  joinedAt  DateTime? @map("joined_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user          Profile    @relation("UserCompanyUser", fields: [userId], references: [id])
+  company       Company    @relation(fields: [companyId], references: [id])
+  role          Parameter  @relation("UserCompanyRole", fields: [roleId], references: [id])
+  invitedByUser Profile?   @relation("UserCompanyInvitedBy", fields: [invitedBy], references: [id])
+
+  @@unique([userId, companyId])
+  @@map("user_companies")
+}
+
+// ─── Cliente (ficha propia por empresa) ─────────────────────
+
+model Customer {
+  id                    String   @id @default(uuid()) @db.Uuid
+  companyId             String   @map("company_id") @db.Uuid
+  personTypeId          Int      @map("person_type_id")
+  businessName          String   @map("business_name") @db.VarChar(255)
+  identificationNumber  String   @map("identification_number") @db.VarChar(50)
+  legalRepName          String?  @map("legal_rep_name") @db.VarChar(255)
+  legalRepId            String?  @map("legal_rep_id") @db.VarChar(50)
+  economicActivityId    Int?     @map("economic_activity_id")
+  email                 String?  @db.VarChar(255)
+  phone                 String?  @db.VarChar(50)
+  secondaryPhone        String?  @map("secondary_phone") @db.VarChar(50)
+  city                  String?  @db.VarChar(150)
+  address               String?  @db.VarChar(255)
+  seniority             Int?
+  commercialRef1Name    String?  @map("commercial_ref1_name") @db.VarChar(255)
+  commercialRef1Contact String?  @map("commercial_ref1_contact") @db.VarChar(255)
+  commercialRef1Phone   String?  @map("commercial_ref1_phone") @db.VarChar(50)
+  commercialRef2Name    String?  @map("commercial_ref2_name") @db.VarChar(255)
+  commercialRef2Contact String?  @map("commercial_ref2_contact") @db.VarChar(255)
+  commercialRef2Phone   String?  @map("commercial_ref2_phone") @db.VarChar(50)
+  observations          String?  @db.Text
+  createdBy             String   @map("created_by") @db.Uuid
+  updatedBy             String   @map("updated_by") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  company          Company     @relation(fields: [companyId], references: [id])
+  personType       Parameter   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
+  economicActivity Parameter?  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
+  createdByUser    Profile     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser    Profile     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
+  creditStudies    CreditStudy[]
+
+  @@map("customers")
+}
+
+// ─── Estudio de crédito ─────────────────────────────────────
+
+model CreditStudy {
+  id              String    @id @default(uuid()) @db.Uuid
+  customerId      String    @map("customer_id") @db.Uuid
+  companyId       String    @map("company_id") @db.Uuid
+  statusId        Int       @map("status_id")
+  studyDate       DateTime  @map("study_date") @db.Date
+  resolutionDate  DateTime? @map("resolution_date") @db.Date
+  createdBy       String    @map("created_by") @db.Uuid
+  updatedBy       String    @map("updated_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  notes           String?   @db.Text
+
+  // ── Solicitud ──────────────────────────────────────────
+  requestedTerm              Int?      @map("requested_term")                    // Plazo solicitado
+  requestedMonthlyCreditLine Float?    @map("requested_monthly_credit_line")     // Cupo solicitado mensual
+
+  // ── Balance General ────────────────────────────────────
+  balanceSheet               Float?    @map("balance_sheet")                     // Balance general
+  cashAndEquivalents         Float?    @map("cash_and_equivalents")              // Efectivo y equivalentes
+  accountsReceivable1        Float?    @map("accounts_receivable_1")             // Cuentas por cobrar 1
+  accountsReceivable2        Float?    @map("accounts_receivable_2")             // Cuentas por cobrar 2
+  inventories1               Float?    @map("inventories_1")                     // Inventarios 1
+  inventories2               Float?    @map("inventories_2")                     // Inventarios 2
+  totalCurrentAssets         Float?    @map("total_current_assets")              // Total activo corriente
+  fixedAssetsProperty        Float?    @map("fixed_assets_property")             // Activos fijos / propiedad
+  totalNonCurrentAssets      Float?    @map("total_non_current_assets")          // Total activo no corriente
+  totalAssets                Float?    @map("total_assets")                      // Total activo
+  shortTermFinancialLiabilities Float? @map("short_term_financial_liabilities")  // Obligaciones financieras CP
+  suppliers1                 Float?    @map("suppliers_1")                       // Proveedores 1
+  suppliers2                 Float?    @map("suppliers_2")                       // Proveedores 2
+  totalCurrentLiabilities    Float?    @map("total_current_liabilities")         // Total pasivo corriente
+  longTermFinancialLiabilities Float?  @map("long_term_financial_liabilities")   // Obligaciones financieras LP
+  totalNonCurrentLiabilities Float?    @map("total_non_current_liabilities")     // Total pasivo no corriente
+  totalLiabilities           Float?    @map("total_liabilities")                 // Total pasivo
+  retainedEarnings           Float?    @map("retained_earnings")                 // Ganancias acumuladas
+  equity                     Float?    @map("equity")                            // Patrimonio
+
+  // ── Estado de Resultados ───────────────────────────────
+  incomeStatementId          Int?      @map("income_statement_id")               // Estado de resultados (ID parámetro)
+  ordinaryActivityRevenue    Float?    @map("ordinary_activity_revenue")          // Ingresos actividades ordinarias
+  costOfSales                Float?    @map("cost_of_sales")                     // Costo de ventas
+  grossProfit                Float?    @map("gross_profit")                      // Utilidad bruta
+  administrativeExpenses     Float?    @map("administrative_expenses")            // Gastos de administración
+  sellingExpenses            Float?    @map("selling_expenses")                  // Gastos de ventas
+  depreciationAmortization   Float?    @map("depreciation_amortization")          // Depreciación y amortización
+  financialExpenses          Float?    @map("financial_expenses")                // Gastos financieros
+  taxes                      Float?    @map("taxes")                             // Impuestos
+  netIncome                  Float?    @map("net_income")                        // Utilidad neta
+
+  // ── Indicadores calculados ─────────────────────────────
+  stabilityFactor            Float?    @map("stability_factor")                  // Factor de estabilidad
+  ebitda                     Float?    @map("ebitda")                            // EBITDA
+  adjustedEbitda             Float?    @map("adjusted_ebitda")                   // EBITDA ajustado
+  currentDebtService         Float?    @map("current_debt_service")              // Servicio de deuda actual
+  annualPaymentCapacity      Float?    @map("annual_payment_capacity")           // Capacidad de pago anual
+  monthlyPaymentCapacity     Float?    @map("monthly_payment_capacity")          // Capacidad de pago mensual
+  accountsReceivableTurnover Float?    @map("accounts_receivable_turnover")      // Rotación de cartera
+  inventoryTurnover          Float?    @map("inventory_turnover")                // Rotación de inventarios
+  suppliersTurnover          Float?    @map("suppliers_turnover")                // Rotación de proveedores
+  maximumPaymentTime         Float?    @map("maximum_payment_time")              // Tiempo máximo en pagar
+  averagePaymentTime         Float?    @map("average_payment_time")              // Tiempo promedio en pagar
+
+
+
+
+
+  customer         Customer   @relation(fields: [customerId], references: [id])
+  company          Company    @relation(fields: [companyId], references: [id])
+  status           Parameter  @relation("CreditStudyStatus", fields: [statusId], references: [id])
+  incomeStatement  Parameter? @relation("CreditStudyIncomeStatement", fields: [incomeStatementId], references: [id])
+  createdByUser Profile   @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser Profile   @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@map("credit_studies")
+}
