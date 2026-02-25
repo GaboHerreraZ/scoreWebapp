@@ -10,8 +10,12 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // CORS
+  const allowedOrigins = process.env['CORS_ORIGINS']
+    ? process.env['CORS_ORIGINS'].split(',')
+    : ['http://localhost:4200'];
+
   app.enableCors({
-    origin: ['http://localhost:4200'],
+    origin: allowedOrigins,
     credentials: true,
   });
 

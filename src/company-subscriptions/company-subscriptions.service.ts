@@ -232,15 +232,23 @@ export class CompanySubscriptionsService {
       throw new ConflictException('La empresa ya tiene una suscripción activa');
     }
 
-    // Find the "pendiente" status parameter
-    const pendingStatus = await this.repository.findParameterByTypeAndCode(
-      'subscriptionStatus',
-      'pendiente',
-    );
-    if (!pendingStatus) {
-      throw new NotFoundException(
-        `Parameter with type=subscriptionStatus and code=pendiente not found`,
+    const isFree = !subscription.price || subscription.price === 0;
+
+    // Determine status: free plans are activated immediately, paid plans stay pending
+    let statusId: number;
+    if (isFree) {
+      statusId = activeStatus.id;
+    } else {
+      const pendingStatus = await this.repository.findParameterByTypeAndCode(
+        'subscriptionStatus',
+        'pendiente',
       );
+      if (!pendingStatus) {
+        throw new NotFoundException(
+          `Parameter with type=subscriptionStatus and code=pendiente not found`,
+        );
+      }
+      statusId = pendingStatus.id;
     }
 
     // Calculate dates based on subscription type
@@ -256,7 +264,7 @@ export class CompanySubscriptionsService {
     const companySubscription = await this.repository.create({
       companyId,
       subscriptionId: dto.subscriptionId,
-      statusId: pendingStatus.id,
+      statusId,
       startDate,
       endDate,
       isCurrent: true,
@@ -266,8 +274,8 @@ export class CompanySubscriptionsService {
     });
 
     // Generate Wompi integrity hash only for paid plans
-    if (subscription.price && subscription.price > 0) {
-      const amountInCents = Math.round(subscription.price * 100);
+    if (!isFree) {
+      const amountInCents = Math.round(subscription.price! * 100);
       const currency = 'COP';
       const integrityKey = this.configService.get<string>(
         'WOMPI_INTEGRITY_KEY',
@@ -280,6 +288,17 @@ export class CompanySubscriptionsService {
       return { ...companySubscription, integrityHash, amountInCents };
     }
 
+    return companySubscription;
+  }
+
+  async checkTransaction(paymentId: string) {
+    const companySubscription =
+      await this.repository.findByPaymentId(paymentId);
+    if (!companySubscription) {
+      throw new NotFoundException(
+        `Company subscription with paymentId=${paymentId} not found`,
+      );
+    }
     return companySubscription;
   }
 
