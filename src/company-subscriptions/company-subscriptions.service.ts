@@ -196,6 +196,18 @@ export class CompanySubscriptionsService {
     return this.repository.delete(id);
   }
 
+  private generateWompiIntegrity(paymentId: string, price: number) {
+    const amountInCents = Math.round(price * 100);
+    const currency = 'COP';
+    const integrityKey = this.configService.get<string>('WOMPI_INTEGRITY_KEY');
+    const concatenated = `${paymentId}${amountInCents}${currency}${integrityKey}`;
+    const integrityHash = createHash('sha256')
+      .update(concatenated)
+      .digest('hex');
+
+    return { integrityHash, amountInCents };
+  }
+
   async createTransaction(companyId: string, dto: CreateTransactionDto) {
     const companyExists = await this.repository.companyExists(companyId);
     if (!companyExists) {
@@ -209,6 +221,22 @@ export class CompanySubscriptionsService {
       throw new NotFoundException(
         `Subscription with id=${dto.subscriptionId} not found`,
       );
+    }
+
+    // Check if a record already exists for this company + subscription
+    const existing = await this.repository.findByCompanyAndSubscription(
+      companyId,
+      dto.subscriptionId,
+    );
+    if (existing) {
+      const isFreeExisting =
+        !subscription.price || subscription.price === 0;
+      if (!isFreeExisting) {
+        const { integrityHash, amountInCents } =
+          this.generateWompiIntegrity(existing.paymentId!, subscription.price!);
+        return { ...existing, integrityHash, amountInCents };
+      }
+      return existing;
     }
 
     // Find the "activa" status parameter
@@ -275,16 +303,8 @@ export class CompanySubscriptionsService {
 
     // Generate Wompi integrity hash only for paid plans
     if (!isFree) {
-      const amountInCents = Math.round(subscription.price! * 100);
-      const currency = 'COP';
-      const integrityKey = this.configService.get<string>(
-        'WOMPI_INTEGRITY_KEY',
-      );
-      const concatenated = `${paymentId}${amountInCents}${currency}${integrityKey}`;
-      const integrityHash = createHash('sha256')
-        .update(concatenated)
-        .digest('hex');
-
+      const { integrityHash, amountInCents } =
+        this.generateWompiIntegrity(paymentId, subscription.price!);
       return { ...companySubscription, integrityHash, amountInCents };
     }
 

@@ -112,6 +112,13 @@ export class CompanySubscriptionsRepository {
     });
   }
 
+  async findByCompanyAndSubscription(companyId: string, subscriptionId: string) {
+    return this.prisma.companySubscription.findFirst({
+      where: { companyId, subscriptionId },
+      include: this.defaultInclude,
+    });
+  }
+
   async findByPaymentId(paymentId: string) {
     return this.prisma.companySubscription.findFirst({
       where: { paymentId },

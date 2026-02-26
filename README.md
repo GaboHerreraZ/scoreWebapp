@@ -1,173 +1,140 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# WebApp API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API for a credit study management system built with NestJS, Prisma, and Supabase.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech Stack
 
-## Description
+- **Framework**: NestJS 11
+- **Language**: TypeScript 5.7 (ESM modules)
+- **ORM**: Prisma 7
+- **Database**: PostgreSQL (Supabase)
+- **Authentication**: Supabase Auth
+- **Documentation**: Swagger/OpenAPI
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Local Development
 
-## Project setup
+### Prerequisites
+
+- Node.js 18+
+- npm
+- PostgreSQL database (via Supabase)
+
+### Setup
 
 ```bash
-$ npm install
-```
+# Install dependencies
+npm install
 
-## Compile and run the project
+# Copy environment variables
+cp .env.example .env
+# Fill in the values in .env
 
-```bash
-# development
-$ npm run start
+# Generate Prisma client
+npm run prisma:generate
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Base de datos — Prisma Migrations
-
-### Comandos disponibles
-
-| Comando | Descripción |
-|---|---|
-| `npm run prisma:generate` | Regenera el cliente Prisma después de cambios en el schema |
-| `npm run prisma:migrate:dev` | Crea y aplica una migración en desarrollo |
-| `npm run prisma:migrate:create` | Crea el archivo de migración SIN aplicarla (para revisarla antes) |
-| `npm run prisma:migrate:deploy` | Aplica migraciones pendientes en producción |
-| `npm run prisma:migrate:status` | Muestra el estado de las migraciones |
-| `npm run prisma:studio` | Abre Prisma Studio para ver la BBDD en el navegador |
-
-### Agregar columnas sin afectar data existente (paso a paso)
-
-Cuando necesites agregar nuevas columnas a una tabla que ya tiene datos:
-
-**1. Modifica el schema** (`prisma/schema.prisma`)
-
-Agrega el nuevo campo. Si la tabla ya tiene filas, el campo debe ser **opcional (`?`)** o tener un **valor por defecto (`@default`)**, de lo contrario la migración fallará porque las filas existentes no tendrían valor.
-
-```prisma
-// Correcto — campo opcional
-newField String? @map("new_field")
-
-// Correcto — campo con valor por defecto
-newField String @default("pending") @map("new_field")
-
-// Incorrecto — fallará si ya hay data
-newField String @map("new_field")
-```
-
-**2. Crea la migración (sin aplicarla)**
-
-```bash
-npm run prisma:migrate:create -- --name descripcion_del_cambio
-```
-
-Esto genera un archivo SQL en `prisma/migrations/` que puedes revisar antes de aplicar.
-
-**3. Revisa el SQL generado**
-
-Abre el archivo en `prisma/migrations/<timestamp>_descripcion_del_cambio/migration.sql` y verifica que:
-- Solo haga `ALTER TABLE ... ADD COLUMN`
-- No haga `DROP` de nada
-- No haga `TRUNCATE` ni modifique datos existentes
-
-**4. Aplica la migración**
-
-```bash
-# En desarrollo
+# Run migrations
 npm run prisma:migrate:dev
 
-# En producción
-npm run prisma:migrate:deploy
+# Start development server
+npm run start:dev
 ```
 
-**5. Regenera el cliente**
+The API will be available at `http://localhost:3000/api` and Swagger docs at `http://localhost:3000/docs`.
 
-```bash
-npm run prisma:generate
+### Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run start:dev` | Development with watch mode |
+| `npm run build` | Build the project |
+| `npm run start:prod` | Start production server |
+| `npm run build:prod` | Full production build (prisma generate + build + migrate) |
+| `npm run lint` | ESLint + fix |
+| `npm run test` | Run unit tests |
+| `npm run test:e2e` | Run e2e tests |
+| `npm run prisma:generate` | Regenerate Prisma client |
+| `npm run prisma:migrate:dev` | Run migrations in dev |
+| `npm run prisma:migrate:create` | Create migration without applying |
+| `npm run prisma:migrate:deploy` | Apply pending migrations (production) |
+| `npm run prisma:studio` | Open Prisma Studio |
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | Pooled Supabase PostgreSQL connection (port 6543) | Yes |
+| `DIRECT_URL` | Direct PostgreSQL connection (port 5432, used for migrations) | Yes |
+| `SUPABASE_URL` | Supabase project URL | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Yes |
+| `WOMPI_INTEGRITY_KEY` | Wompi payment integrity key | Yes |
+| `WOMPI_EVENTS_KEY` | Wompi webhook events key | Yes |
+| `CORS_ORIGINS` | Allowed origins separated by comma (default: `http://localhost:4200`) | No |
+| `PORT` | Server port (default: `3000`) | No |
+
+## Database - Prisma Migrations
+
+### Adding columns without affecting existing data
+
+1. **Modify the schema** (`prisma/schema.prisma`) - new fields must be optional (`?`) or have a default value (`@default`)
+2. **Create migration without applying**: `npm run prisma:migrate:create -- --name description`
+3. **Review** the generated SQL in `prisma/migrations/`
+4. **Apply**: `npm run prisma:migrate:dev` (dev) or `npm run prisma:migrate:deploy` (prod)
+5. **Regenerate client**: `npm run prisma:generate`
+
+Quick single command in dev: `npm run prisma:migrate:dev -- --name description`
+
+## Deployment (Railway)
+
+### Railway Service Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Install Command** | `npm install --include=dev` |
+| **Build Command** | `npm run build:prod` |
+| **Start Command** | `npm run start:prod` |
+
+> Railway omits devDependencies by default. The install command with `--include=dev` ensures that `typescript`, `@nestjs/cli`, and `prisma` are available during the build step.
+
+### Railway Environment Variables
+
+Configure these in **Railway > Service > Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | Supabase pooled connection string (port 6543) |
+| `DIRECT_URL` | Supabase direct connection string (port 5432) |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key from Supabase dashboard |
+| `WOMPI_INTEGRITY_KEY` | Wompi integrity key |
+| `WOMPI_EVENTS_KEY` | Wompi events key |
+| `CORS_ORIGINS` | Frontend URL(s) separated by comma, e.g. `https://myapp.com,http://localhost:4200` |
+
+### Deploy Steps
+
+1. Create a new project in [railway.app](https://railway.app)
+2. Connect your GitHub repository
+3. Configure the install, build, and start commands as shown above
+4. Add all environment variables
+5. Deploy
+
+### Post-Deployment Verification
+
+- API: `https://<your-app>.up.railway.app/api`
+- Swagger Docs: `https://<your-app>.up.railway.app/docs`
+
+### CORS
+
+CORS is configured via the `CORS_ORIGINS` environment variable. Set it to your frontend URL(s) separated by commas. If not set, it defaults to `http://localhost:4200`.
+
+```
+CORS_ORIGINS=https://myapp.vercel.app,http://localhost:4200
 ```
 
-### Resumen rápido (comando único en desarrollo)
+### Troubleshooting
 
-Si confías en el cambio y quieres hacerlo todo en un paso:
-
-```bash
-npm run prisma:migrate:dev -- --name descripcion_del_cambio
-```
-
-Esto crea la migración, la aplica y regenera el cliente automáticamente.
-
----
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| Issue | Solution |
+|-------|----------|
+| `nest: not found` during build | Ensure install command is `npm install --include=dev` |
+| `Cannot find module '/app/dist/main'` | The entry point is `dist/src/main.js`, already configured in `start:prod` |
+| CORS errors (`status 0 undefined`) | Verify `CORS_ORIGINS` matches your frontend URL exactly (no trailing slash) |
+| Prisma migration fails | Verify `DIRECT_URL` points to port 5432 (direct connection, not pooled) |
