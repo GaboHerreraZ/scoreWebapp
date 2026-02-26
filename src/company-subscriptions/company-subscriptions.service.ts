@@ -229,14 +229,17 @@ export class CompanySubscriptionsService {
       dto.subscriptionId,
     );
     if (existing) {
+      const newPaymentId = randomUUID();
+      const updated = await this.repository.update(existing.id, { paymentId: newPaymentId });
+
       const isFreeExisting =
         !subscription.price || subscription.price === 0;
       if (!isFreeExisting) {
         const { integrityHash, amountInCents } =
-          this.generateWompiIntegrity(existing.paymentId!, subscription.price!);
-        return { ...existing, integrityHash, amountInCents };
+          this.generateWompiIntegrity(newPaymentId, subscription.price!);
+        return { ...updated, integrityHash, amountInCents };
       }
-      return existing;
+      return updated;
     }
 
     // Find the "activa" status parameter
