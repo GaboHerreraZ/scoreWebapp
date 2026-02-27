@@ -8,32 +8,17 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class WompiTransactionData {
-  @ApiProperty()
-  @IsString()
+export interface WompiTransactionData {
   id: string;
-
-  @ApiProperty()
-  @IsNumber()
   amount_in_cents: number;
-
-  @ApiProperty()
-  @IsString()
   reference: string;
-
-  @ApiProperty()
-  @IsString()
   currency: string;
-
-  @ApiProperty()
-  @IsString()
   status: string;
 }
 
 class WompiEventData {
   @ApiProperty()
-  @ValidateNested()
-  @Type(() => WompiTransactionData)
+  @IsObject()
   transaction: WompiTransactionData;
 }
 
