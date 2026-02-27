@@ -230,13 +230,16 @@ export class CompanySubscriptionsService {
     );
     if (existing) {
       const newPaymentId = randomUUID();
-      const updated = await this.repository.update(existing.id, { paymentId: newPaymentId });
+      const updated = await this.repository.update(existing.id, {
+        paymentId: newPaymentId,
+      });
 
-      const isFreeExisting =
-        !subscription.price || subscription.price === 0;
+      const isFreeExisting = !subscription.price || subscription.price === 0;
       if (!isFreeExisting) {
-        const { integrityHash, amountInCents } =
-          this.generateWompiIntegrity(newPaymentId, subscription.price!);
+        const { integrityHash, amountInCents } = this.generateWompiIntegrity(
+          newPaymentId,
+          subscription.price!,
+        );
         return { ...updated, integrityHash, amountInCents };
       }
       return updated;
@@ -306,8 +309,10 @@ export class CompanySubscriptionsService {
 
     // Generate Wompi integrity hash only for paid plans
     if (!isFree) {
-      const { integrityHash, amountInCents } =
-        this.generateWompiIntegrity(paymentId, subscription.price!);
+      const { integrityHash, amountInCents } = this.generateWompiIntegrity(
+        paymentId,
+        subscription.price!,
+      );
       return { ...companySubscription, integrityHash, amountInCents };
     }
 
@@ -326,21 +331,18 @@ export class CompanySubscriptionsService {
   }
 
   async handleWompiEvent(event: WompiEventDto) {
-    // 1. Validate checksum
     const eventsKey = this.configService.get<string>('WOMPI_EVENTS_KEY');
     const { properties, checksum } = event.signature;
 
-    // Build concatenation from signature.properties paths + timestamp + eventsKey
     const values = properties.map((prop) => {
-      const keys = prop.split('.');
-      let value: unknown = event;
-      for (const key of keys) {
-        value = (value as Record<string, unknown>)[key];
-      }
+      let value;
+      const property = prop.split('.');
+      value = event.data.transaction[`${property[1]}`];
       return value;
     });
 
     const concatenated = `${values.join('')}${event.timestamp}${eventsKey}`;
+
     const computedChecksum = createHash('sha256')
       .update(concatenated)
       .digest('hex');
