@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, createHash } from 'crypto';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { CreateCompanySubscriptionDto } from './dto/create-company-subscription.dto.js';
 import { UpdateCompanySubscriptionDto } from './dto/update-company-subscription.dto.js';
 import { FilterCompanySubscriptionDto } from './dto/filter-company-subscription.dto.js';
@@ -22,6 +23,7 @@ export class CompanySubscriptionsService {
   constructor(
     private readonly repository: CompanySubscriptionsRepository,
     private readonly configService: ConfigService,
+    private readonly campaignsService: CampaignsService,
   ) {}
 
   async create(companyId: string, dto: CreateCompanySubscriptionDto) {
@@ -223,6 +225,28 @@ export class CompanySubscriptionsService {
       );
     }
 
+    // Validate campaign if provided
+    let discount = 0;
+    if (dto.campaignId) {
+      const campaign = await this.campaignsService.findById(dto.campaignId);
+      const today = new Date();
+      const isActive =
+        campaign.isActive &&
+        new Date(campaign.startDate) <= today &&
+        new Date(campaign.endDate) >= today;
+
+      if (!isActive) {
+        throw new BadRequestException('The campaign is not currently active');
+      }
+      discount = campaign.discount;
+    }
+
+    // Calculate price with discount
+    const basePrice = subscription.price ?? 0;
+    const finalPrice = discount > 0
+      ? Math.round(basePrice * (1 - discount / 100))
+      : basePrice;
+
     // Check if a record already exists for this company + subscription
     const existing = await this.repository.findByCompanyAndSubscription(
       companyId,
@@ -232,13 +256,15 @@ export class CompanySubscriptionsService {
       const newPaymentId = randomUUID();
       const updated = await this.repository.update(existing.id, {
         paymentId: newPaymentId,
+        campaignId: dto.campaignId ?? null,
+        pricePaid: finalPrice,
       });
 
-      const isFreeExisting = !subscription.price || subscription.price === 0;
+      const isFreeExisting = !finalPrice || finalPrice === 0;
       if (!isFreeExisting) {
         const { integrityHash, amountInCents } = this.generateWompiIntegrity(
           newPaymentId,
-          subscription.price!,
+          finalPrice,
         );
         return { ...updated, integrityHash, amountInCents };
       }
@@ -266,7 +292,7 @@ export class CompanySubscriptionsService {
       throw new ConflictException('La empresa ya tiene una suscripción activa');
     }
 
-    const isFree = !subscription.price || subscription.price === 0;
+    const isFree = !finalPrice || finalPrice === 0;
 
     // Determine status: free plans are activated immediately, paid plans stay pending
     let statusId: number;
@@ -303,15 +329,17 @@ export class CompanySubscriptionsService {
       endDate,
       isCurrent: true,
       paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
-      pricePaid: subscription.price,
+      pricePaid: finalPrice,
       paymentId,
+      campaignId: dto.campaignId,
     });
 
     // Generate Wompi integrity hash only for paid plans
-    if (!isFree) {
+    const isFreeAfterDiscount = !finalPrice || finalPrice === 0;
+    if (!isFreeAfterDiscount) {
       const { integrityHash, amountInCents } = this.generateWompiIntegrity(
         paymentId,
-        subscription.price!,
+        finalPrice,
       );
       return { ...companySubscription, integrityHash, amountInCents };
     }

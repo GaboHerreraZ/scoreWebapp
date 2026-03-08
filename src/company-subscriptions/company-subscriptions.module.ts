@@ -3,8 +3,10 @@ import { CompanySubscriptionsController } from './company-subscriptions.controll
 import { WompiWebhookController } from './wompi-webhook.controller.js';
 import { CompanySubscriptionsService } from './company-subscriptions.service.js';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
+import { CampaignsModule } from '../campaigns/campaigns.module.js';
 
 @Module({
+  imports: [CampaignsModule],
   controllers: [CompanySubscriptionsController, WompiWebhookController],
   providers: [CompanySubscriptionsService, CompanySubscriptionsRepository],
   exports: [CompanySubscriptionsService],

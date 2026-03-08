@@ -115,6 +115,24 @@ model Company {
   @@map("companies")
 }
 
+// ─── Campaña de descuento ───────────────────────────────────
+
+model Campaign {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  discount    Float    @map("discount")
+  startDate   DateTime @map("start_date") @db.Date
+  endDate     DateTime @map("end_date") @db.Date
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  companySubscriptions CompanySubscription[]
+
+  @@map("campaigns")
+}
+
 // ─── Suscripción ↔ Empresa (historial) ──────────────────────
 
 model CompanySubscription {
@@ -131,10 +149,12 @@ model CompanySubscription {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   paymentId         String?   @map("payment_id") @db.VarChar(50)
+  campaignId        String?   @map("campaign_id") @db.Uuid
 
   company      Company      @relation(fields: [companyId], references: [id])
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
   status       Parameter    @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id])
 
   @@map("company_subscriptions")
 }

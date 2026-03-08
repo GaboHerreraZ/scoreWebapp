@@ -12,6 +12,7 @@ import { ProfilesModule } from './profiles/profiles.module.js';
 import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
 import { CompanySubscriptionsModule } from './company-subscriptions/company-subscriptions.module.js';
+import { CampaignsModule } from './campaigns/campaigns.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 
 @Module({
@@ -27,6 +28,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     UserCompaniesModule,
     SubscriptionsModule,
     CompanySubscriptionsModule,
+    CampaignsModule,
     DashboardModule,
   ],
   providers: [

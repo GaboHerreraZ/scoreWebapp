@@ -4,12 +4,16 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { SubscriptionsRepository } from './subscriptions.repository.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly repository: SubscriptionsRepository) {}
+  constructor(
+    private readonly repository: SubscriptionsRepository,
+    private readonly campaignsService: CampaignsService,
+  ) {}
 
   async create(dto: CreateSubscriptionDto) {
     return this.repository.create({
@@ -31,7 +35,15 @@ export class SubscriptionsService {
   }
 
   async findAll() {
-    return this.repository.findAllActive();
+    const [subscriptions, activeCampaign] = await Promise.all([
+      this.repository.findAllActive(),
+      this.campaignsService.findActiveCampaign(),
+    ]);
+
+    return {
+      data: subscriptions,
+      campaign: activeCampaign ?? null,
+    };
   }
 
   async findById(id: string) {

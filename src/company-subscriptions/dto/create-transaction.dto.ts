@@ -1,5 +1,5 @@
-import { IsUUID } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTransactionDto {
   @ApiProperty({
@@ -8,4 +8,12 @@ export class CreateTransactionDto {
   })
   @IsUUID()
   subscriptionId: string;
+
+  @ApiPropertyOptional({
+    example: 'uuid-de-campaña',
+    description: 'ID de la campaña aplicada (si existe)',
+  })
+  @IsOptional()
+  @IsUUID()
+  campaignId?: string;
 }
