@@ -254,13 +254,22 @@ export class CreateCreditStudyDto {
   sellingExpenses?: number;
 
   @ApiPropertyOptional({
-    example: 2000000,
-    description: 'Depreciation and amortization',
+    example: 1200000,
+    description: 'Depreciation',
   })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  depreciationAmortization?: number;
+  depreciation?: number;
+
+  @ApiPropertyOptional({
+    example: 800000,
+    description: 'Amortization',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  amortization?: number;
 
   @ApiPropertyOptional({ example: 1500000, description: 'Financial expenses' })
   @IsOptional()

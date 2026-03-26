@@ -268,7 +268,8 @@ model CreditStudy {
   grossProfit                Float?    @map("gross_profit")                      // Utilidad bruta
   administrativeExpenses     Float?    @map("administrative_expenses")            // Gastos de administración
   sellingExpenses            Float?    @map("selling_expenses")                  // Gastos de ventas
-  depreciationAmortization   Float?    @map("depreciation_amortization")          // Depreciación y amortización
+  depreciation               Float?    @map("depreciation")                       // Depreciación
+  amortization               Float?    @map("amortization")                       // Amortización
   financialExpenses          Float?    @map("financial_expenses")                // Gastos financieros
   taxes                      Float?    @map("taxes")                             // Impuestos
   netIncome                  Float?    @map("net_income")                        // Utilidad neta

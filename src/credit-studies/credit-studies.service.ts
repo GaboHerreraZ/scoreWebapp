@@ -195,7 +195,8 @@ export class CreditStudiesService {
       (study.costOfSales ?? 0) -
       (study.administrativeExpenses ?? 0) -
       (study.sellingExpenses ?? 0) -
-      (study.depreciationAmortization ?? 0);
+      (study.depreciation ?? 0) -
+      (study.amortization ?? 0);
     const adjustedEbitda = ebitda * stabilityFactor;
     const currentDebtSevice =
       (study.shortTermFinancialLiabilities ?? 0) +
