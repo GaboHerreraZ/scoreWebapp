@@ -287,6 +287,13 @@ model CreditStudy {
   maximumPaymentTime         Float?    @map("maximum_payment_time")              // Tiempo máximo en pagar
   averagePaymentTime         Float?    @map("average_payment_time")              // Tiempo promedio en pagar
 
+  // ── Viabilidad ────────────────────────────────────────
+  recommendedTerm            Int?      @map("recommended_term")                  // Plazo recomendado (días)
+  recommendedCreditLine      Float?    @map("recommended_credit_line")           // Cupo recomendado ($)
+  viabilityScore             Int?      @map("viability_score")                   // Score 0-100
+  viabilityStatus            String?   @map("viability_status")                  // 'approved' | 'conditional' | 'rejected'
+  viabilityConditions        Json?     @map("viability_conditions")              // JSON con dimensiones, alertas y resumen
+
 
 
 

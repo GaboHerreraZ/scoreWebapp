@@ -235,6 +235,154 @@ export class CreditStudiesService {
     const maximumPaymentTime =
       accountsReceivableTurnover + inventoryTurnover + suppliersTurnover;
 
+    // ── Viabilidad ──────────────────────────────────────────
+    const zScore = result;
+    const alerts: Array<{ type: string; dimension: string; message: string }> = [];
+    const dimensions: Record<string, any> = {};
+
+    // Dimension 1: Salud financiera
+    if (zScore > 3.0) {
+      dimensions.financialHealth = { score: 25, maxScore: 25, status: 'healthy', label: 'Salud Financiera' };
+      alerts.push({ type: 'success', dimension: 'financialHealth', message: 'La empresa presenta indicadores financieros solidos con baja probabilidad de riesgo.' });
+    } else if (zScore > 1.8) {
+      dimensions.financialHealth = { score: 12, maxScore: 25, status: 'gray_zone', label: 'Salud Financiera' };
+      alerts.push({ type: 'warning', dimension: 'financialHealth', message: 'La empresa se encuentra en zona de observacion. Se recomienda monitoreo periodico de sus estados financieros.' });
+    } else {
+      dimensions.financialHealth = { score: 0, maxScore: 25, status: 'critical', label: 'Salud Financiera' };
+      alerts.push({ type: 'danger', dimension: 'financialHealth', message: 'La empresa presenta indicadores financieros criticos con alta probabilidad de incumplimiento.' });
+    }
+
+    // Dimension 2: Capacidad de pago
+    const requestedMonthly = study.requestedMonthlyCreditLine ?? 0;
+    const paymentRatio = requestedMonthly > 0 ? monthlyPaymentCapacity / requestedMonthly : 0;
+    const marginPercent = Math.round((paymentRatio - 1) * 1000) / 10;
+
+    if (monthlyPaymentCapacity <= 0) {
+      dimensions.paymentCapacity = { score: 0, maxScore: 25, status: 'insufficient', ratio: paymentRatio, marginPercent: 0, label: 'Capacidad de Pago' };
+      alerts.push({ type: 'danger', dimension: 'paymentCapacity', message: `El cliente no cuenta con capacidad de pago. El servicio de deuda actual ($${currentDebtSevice.toLocaleString('es-CO')}) supera el EBITDA ajustado.` });
+    } else if (paymentRatio >= 1.2) {
+      dimensions.paymentCapacity = { score: 25, maxScore: 25, status: 'comfortable', ratio: paymentRatio, marginPercent, label: 'Capacidad de Pago' };
+      alerts.push({ type: 'success', dimension: 'paymentCapacity', message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) supera ampliamente el cupo solicitado ($${requestedMonthly.toLocaleString('es-CO')}) con un margen del ${marginPercent}%.` });
+    } else if (paymentRatio >= 1.0) {
+      dimensions.paymentCapacity = { score: 15, maxScore: 25, status: 'tight', ratio: paymentRatio, marginPercent, label: 'Capacidad de Pago' };
+      alerts.push({ type: 'warning', dimension: 'paymentCapacity', message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) cubre el cupo solicitado ($${requestedMonthly.toLocaleString('es-CO')}) con un margen ajustado del ${marginPercent}%. Se recomienda no incrementar el cupo.` });
+    } else {
+      const deficit = Math.round((1 - paymentRatio) * 1000) / 10;
+      dimensions.paymentCapacity = { score: 0, maxScore: 25, status: 'insufficient', ratio: paymentRatio, marginPercent: -deficit, label: 'Capacidad de Pago' };
+      alerts.push({ type: 'danger', dimension: 'paymentCapacity', message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) es insuficiente para cubrir el cupo solicitado ($${requestedMonthly.toLocaleString('es-CO')}). Deficit del ${deficit}%.` });
+    }
+
+    // Determinar si la capacidad de pago es inviable (eliminatorio)
+    const isPaymentInviable = monthlyPaymentCapacity <= 0 || paymentRatio < 1.0;
+
+    // Dimension 3: Coherencia de plazos
+    const requestedTerm = study.requestedTerm ?? 0;
+    let realTerm = maximumPaymentTime;
+    if (maximumPaymentTime <= 0) {
+      realTerm = accountsReceivableTurnover;
+      alerts.push({ type: 'info', dimension: 'termCoherence', message: `Los tiempos de rotacion presentan valores atipicos. El analisis de plazos se basa en la rotacion de cartera (${accountsReceivableTurnover} dias) como referencia.` });
+    }
+
+    if (isPaymentInviable) {
+      // Sin capacidad de pago, la coherencia de plazos no es evaluable favorablemente
+      dimensions.termCoherence = { score: 0, maxScore: 25, status: 'not_applicable', requestedTerm, realTerm, label: 'Coherencia de Plazos' };
+      alerts.push({ type: 'danger', dimension: 'termCoherence', message: 'La coherencia de plazos no es evaluable dado que no existe capacidad de pago suficiente.' });
+    } else if (requestedTerm >= realTerm) {
+      dimensions.termCoherence = { score: 25, maxScore: 25, status: 'coherent', requestedTerm, realTerm, label: 'Coherencia de Plazos' };
+      alerts.push({ type: 'success', dimension: 'termCoherence', message: `El plazo solicitado (${requestedTerm} dias) es coherente con los tiempos de operacion del cliente.` });
+    } else if (requestedTerm >= realTerm * 0.7) {
+      dimensions.termCoherence = { score: 12, maxScore: 25, status: 'risky', requestedTerm, realTerm, label: 'Coherencia de Plazos' };
+      alerts.push({ type: 'warning', dimension: 'termCoherence', message: `El plazo solicitado (${requestedTerm} dias) es inferior a los tiempos reales de operacion (${realTerm} dias). Se recomienda un plazo de al menos ${realTerm} dias.` });
+    } else {
+      dimensions.termCoherence = { score: 0, maxScore: 25, status: 'incoherent', requestedTerm, realTerm, label: 'Coherencia de Plazos' };
+      alerts.push({ type: 'danger', dimension: 'termCoherence', message: `El plazo solicitado (${requestedTerm} dias) es significativamente inferior a los tiempos reales de operacion (${realTerm} dias). Alto riesgo de incumplimiento en plazos.` });
+    }
+
+    // Plazo recomendado
+    let recommendedTerm: number;
+    if (maximumPaymentTime > 0) {
+      recommendedTerm = maximumPaymentTime;
+    } else if (accountsReceivableTurnover > 0) {
+      recommendedTerm = accountsReceivableTurnover;
+    } else {
+      recommendedTerm = requestedTerm;
+    }
+
+    // Cupo recomendado (solo tiene sentido si hay capacidad de pago positiva)
+    const recommendedCreditLine = monthlyPaymentCapacity > 0
+      ? Math.round(monthlyPaymentCapacity * (recommendedTerm / 30))
+      : 0;
+
+    // Dimension 4: Cupo recomendado vs. solicitado
+    if (isPaymentInviable) {
+      // Sin capacidad de pago, el cupo no es evaluable favorablemente
+      dimensions.creditLineAdequacy = { score: 0, maxScore: 25, status: 'not_applicable', ratio: 0, label: 'Adecuacion del Cupo' };
+      alerts.push({ type: 'danger', dimension: 'creditLineAdequacy', message: 'No es posible recomendar un cupo de credito dado que la capacidad de pago es insuficiente.' });
+    } else {
+      const creditRatio = recommendedCreditLine > 0 ? requestedMonthly / recommendedCreditLine : 0;
+      if (creditRatio <= 1.0) {
+        dimensions.creditLineAdequacy = { score: 25, maxScore: 25, status: 'adequate', ratio: creditRatio, label: 'Adecuacion del Cupo' };
+        alerts.push({ type: 'success', dimension: 'creditLineAdequacy', message: `El cupo solicitado se encuentra dentro del rango recomendado. Cupo maximo sugerido: $${recommendedCreditLine.toLocaleString('es-CO')}.` });
+      } else if (creditRatio <= 1.3) {
+        const exceso = Math.round((creditRatio - 1) * 1000) / 10;
+        dimensions.creditLineAdequacy = { score: 15, maxScore: 25, status: 'slightly_exceeded', ratio: creditRatio, label: 'Adecuacion del Cupo' };
+        alerts.push({ type: 'warning', dimension: 'creditLineAdequacy', message: `El cupo solicitado excede en un ${exceso}% el cupo recomendado ($${recommendedCreditLine.toLocaleString('es-CO')}). Se sugiere ajustar a este valor.` });
+      } else {
+        const exceso = Math.round((creditRatio - 1) * 1000) / 10;
+        dimensions.creditLineAdequacy = { score: 0, maxScore: 25, status: 'excessive', ratio: creditRatio, label: 'Adecuacion del Cupo' };
+        alerts.push({ type: 'danger', dimension: 'creditLineAdequacy', message: `El cupo solicitado excede significativamente el cupo recomendado ($${recommendedCreditLine.toLocaleString('es-CO')}) en un ${exceso}%. Se recomienda reducirlo.` });
+      }
+    }
+
+    // Score y status final
+    const viabilityScore =
+      dimensions.financialHealth.score +
+      dimensions.paymentCapacity.score +
+      dimensions.termCoherence.score +
+      dimensions.creditLineAdequacy.score;
+
+    let viabilityStatus: string;
+    if (isPaymentInviable) {
+      viabilityStatus = 'rejected';
+    } else if (viabilityScore >= 75) {
+      viabilityStatus = 'approved';
+    } else if (viabilityScore >= 40) {
+      viabilityStatus = 'conditional';
+    } else {
+      viabilityStatus = 'rejected';
+    }
+
+    // Alertas cross-dimension
+    if (viabilityStatus === 'conditional') {
+      alerts.push({ type: 'info', dimension: 'general', message: 'El estudio es aprobable sujeto a las condiciones indicadas. Revise las recomendaciones de plazo y cupo.' });
+    }
+
+    if (viabilityStatus === 'rejected' && !isPaymentInviable && dimensions.termCoherence.score === 0) {
+      alerts.push({ type: 'info', dimension: 'general', message: `El cliente podria ser viable con un plazo de ${recommendedTerm} dias en lugar de ${requestedTerm} dias.` });
+    }
+
+    if (annualPaymentCapacity < requestedMonthly * 12) {
+      alerts.push({ type: 'warning', dimension: 'general', message: `La capacidad de pago anual ($${Math.round(annualPaymentCapacity).toLocaleString('es-CO')}) no cubre 12 meses del cupo solicitado. Considerar un cupo menor o un plazo mas corto.` });
+    }
+
+    if (inventoryTurnover === 0) {
+      alerts.push({ type: 'info', dimension: 'general', message: 'No se registra rotacion de inventarios. Verifique si el tipo de negocio del cliente aplica para este indicador.' });
+    }
+
+    const viabilityConditions = {
+      dimensions,
+      alerts,
+      summary: {
+        totalScore: viabilityScore,
+        maxScore: 100,
+        status: viabilityStatus,
+        recommendedTerm,
+        recommendedCreditLine,
+        monthlyPaymentCapacity,
+        annualPaymentCapacity: Math.round(annualPaymentCapacity),
+      },
+    };
+
     const newStatus =
       await this.parametersRepository.findByCode('estudioRealizado');
 
@@ -251,6 +399,11 @@ export class CreditStudiesService {
       stabilityFactor,
       updatedBy: userId,
       averagePaymentTime,
+      recommendedTerm,
+      recommendedCreditLine,
+      viabilityScore,
+      viabilityStatus,
+      viabilityConditions,
       statusId: newStatus?.id,
       resolutionDate: new Date(),
     });
