@@ -76,6 +76,17 @@ export class CreditStudiesRepository {
             label: true,
           },
         },
+        aiAnalyses: {
+          select: {
+            id: true,
+            result: true,
+            createdAt: true,
+            performedByUser: {
+              select: { id: true, name: true, lastName: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
   }

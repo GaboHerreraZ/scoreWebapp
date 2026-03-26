@@ -76,6 +76,16 @@ export class CreateSubscriptionDto {
   @Min(1)
   maxStudiesPerMonth?: number;
 
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Maximum AI analyses per month. Null = unlimited',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxAiAnalysisPerMonth?: number;
+
   @ApiProperty({
     example: 1,
     description: 'Dashboard level parameter ID (DASHBOARD_LEVEL)',

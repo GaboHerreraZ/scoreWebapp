@@ -14,6 +14,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
 import { CompanySubscriptionsModule } from './company-subscriptions/company-subscriptions.module.js';
 import { CampaignsModule } from './campaigns/campaigns.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     CompanySubscriptionsModule,
     CampaignsModule,
     DashboardModule,
+    AiAnalysesModule,
   ],
   providers: [
     {

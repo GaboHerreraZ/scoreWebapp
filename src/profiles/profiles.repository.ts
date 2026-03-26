@@ -56,6 +56,7 @@ export class ProfilesRepository {
                     subscription: {
                       select: {
                         id: true,
+                        name: true,
                         dashboardLevel: {
                           select: {
                             id: true,
