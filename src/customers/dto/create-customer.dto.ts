@@ -66,6 +66,12 @@ export class CreateCustomerDto {
   @MaxLength(150)
   city?: string;
 
+  @ApiPropertyOptional({ example: 'Antioquia', maxLength: 150 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  state?: string;
+
   @ApiPropertyOptional({ example: 'Carrera 50 #30-10', maxLength: 255 })
   @IsOptional()
   @IsString()

@@ -196,6 +196,7 @@ model Customer {
   phone                 String?  @db.VarChar(50)
   secondaryPhone        String?  @map("secondary_phone") @db.VarChar(50)
   city                  String?  @db.VarChar(150)
+  state                 String?  @db.VarChar(150)
   address               String?  @db.VarChar(255)
   seniority             Int?
   commercialRef1Name    String?  @map("commercial_ref1_name") @db.VarChar(255)
@@ -240,7 +241,7 @@ model CreditStudy {
   requestedMonthlyCreditLine Float?    @map("requested_monthly_credit_line")     // Cupo solicitado mensual
 
   // ── Balance General ────────────────────────────────────
-  balanceSheet               Float?    @map("balance_sheet")                     // Balance general
+  balanceSheetDate            DateTime? @map("balance_sheet_date")                // Balance sheet date
   cashAndEquivalents         Float?    @map("cash_and_equivalents")              // Efectivo y equivalentes
   accountsReceivable1        Float?    @map("accounts_receivable_1")             // Cuentas por cobrar 1
   accountsReceivable2        Float?    @map("accounts_receivable_2")             // Cuentas por cobrar 2

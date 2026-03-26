@@ -29,6 +29,9 @@ export class CreditStudiesService {
 
     const { customerId, studyDate, resolutionDate, ...rest } = dto;
 
+    const newStatus =
+      await this.parametersRepository.findByCode('enRevision');
+
     return this.repository.create({
       ...rest,
       customerId,
@@ -37,6 +40,7 @@ export class CreditStudiesService {
       resolutionDate: resolutionDate ? new Date(resolutionDate) : undefined,
       createdBy: userId,
       updatedBy: userId,
+      statusId: newStatus!.id
     });
   }
 

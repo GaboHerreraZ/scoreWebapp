@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsInt,
   IsUUID,
+  IsDate,
   IsDateString,
   IsNumber,
   Min,
@@ -59,13 +60,13 @@ export class CreateCreditStudyDto {
   // ── Balance General ────────────────────────────────────
 
   @ApiPropertyOptional({
-    example: 100000000,
-    description: 'Balance sheet total',
+    example: '2026-01-15',
+    description: 'Balance sheet date',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  balanceSheet?: number;
+  @Type(() => Date)
+  @IsDate()
+  balanceSheetDate?: Date;
 
   @ApiPropertyOptional({
     example: 5000000,
