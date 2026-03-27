@@ -174,6 +174,14 @@ export class CompaniesService {
             : null,
           unlimited: subscription.maxStudiesPerMonth === null,
         },
+        aiAnalysesThisMonth: {
+          used: usage.aiAnalysesThisMonth,
+          max: subscription.maxAiAnalysisPerMonth,
+          remaining: subscription.maxAiAnalysisPerMonth !== null
+            ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
+            : null,
+          unlimited: subscription.maxAiAnalysisPerMonth === null,
+        },
       },
       features: {
         dashboardLevel: subscription.dashboardLevel,

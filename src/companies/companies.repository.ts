@@ -199,20 +199,28 @@ export class CompaniesRepository {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    const [usersCount, customersCount, studiesThisMonth] = await Promise.all([
-      this.prisma.userCompany.count({
-        where: { companyId, isActive: true },
-      }),
-      this.prisma.customer.count({
-        where: { companyId },
-      }),
-      this.prisma.creditStudy.count({
-        where: {
-          companyId,
-          createdAt: { gte: startOfMonth, lt: endOfMonth },
-        },
-      }),
-    ]);
+    const [usersCount, customersCount, studiesThisMonth, aiAnalysesThisMonth] =
+      await Promise.all([
+        this.prisma.userCompany.count({
+          where: { companyId, isActive: true },
+        }),
+        this.prisma.customer.count({
+          where: { companyId },
+        }),
+        this.prisma.creditStudy.count({
+          where: {
+            companyId,
+            createdAt: { gte: startOfMonth, lt: endOfMonth },
+          },
+        }),
+        this.prisma.aiAnalysis.count({
+          where: {
+            companyId,
+            status: 'success',
+            createdAt: { gte: startOfMonth, lt: endOfMonth },
+          },
+        }),
+      ]);
 
     return {
       company,
@@ -221,6 +229,7 @@ export class CompaniesRepository {
         usersCount,
         customersCount,
         studiesThisMonth,
+        aiAnalysesThisMonth,
       },
     };
   }
