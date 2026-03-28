@@ -16,11 +16,6 @@ export class CreateCreditStudyDto {
   @IsUUID()
   customerId: string;
 
-  @ApiProperty({ example: 1, description: 'Status parameter ID' })
-  @Type(() => Number)
-  @IsInt()
-  statusId: number;
-
   @ApiProperty({ example: '2026-02-11', description: 'Study date' })
   @IsDateString()
   studyDate: string;
