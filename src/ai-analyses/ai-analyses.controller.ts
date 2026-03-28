@@ -5,13 +5,21 @@ import {
   Param,
   Query,
   Req,
+  Res,
   ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AiAnalysesService } from './ai-analyses.service.js';
@@ -22,6 +30,42 @@ import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 @Controller('companies/:companyId/ai-analyses')
 export class AiAnalysesController {
   constructor(private readonly aiAnalysesService: AiAnalysesService) {}
+
+  @Post('extract-pdf')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Extract financial data from a PDF using AI' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'PDF file with financial statements' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Financial data extracted successfully from PDF',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid file, subscription limit reached, or extraction failed',
+  })
+  extractPdf(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    if (!file) {
+      throw new BadRequestException('PDF file is required');
+    }
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('Only PDF files are accepted');
+    }
+    const userId = (req as any).user.id as string;
+    return this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);
+  }
 
   @Post('credit-studies/:creditStudyId')
   @ApiOperation({ summary: 'Run AI analysis on a credit study' })
@@ -61,6 +105,24 @@ export class AiAnalysesController {
   @ApiResponse({ status: 200, description: 'Current month AI usage stats' })
   getUsage(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.aiAnalysesService.getUsage(companyId);
+  }
+
+  @Get(':id/pdf')
+  @ApiOperation({ summary: 'Download the PDF file stored for an AI analysis' })
+  @ApiResponse({ status: 200, description: 'PDF file returned' })
+  @ApiResponse({ status: 404, description: 'Analysis or PDF not found' })
+  async getPdf(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const pdfBuffer = await this.aiAnalysesService.getPdf(id, companyId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="analysis-${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 
   @Get(':id')

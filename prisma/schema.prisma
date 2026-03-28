@@ -34,6 +34,7 @@ model Parameter {
   companySubscriptionsByStatus   CompanySubscription[] @relation("CompanySubscriptionStatus")
   subscriptionsBySupportLevel    Subscription[] @relation("SubscriptionSupportLevel")
   subscriptionsByDashboardLevel  Subscription[] @relation("SubscriptionDashboardLevel")
+  aiAnalysesByType               AiAnalysis[]   @relation("AiAnalysisType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -82,7 +83,8 @@ model Subscription {
   emailNotifications Boolean @default(false) @map("email_notifications")
   themeCustomization Boolean @default(false) @map("theme_customization")
   supportLevelId          Int      @map("support_level_id")
-  maxAiAnalysisPerMonth   Int?     @map("max_ai_analysis_per_month")
+  maxAiAnalysisPerMonth      Int?     @map("max_ai_analysis_per_month")
+  maxPdfExtractionsPerMonth  Int?     @map("max_pdf_extractions_per_month")
   isActive                Boolean  @default(true) @map("is_active")
   createdAt               DateTime @default(now()) @map("created_at")
   updatedAt               DateTime @updatedAt @map("updated_at")
@@ -318,10 +320,12 @@ model CreditStudy {
 model AiAnalysis {
   id                String   @id @default(uuid()) @db.Uuid
   companyId         String   @map("company_id") @db.Uuid
-  customerId        String   @map("customer_id") @db.Uuid
-  creditStudyId     String   @map("credit_study_id") @db.Uuid
+  customerId        String?  @map("customer_id") @db.Uuid
+  creditStudyId     String?  @map("credit_study_id") @db.Uuid
+  typeId            Int      @map("type_id")
   performedBy       String   @map("performed_by") @db.Uuid
   prompt            String   @db.Text
+  pdfFile           Bytes?   @map("pdf_file")
   result            String?  @db.Text
   model             String   @db.VarChar(100)
   promptTokens      Int?     @map("prompt_tokens")
@@ -333,9 +337,10 @@ model AiAnalysis {
   errorMessage      String?  @map("error_message") @db.Text
   createdAt         DateTime @default(now()) @map("created_at")
 
+  type         Parameter   @relation("AiAnalysisType", fields: [typeId], references: [id])
   company      Company     @relation(fields: [companyId], references: [id])
-  customer     Customer    @relation(fields: [customerId], references: [id])
-  creditStudy  CreditStudy @relation(fields: [creditStudyId], references: [id])
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  creditStudy  CreditStudy? @relation(fields: [creditStudyId], references: [id])
   performedByUser Profile  @relation("AiAnalysisPerformedBy", fields: [performedBy], references: [id])
 
   @@map("ai_analyses")

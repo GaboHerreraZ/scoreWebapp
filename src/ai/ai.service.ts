@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export interface AiCompletionResult {
   content: string | null;
@@ -11,30 +11,32 @@ export interface AiCompletionResult {
   durationMs: number;
 }
 
-// Pricing per 1M tokens for gpt-4o-mini (as of 2025)
+// Pricing per 1M tokens for Claude Haiku 4.5
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  'gpt-4o': { input: 2.5, output: 10 },
-  'gpt-4.1-mini': { input: 0.4, output: 1.6 },
-  'gpt-4.1-nano': { input: 0.1, output: 0.4 },
+  'claude-haiku-4-5-20251001': { input: 0.8, output: 4.0 },
 };
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private readonly client: OpenAI;
+  private readonly client: Anthropic;
   private readonly model: string;
   private readonly maxTokens: number;
 
   constructor(private configService: ConfigService) {
-    this.client = new OpenAI({
+    this.client = new Anthropic({
       apiKey: this.configService.get<string>(
-        'OPENAI_API_KEY',
-        'sk-placeholder',
+        'ANTHROPIC_API_KEY',
+        'sk-ant-placeholder',
       ),
     });
-    this.model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
-    this.maxTokens = Number(this.configService.get('OPENAI_MAX_TOKENS', '1024'));
+    this.model = this.configService.get<string>(
+      'ANTHROPIC_MODEL',
+      'claude-haiku-4-5-20251001',
+    );
+    this.maxTokens = Number(
+      this.configService.get('ANTHROPIC_MAX_TOKENS', '1024'),
+    );
   }
 
   async generateCompletion(
@@ -43,24 +45,71 @@ export class AiService {
   ): Promise<AiCompletionResult> {
     const startTime = Date.now();
 
-    const response = await this.client.chat.completions.create({
+    const response = await this.client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
-      temperature: 0.3,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    const durationMs = Date.now() - startTime;
+    const textContent = response.content.find((block) => block.type === 'text');
+
+    return {
+      content: textContent?.text ?? null,
+      promptTokens: response.usage?.input_tokens ?? null,
+      completionTokens: response.usage?.output_tokens ?? null,
+      totalTokens:
+        response.usage
+          ? response.usage.input_tokens + response.usage.output_tokens
+          : null,
+      model: response.model,
+      durationMs,
+    };
+  }
+
+  async extractFromPdf(
+    pdfBuffer: Buffer,
+    extractionPrompt: string,
+  ): Promise<AiCompletionResult> {
+    const startTime = Date.now();
+    const pdfBase64 = pdfBuffer.toString('base64');
+
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 2048,
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: pdfBase64,
+              },
+            },
+            {
+              type: 'text',
+              text: extractionPrompt,
+            },
+          ],
+        },
       ],
     });
 
     const durationMs = Date.now() - startTime;
-    const usage = response.usage;
+    const textContent = response.content.find((block) => block.type === 'text');
 
     return {
-      content: response.choices[0]?.message?.content ?? null,
-      promptTokens: usage?.prompt_tokens ?? null,
-      completionTokens: usage?.completion_tokens ?? null,
-      totalTokens: usage?.total_tokens ?? null,
+      content: textContent?.text ?? null,
+      promptTokens: response.usage?.input_tokens ?? null,
+      completionTokens: response.usage?.output_tokens ?? null,
+      totalTokens:
+        response.usage
+          ? response.usage.input_tokens + response.usage.output_tokens
+          : null,
       model: response.model,
       durationMs,
     };

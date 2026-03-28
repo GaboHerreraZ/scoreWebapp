@@ -80,3 +80,70 @@ ${Object.values(dims)
 ALERTAS DEL SISTEMA:
 ${alerts.map((a) => `- [${a.type.toUpperCase()}] ${a.message}`).join('\n')}`;
 }
+
+export const FINANCIAL_PDF_EXTRACTION_PROMPT = `Eres un experto en contabilidad colombiana. Analiza este PDF de estados financieros y extrae los datos en el siguiente formato JSON.
+
+REGLAS:
+- Todos los valores monetarios deben ser numeros sin formato (sin puntos, sin comas, sin signo $)
+- Si un campo no se encuentra en el documento, usa null
+- Los campos con sufijo "1" corresponden al ano mas reciente y "2" al ano anterior
+- Busca las cifras en el balance general, estado de resultados y notas
+- Si hay valores negativos, representalos con signo negativo
+- Responde UNICAMENTE con el JSON, sin texto adicional ni markdown
+
+{
+  "balanceSheetDate": "YYYY-MM-DD",
+
+  "cashAndEquivalents": null,
+  "accountsReceivable1": null,
+  "accountsReceivable2": null,
+  "inventories1": null,
+  "inventories2": null,
+  "totalCurrentAssets": null,
+
+  "fixedAssetsProperty": null,
+  "totalNonCurrentAssets": null,
+
+  "shortTermFinancialLiabilities": null,
+  "suppliers1": null,
+  "suppliers2": null,
+  "totalCurrentLiabilities": null,
+
+  "longTermFinancialLiabilities": null,
+  "totalNonCurrentLiabilities": null,
+
+  "retainedEarnings": null,
+  "netIncome": null,
+
+  "ordinaryActivityRevenue": null,
+  "costOfSales": null,
+  "administrativeExpenses": null,
+  "sellingExpenses": null,
+  "depreciation": null,
+  "amortization": null,
+  "financialExpenses": null,
+  "taxes": null
+}
+
+Mapeo de campos con terminologia contable colombiana:
+- cashAndEquivalents = Efectivo y equivalentes de efectivo
+- accountsReceivable = Deudores comerciales / Cuentas por cobrar
+- inventories = Inventarios
+- totalCurrentAssets = Total activos corrientes
+- fixedAssetsProperty = Propiedades, planta y equipo
+- totalNonCurrentAssets = Total activos no corrientes
+- shortTermFinancialLiabilities = Obligaciones financieras a corto plazo
+- suppliers = Proveedores / Cuentas por pagar comerciales
+- totalCurrentLiabilities = Total pasivos corrientes
+- longTermFinancialLiabilities = Obligaciones financieras a largo plazo
+- totalNonCurrentLiabilities = Total pasivos no corrientes
+- retainedEarnings = Resultados acumulados / Ganancias retenidas
+- netIncome = Resultado del ejercicio / Utilidad neta
+- ordinaryActivityRevenue = Ingresos de actividades ordinarias
+- costOfSales = Costo de ventas
+- administrativeExpenses = Gastos de administracion
+- sellingExpenses = Gastos de ventas / distribucion
+- depreciation = Depreciacion
+- amortization = Amortizacion
+- financialExpenses = Gastos financieros
+- taxes = Impuesto a las ganancias / Impuesto de renta`;

@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { AiAnalysesRepository } from './ai-analyses.repository.js';
 import { AiService } from '../ai/ai.service.js';
+import { ParametersRepository } from '../parameters/parameters.repository.js';
 import {
   CREDIT_STUDY_SYSTEM_PROMPT,
   buildCreditStudyUserMessage,
+  FINANCIAL_PDF_EXTRACTION_PROMPT,
 } from '../ai/prompts/credit-study-analysis.prompt.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -20,10 +22,24 @@ export class AiAnalysesService {
   constructor(
     private readonly repository: AiAnalysesRepository,
     private readonly aiService: AiService,
+    private readonly parametersRepository: ParametersRepository,
   ) {}
 
+  private async getTypeId(code: string): Promise<number> {
+    const param = await this.parametersRepository.findByCode(code);
+    if (!param) {
+      throw new NotFoundException(
+        `Parameter with code="${code}" not found. Please create it in the parameters table.`,
+      );
+    }
+    return param.id;
+  }
+
   async analyze(creditStudyId: string, companyId: string, userId: string) {
-    // 1. Validate credit study exists and belongs to company
+    // 1. Get analysis type parameter
+    const typeId = await this.getTypeId('estudioCredito');
+
+    // 2. Validate credit study exists and belongs to company
     const study = await this.repository.findCreditStudyWithCustomer(
       creditStudyId,
       companyId,
@@ -34,14 +50,14 @@ export class AiAnalysesService {
       );
     }
 
-    // 2. Validate study has been performed (has viability data)
+    // 3. Validate study has been performed (has viability data)
     if (!study.viabilityScore || !study.viabilityStatus || !study.viabilityConditions) {
       throw new BadRequestException(
         'Credit study must be performed before running AI analysis. Execute the perform endpoint first.',
       );
     }
 
-    // 3. Check subscription AI analysis limits
+    // 4. Check subscription AI analysis limits
     const companySub = await this.repository.findCurrentSubscription(companyId);
     if (!companySub) {
       throw new BadRequestException(
@@ -51,7 +67,7 @@ export class AiAnalysesService {
 
     const maxAnalyses = companySub.subscription.maxAiAnalysisPerMonth;
     if (maxAnalyses != null && maxAnalyses > 0) {
-      const usageThisMonth = await this.repository.countThisMonth(companyId);
+      const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
       if (usageThisMonth >= maxAnalyses) {
         throw new BadRequestException(
           `AI analysis limit reached for this month (${maxAnalyses}). Upgrade your subscription for more analyses.`,
@@ -59,7 +75,7 @@ export class AiAnalysesService {
       }
     }
 
-    // 4. Build the prompt
+    // 5. Build the prompt
     const customer = study.customer;
     const viabilityConditions = study.viabilityConditions as {
       dimensions: Record<string, { score: number; maxScore: number; status: string; label: string }>;
@@ -92,7 +108,7 @@ export class AiAnalysesService {
 
     const fullPrompt = `[SYSTEM]\n${CREDIT_STUDY_SYSTEM_PROMPT}\n\n[USER]\n${userMessage}`;
 
-    // 5. Call OpenAI
+    // 6. Call Claude AI
     try {
       const aiResult = await this.aiService.generateCompletion(
         CREDIT_STUDY_SYSTEM_PROMPT,
@@ -105,8 +121,9 @@ export class AiAnalysesService {
         aiResult.completionTokens,
       );
 
-      // 6. Save the analysis record
+      // 7. Save the analysis record
       return this.repository.create({
+        typeId,
         companyId,
         customerId: study.customerId,
         creditStudyId,
@@ -122,7 +139,6 @@ export class AiAnalysesService {
         status: 'success',
       });
     } catch (error) {
-      // Save the failed attempt
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
 
@@ -132,6 +148,7 @@ export class AiAnalysesService {
       );
 
       await this.repository.create({
+        typeId,
         companyId,
         customerId: study.customerId,
         creditStudyId,
@@ -147,6 +164,112 @@ export class AiAnalysesService {
         `AI analysis failed: ${errorMessage}`,
       );
     }
+  }
+
+  async extractPdf(pdfBuffer: Buffer, companyId: string, userId: string) {
+    // 1. Get extraction type parameter
+    const typeId = await this.getTypeId('cargaPdfEstadosFinancieros');
+
+    // 2. Check subscription PDF extraction limits
+    const companySub = await this.repository.findCurrentSubscription(companyId);
+    if (!companySub) {
+      throw new BadRequestException(
+        'Company does not have an active subscription',
+      );
+    }
+
+    const maxExtractions = companySub.subscription.maxPdfExtractionsPerMonth;
+    if (maxExtractions != null && maxExtractions > 0) {
+      const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
+      if (usageThisMonth >= maxExtractions) {
+        throw new BadRequestException(
+          `PDF extraction limit reached for this month (${maxExtractions}). Upgrade your subscription for more extractions.`,
+        );
+      }
+    }
+
+    // 3. Call Claude AI to extract data from PDF
+    try {
+      const aiResult = await this.aiService.extractFromPdf(
+        pdfBuffer,
+        FINANCIAL_PDF_EXTRACTION_PROMPT,
+      );
+
+      const estimatedCostUsd = this.aiService.estimateCostUsd(
+        aiResult.model,
+        aiResult.promptTokens,
+        aiResult.completionTokens,
+      );
+
+      let rawContent = aiResult.content || '{}';
+      // Claude may wrap JSON in ```json ... ``` blocks — strip them
+      const jsonBlockMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonBlockMatch) {
+        rawContent = jsonBlockMatch[1].trim();
+      }
+      const parsedData = JSON.parse(rawContent);
+
+      // Replace null values with 0 (except balanceSheetDate which is a date string)
+      for (const key of Object.keys(parsedData)) {
+        if (parsedData[key] === null && key !== 'balanceSheetDate') {
+          parsedData[key] = 0;
+        }
+      }
+
+      // 4. Save the extraction record with the PDF file
+      await this.repository.create({
+        typeId,
+        companyId,
+        performedBy: userId,
+        prompt: FINANCIAL_PDF_EXTRACTION_PROMPT,
+        pdfFile: new Uint8Array(pdfBuffer),
+        result: aiResult.content,
+        model: aiResult.model,
+        promptTokens: aiResult.promptTokens,
+        completionTokens: aiResult.completionTokens,
+        totalTokens: aiResult.totalTokens,
+        estimatedCostUsd,
+        durationMs: aiResult.durationMs,
+        status: 'success',
+      });
+
+      return parsedData;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
+      this.logger.error('PDF extraction failed', error);
+
+      await this.repository.create({
+        typeId,
+        companyId,
+        performedBy: userId,
+        prompt: FINANCIAL_PDF_EXTRACTION_PROMPT,
+        result: null,
+        model: 'unknown',
+        status: 'error',
+        errorMessage,
+      });
+
+      throw new BadRequestException(
+        `PDF extraction failed: ${errorMessage}`,
+      );
+    }
+  }
+
+  async getPdf(id: string, companyId: string) {
+    const analysis = await this.repository.findByIdWithPdf(id, companyId);
+    if (!analysis) {
+      throw new NotFoundException(
+        `AI analysis with id=${id} not found in this company`,
+      );
+    }
+    if (!analysis.pdfFile) {
+      throw new NotFoundException(
+        `No PDF file stored for this analysis`,
+      );
+    }
+    return analysis.pdfFile;
   }
 
   async findAll(companyId: string, filters: FilterAiAnalysisDto) {
@@ -166,6 +289,10 @@ export class AiAnalysesService {
 
     if (filters.status) {
       where.status = filters.status;
+    }
+
+    if (filters.typeId) {
+      where.typeId = filters.typeId;
     }
 
     if (filters.search) {
@@ -211,17 +338,37 @@ export class AiAnalysesService {
   }
 
   async getUsage(companyId: string) {
-    const [usageThisMonth, companySub] = await Promise.all([
-      this.repository.countThisMonth(companyId),
-      this.repository.findCurrentSubscription(companyId),
-    ]);
+    const companySub = await this.repository.findCurrentSubscription(companyId);
 
     const maxAnalyses = companySub?.subscription.maxAiAnalysisPerMonth ?? null;
+    const maxExtractions = companySub?.subscription.maxPdfExtractionsPerMonth ?? null;
+
+    // Get type IDs for counting per type
+    const [analysisType, extractionType] = await Promise.all([
+      this.parametersRepository.findByCode('estudioCredito'),
+      this.parametersRepository.findByCode('cargaPdfEstadosFinancieros'),
+    ]);
+
+    const [analysisUsage, extractionUsage] = await Promise.all([
+      analysisType
+        ? this.repository.countThisMonthByType(companyId, analysisType.id)
+        : Promise.resolve(0),
+      extractionType
+        ? this.repository.countThisMonthByType(companyId, extractionType.id)
+        : Promise.resolve(0),
+    ]);
 
     return {
-      usedThisMonth: usageThisMonth,
-      maxPerMonth: maxAnalyses,
-      remaining: maxAnalyses != null ? Math.max(0, maxAnalyses - usageThisMonth) : null,
+      aiAnalysis: {
+        usedThisMonth: analysisUsage,
+        maxPerMonth: maxAnalyses,
+        remaining: maxAnalyses != null ? Math.max(0, maxAnalyses - analysisUsage) : null,
+      },
+      pdfExtraction: {
+        usedThisMonth: extractionUsage,
+        maxPerMonth: maxExtractions,
+        remaining: maxExtractions != null ? Math.max(0, maxExtractions - extractionUsage) : null,
+      },
     };
   }
 }

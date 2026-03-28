@@ -14,9 +14,11 @@ export class AiAnalysesRepository {
     companyId: true,
     customerId: true,
     creditStudyId: true,
+    typeId: true,
     performedBy: true,
     createdAt: true,
     errorMessage: true,
+    type: { select: { id: true, code: true, label: true } },
     customer: { select: { id: true, businessName: true } },
     creditStudy: { select: { id: true, viabilityScore: true, viabilityStatus: true } },
     performedByUser: { select: { id: true, name: true, lastName: true, email: true } },
@@ -46,12 +48,14 @@ export class AiAnalysesRepository {
         select: {
           id: true,
           creditStudyId: true,
+          typeId: true,
           model: true,
           totalTokens: true,
           estimatedCostUsd: true,
           durationMs: true,
           status: true,
           createdAt: true,
+          type: { select: { id: true, code: true, label: true } },
           customer: { select: { id: true, businessName: true } },
           performedByUser: { select: { id: true, name: true, lastName: true } },
         },
@@ -69,6 +73,16 @@ export class AiAnalysesRepository {
     });
   }
 
+  async findByIdWithPdf(id: string, companyId: string) {
+    return this.prisma.aiAnalysis.findFirst({
+      where: { id, companyId },
+      select: {
+        id: true,
+        pdfFile: true,
+      },
+    });
+  }
+
   async countThisMonth(companyId: string): Promise<number> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -76,6 +90,20 @@ export class AiAnalysesRepository {
     return this.prisma.aiAnalysis.count({
       where: {
         companyId,
+        status: 'success',
+        createdAt: { gte: startOfMonth },
+      },
+    });
+  }
+
+  async countThisMonthByType(companyId: string, typeId: number): Promise<number> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return this.prisma.aiAnalysis.count({
+      where: {
+        companyId,
+        typeId,
         status: 'success',
         createdAt: { gte: startOfMonth },
       },
