@@ -35,6 +35,7 @@ model Parameter {
   subscriptionsBySupportLevel    Subscription[] @relation("SubscriptionSupportLevel")
   subscriptionsByDashboardLevel  Subscription[] @relation("SubscriptionDashboardLevel")
   aiAnalysesByType               AiAnalysis[]   @relation("AiAnalysisType")
+  invitationsByStatus            Invitation[]   @relation("InvitationStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -57,6 +58,7 @@ model Profile {
   role            Parameter?      @relation("ProfileRole", fields: [roleId], references: [id])
   userCompanies   UserCompany[]   @relation("UserCompanyUser")
   invitedUsers    UserCompany[]   @relation("UserCompanyInvitedBy")
+  sentInvitations Invitation[]    @relation("InvitationInvitedBy")
   createdCustomers Customer[]     @relation("CustomerCreatedBy")
   updatedCustomers Customer[]     @relation("CustomerUpdatedBy")
   createdStudies   CreditStudy[]  @relation("CreditStudyCreatedBy")
@@ -113,6 +115,7 @@ model Company {
   sector       Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
   companySubscriptions CompanySubscription[]
   userCompanies UserCompany[]
+  invitations   Invitation[]
   customers     Customer[]
   creditStudies CreditStudy[]
   aiAnalyses    AiAnalysis[]
@@ -344,4 +347,26 @@ model AiAnalysis {
   performedByUser Profile  @relation("AiAnalysisPerformedBy", fields: [performedBy], references: [id])
 
   @@map("ai_analyses")
+}
+
+// ─── Invitaciones a colaborar en empresa ────────────────────
+
+model Invitation {
+  id          String    @id @default(uuid()) @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  invitedBy   String    @map("invited_by") @db.Uuid
+  email       String    @db.VarChar(255)
+  roleId      Int       @map("role_id")
+  statusId    Int       @map("status_id")
+  token       String    @unique @db.VarChar(64)
+  expiresAt   DateTime  @map("expires_at")
+  respondedAt DateTime? @map("responded_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  company       Company   @relation(fields: [companyId], references: [id])
+  invitedByUser Profile   @relation("InvitationInvitedBy", fields: [invitedBy], references: [id])
+  status        Parameter @relation("InvitationStatus", fields: [statusId], references: [id])
+
+  @@map("invitations")
 }

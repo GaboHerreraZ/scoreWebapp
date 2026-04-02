@@ -43,9 +43,4 @@ export class CreateCompanyDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiProperty({ example: 1, description: 'Role parameter ID for the user-company association' })
-  @Type(() => Number)
-  @IsInt()
-  roleId: number;
 }

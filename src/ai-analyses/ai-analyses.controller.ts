@@ -58,10 +58,10 @@ export class AiAnalysesController {
     @Req() req: Request,
   ) {
     if (!file) {
-      throw new BadRequestException('PDF file is required');
+      throw new BadRequestException('El archivo PDF es requerido');
     }
     if (file.mimetype !== 'application/pdf') {
-      throw new BadRequestException('Only PDF files are accepted');
+      throw new BadRequestException('Solo se aceptan archivos en formato PDF');
     }
     const userId = (req as any).user.id as string;
     return this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);

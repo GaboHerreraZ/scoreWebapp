@@ -34,6 +34,7 @@ export class ProfilesRepository {
         userCompanies: {
           select: {
             companyId: true,
+            isActive: true,
             company: {
               select: {
                 city: true,
@@ -70,6 +71,8 @@ export class ProfilesRepository {
                         maxCompanies: true,
                         maxUsers: true,
                         maxStudiesPerMonth: true,
+                        maxAiAnalysisPerMonth: true,
+                        maxPdfExtractionsPerMonth: true,
                         supportLevel: {
                           select: {
                             id: true,

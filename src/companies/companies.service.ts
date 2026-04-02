@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CompaniesRepository } from './companies.repository.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
@@ -20,6 +21,11 @@ export class CompaniesService {
       throw new ConflictException(`Company with NIT "${dto.nit}" already exists`);
     }
 
+    const adminRoleId = await this.repository.getRoleId('administrador');
+    if (!adminRoleId) {
+      throw new BadRequestException('Role parameter "administrador" not found. Please create a parameter with type=user_company_role, code=administrador');
+    }
+
     return this.repository.createWithUserCompany(
       {
         name: dto.name,
@@ -30,7 +36,7 @@ export class CompaniesService {
         address: dto.address,
         isActive: dto.isActive,
       },
-      { userId, roleId: dto.roleId },
+      { userId, roleId: adminRoleId },
     );
   }
 
@@ -181,6 +187,14 @@ export class CompaniesService {
             ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
             : null,
           unlimited: subscription.maxAiAnalysisPerMonth === null,
+        },
+        pdfExtractionsThisMonth: {
+          used: usage.pdfExtractionsThisMonth,
+          max: subscription.maxPdfExtractionsPerMonth,
+          remaining: subscription.maxPdfExtractionsPerMonth !== null
+            ? subscription.maxPdfExtractionsPerMonth - usage.pdfExtractionsThisMonth
+            : null,
+          unlimited: subscription.maxPdfExtractionsPerMonth === null,
         },
       },
       features: {

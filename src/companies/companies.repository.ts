@@ -199,7 +199,13 @@ export class CompaniesRepository {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    const [usersCount, customersCount, studiesThisMonth, aiAnalysesThisMonth] =
+    // Get parameter IDs for AI analysis types
+    const [estudioCreditoParam, cargaPdfParam] = await Promise.all([
+      this.prisma.parameter.findFirst({ where: { code: 'estudioCredito' } }),
+      this.prisma.parameter.findFirst({ where: { code: 'cargaPdfEstadosFinancieros' } }),
+    ]);
+
+    const [usersCount, customersCount, studiesThisMonth, aiAnalysesThisMonth, pdfExtractionsThisMonth] =
       await Promise.all([
         this.prisma.userCompany.count({
           where: { companyId, isActive: true },
@@ -218,6 +224,15 @@ export class CompaniesRepository {
             companyId,
             status: 'success',
             createdAt: { gte: startOfMonth, lt: endOfMonth },
+            ...(estudioCreditoParam ? { typeId: estudioCreditoParam.id } : {}),
+          },
+        }),
+        this.prisma.aiAnalysis.count({
+          where: {
+            companyId,
+            status: 'success',
+            createdAt: { gte: startOfMonth, lt: endOfMonth },
+            ...(cargaPdfParam ? { typeId: cargaPdfParam.id } : {}),
           },
         }),
       ]);
@@ -230,8 +245,16 @@ export class CompaniesRepository {
         customersCount,
         studiesThisMonth,
         aiAnalysesThisMonth,
+        pdfExtractionsThisMonth,
       },
     };
+  }
+
+  async getRoleId(code: string): Promise<number | null> {
+    const param = await this.prisma.parameter.findFirst({
+      where: { type: 'user_company_role', code },
+    });
+    return param?.id ?? null;
   }
 
   async findCustomersByCompanyId(params: {

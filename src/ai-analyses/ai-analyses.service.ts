@@ -29,7 +29,7 @@ export class AiAnalysesService {
     const param = await this.parametersRepository.findByCode(code);
     if (!param) {
       throw new NotFoundException(
-        `Parameter with code="${code}" not found. Please create it in the parameters table.`,
+        `Parametro con codigo="${code}" no encontrado. Debe crearse en la tabla de parametros.`,
       );
     }
     return param.id;
@@ -46,14 +46,14 @@ export class AiAnalysesService {
     );
     if (!study) {
       throw new NotFoundException(
-        `Credit study with id=${creditStudyId} not found in this company`,
+        `Estudio de credito con id=${creditStudyId} no encontrado en esta empresa`,
       );
     }
 
     // 3. Validate study has been performed (has viability data)
     if (!study.viabilityScore || !study.viabilityStatus || !study.viabilityConditions) {
       throw new BadRequestException(
-        'Credit study must be performed before running AI analysis. Execute the perform endpoint first.',
+        'El estudio de credito debe ser realizado antes de ejecutar el analisis con IA. Ejecute primero el endpoint de realizar estudio.',
       );
     }
 
@@ -61,7 +61,7 @@ export class AiAnalysesService {
     const companySub = await this.repository.findCurrentSubscription(companyId);
     if (!companySub) {
       throw new BadRequestException(
-        'Company does not have an active subscription',
+        'La empresa no tiene una suscripcion activa',
       );
     }
 
@@ -70,7 +70,7 @@ export class AiAnalysesService {
       const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
       if (usageThisMonth >= maxAnalyses) {
         throw new BadRequestException(
-          `AI analysis limit reached for this month (${maxAnalyses}). Upgrade your subscription for more analyses.`,
+          `Limite de analisis IA alcanzado para este mes (${maxAnalyses}). Actualice su suscripcion para obtener mas analisis.`,
         );
       }
     }
@@ -140,10 +140,10 @@ export class AiAnalysesService {
       });
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
+        error instanceof Error ? error.message : 'Error desconocido';
 
       this.logger.error(
-        `AI analysis failed for credit study ${creditStudyId}`,
+        `Analisis IA fallido para estudio de credito ${creditStudyId}`,
         error,
       );
 
@@ -161,7 +161,7 @@ export class AiAnalysesService {
       });
 
       throw new BadRequestException(
-        `AI analysis failed: ${errorMessage}`,
+        `El analisis IA fallo: ${errorMessage}`,
       );
     }
   }
@@ -174,18 +174,23 @@ export class AiAnalysesService {
     const companySub = await this.repository.findCurrentSubscription(companyId);
     if (!companySub) {
       throw new BadRequestException(
-        'Company does not have an active subscription',
+        'La empresa no tiene una suscripcion activa',
       );
     }
 
     const maxExtractions = companySub.subscription.maxPdfExtractionsPerMonth;
-    if (maxExtractions != null && maxExtractions > 0) {
-      const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
-      if (usageThisMonth >= maxExtractions) {
-        throw new BadRequestException(
-          `PDF extraction limit reached for this month (${maxExtractions}). Upgrade your subscription for more extractions.`,
-        );
-      }
+
+    if (maxExtractions == null || maxExtractions <= 0) {
+      throw new BadRequestException(
+        'Su plan de suscripcion no incluye extraccion de PDF. Actualice su plan para usar esta funcionalidad.',
+      );
+    }
+
+    const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
+    if (usageThisMonth >= maxExtractions) {
+      throw new BadRequestException(
+        `Limite de extracciones PDF alcanzado para este mes (${maxExtractions}). Actualice su suscripcion para obtener mas extracciones.`,
+      );
     }
 
     // 3. Call Claude AI to extract data from PDF
@@ -236,9 +241,9 @@ export class AiAnalysesService {
       return parsedData;
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
+        error instanceof Error ? error.message : 'Error desconocido';
 
-      this.logger.error('PDF extraction failed', error);
+      this.logger.error('Extraccion de PDF fallida', error);
 
       await this.repository.create({
         typeId,
@@ -252,7 +257,7 @@ export class AiAnalysesService {
       });
 
       throw new BadRequestException(
-        `PDF extraction failed: ${errorMessage}`,
+        `La extraccion del PDF fallo: ${errorMessage}`,
       );
     }
   }
@@ -261,12 +266,12 @@ export class AiAnalysesService {
     const analysis = await this.repository.findByIdWithPdf(id, companyId);
     if (!analysis) {
       throw new NotFoundException(
-        `AI analysis with id=${id} not found in this company`,
+        `Analisis IA con id=${id} no encontrado en esta empresa`,
       );
     }
     if (!analysis.pdfFile) {
       throw new NotFoundException(
-        `No PDF file stored for this analysis`,
+        'No hay archivo PDF almacenado para este analisis',
       );
     }
     return analysis.pdfFile;
@@ -331,7 +336,7 @@ export class AiAnalysesService {
     const analysis = await this.repository.findById(id, companyId);
     if (!analysis) {
       throw new NotFoundException(
-        `AI analysis with id=${id} not found in this company`,
+        `Analisis IA con id=${id} no encontrado en esta empresa`,
       );
     }
     return analysis;
