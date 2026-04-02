@@ -10,8 +10,11 @@ export class MailService {
   private readonly resend: Resend;
   private readonly templatesDir: string;
 
+  private readonly frontendUrl: string;
+
   constructor(private readonly configService: ConfigService) {
     this.resend = new Resend(this.configService.get<string>('RESEND_API_KEY'));
+    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
     const __dirname = dirname(fileURLToPath(import.meta.url));
     this.templatesDir = join(__dirname, '..', '..', 'mail', 'templates');
   }
@@ -35,7 +38,7 @@ export class MailService {
     invitedByName: string;
   }) {
     const { to, invitationId, token, companyName, invitedByName } = params;
-    const invitationUrl = `http://localhost:4200/invitacion?email=${encodeURIComponent(to)}&invitationId=${invitationId}&token=${token}`;
+    const invitationUrl = `${this.frontendUrl}/invitacion?email=${encodeURIComponent(to)}&invitationId=${invitationId}&token=${token}`;
 
     const html = this.loadTemplate('invitation', {
       invitedByName,
