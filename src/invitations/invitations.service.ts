@@ -282,9 +282,9 @@ export class InvitationsService {
       throw new ConflictException('Ya existe un perfil con este correo electrónico');
     }
 
-    const acceptedStatusId = await this.repository.getInvitationStatusId('accepted');
+    const acceptedStatusId = await this.repository.getInvitationStatusId('aceptada');
     if (!acceptedStatusId) {
-      throw new BadRequestException('No se encontró el parámetro de estado "accepted"');
+      throw new BadRequestException('No se encontró el parámetro de estado "aceptada"');
     }
 
     // Obtener el rol "auxiliar" para asignar al usuario aceptado
