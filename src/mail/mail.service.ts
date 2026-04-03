@@ -47,7 +47,7 @@ export class MailService {
     });
 
     await this.resend.emails.send({
-      from: 'TuPlazo <onboarding@resend.dev>',
+      from: 'TuPlazo <notificaciones@riskia.co>',
       to,
       subject: `${invitedByName} te ha invitado a colaborar en ${companyName}`,
       html,
@@ -63,7 +63,7 @@ export class MailService {
     const html = this.loadTemplate('user-deactivated', { companyName });
 
     await this.resend.emails.send({
-      from: 'TuPlazo <onboarding@resend.dev>',
+      from: 'TuPlazo <notificaciones@riskia.co>',
       to,
       subject: `Tu acceso a ${companyName} ha sido desactivado`,
       html,
