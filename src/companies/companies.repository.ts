@@ -166,6 +166,7 @@ export class CompaniesRepository {
       this.prisma.subscription.findMany({
         where: { isActive: true },
         orderBy: { price: 'asc' },
+        include: { dashboardLevel: true, supportLevel: true },
       }),
     ]);
 
