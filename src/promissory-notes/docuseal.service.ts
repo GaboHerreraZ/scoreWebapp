@@ -172,6 +172,22 @@ export class DocuSealService {
   }
 
   /**
+   * Archives (cancels) a submission in DocuSeal. The signer can no longer
+   * access the signing link after this. DocuSeal does NOT fire a webhook
+   * for this action — the caller must update local state manually.
+   */
+  async archiveSubmission(submissionId: number): Promise<void> {
+    try {
+      await this.client.archiveSubmission(submissionId);
+    } catch (err) {
+      this.logger.error(
+        `DocuSeal archiveSubmission failed: ${(err as Error).message}`,
+      );
+      throw err;
+    }
+  }
+
+  /**
    * Fetches the authoritative submission state from DocuSeal. Used by the webhook
    * handler to verify that an incoming webhook payload matches what DocuSeal
    * actually knows about the submission, so a forged webhook cannot mark a

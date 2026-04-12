@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -123,6 +124,26 @@ export class PromissoryNotesController {
     @Body() dto: CreatePromissoryNoteDto,
   ) {
     return this.promissoryNotesService.preview(companyId, dto);
+  }
+
+  @Patch('companies/:companyId/promissory-notes/:id/decline')
+  @ApiOperation({
+    summary: 'Declina un pagaré pendiente de firma y revierte el estudio de crédito a estudio realizado',
+  })
+  @ApiResponse({ status: 200, description: 'Pagaré declinado exitosamente' })
+  @ApiResponse({
+    status: 400,
+    description: 'El pagaré no está pendiente de firma',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'El pagaré no existe en esta empresa',
+  })
+  decline(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Param('id', promissoryIdPipe) id: number,
+  ) {
+    return this.promissoryNotesService.decline(id, companyId);
   }
 
   @Get('companies/:companyId/promissory-notes')

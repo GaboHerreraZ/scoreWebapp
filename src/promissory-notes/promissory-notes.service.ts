@@ -376,6 +376,67 @@ export class PromissoryNotesService {
     return note;
   }
 
+  /**
+   * Declines (cancels) a promissory note that is pending signature.
+   * Archives the submission in DocuSeal so the signer can no longer access it,
+   * marks the promissory note as DECLINED, and reverts the credit study
+   * status back to `estudioRealizado` so a new document can be sent.
+   */
+  async decline(id: number, companyId: string) {
+    const note = await this.repository.findById(id, companyId);
+    if (!note) {
+      throw new NotFoundException(
+        `No se encontró el pagaré con id=${id} en esta empresa.`,
+      );
+    }
+
+    // Only pending notes can be declined
+    const pendingStatus = await this.parametersRepository.findByTypeAndCode(
+      'promissory_note_status',
+      'PENDING_SIGNATURE',
+    );
+    if (note.statusId !== pendingStatus?.id) {
+      throw new BadRequestException(
+        'Solo se pueden declinar pagarés que estén pendientes de firma.',
+      );
+    }
+
+    // 1. Archive the submission in DocuSeal (invalidates the signing link)
+    if (note.docusealSubmissionId) {
+      try {
+        await this.docusealService.archiveSubmission(note.docusealSubmissionId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to archive DocuSeal submission ${note.docusealSubmissionId}`,
+          err as Error,
+        );
+        // Continue — we still want to decline locally even if DocuSeal fails
+      }
+    }
+
+    // 2. Mark promissory note as DECLINED
+    const declinedStatus = await this.parametersRepository.findByTypeAndCode(
+      'promissory_note_status',
+      'DECLINED',
+    );
+    const updated = await this.repository.update(id, {
+      statusId: declinedStatus?.id,
+      declinedAt: new Date(),
+    });
+
+    // 3. Revert credit study status to estudioRealizado
+    const estudioRealizadoStatus =
+      await this.parametersRepository.findByCode('estudioRealizado');
+    if (estudioRealizadoStatus) {
+      await this.prisma.creditStudy.update({
+        where: { id: note.creditStudyId },
+        data: { statusId: estudioRealizadoStatus.id },
+      });
+    }
+
+    return updated;
+  }
+
   async findAll(companyId: string, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
     const { data, total } = await this.repository.findAll({
