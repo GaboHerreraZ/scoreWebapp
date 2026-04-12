@@ -36,6 +36,14 @@ export interface DocuSealSubmissionState {
   completedAt: string | null;
 }
 
+export interface CreateSubmissionFromHtmlParams {
+  html: string;
+  signerEmail: string;
+  signerName: string;
+  submissionName?: string;
+  documentName?: string;
+}
+
 @Injectable()
 export class DocuSealService {
   private readonly logger = new Logger(DocuSealService.name);
@@ -105,6 +113,59 @@ export class DocuSealService {
     } catch (err) {
       this.logger.error(
         `DocuSeal createSubmission failed: ${(err as Error).message}`,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Creates a submission from an HTML document. The HTML already contains
+   * DocuSeal field tags (stamp-field, signature-field, text-field) with
+   * pre-filled values. No template ID needed.
+   */
+  async createSubmissionFromHtml(
+    params: CreateSubmissionFromHtmlParams,
+  ): Promise<DocuSealSubmitterResult> {
+    try {
+      const response = await this.client.createSubmissionFromHtml({
+        name: params.submissionName ?? 'Pagaré',
+        send_email: true,
+        documents: [
+          {
+            name: params.documentName ?? 'Pagaré',
+            html: params.html,
+            size: 'Letter',
+          },
+        ],
+        submitters: [
+          {
+            role: 'First Party',
+            email: params.signerEmail,
+            name: params.signerName,
+          },
+        ],
+      });
+
+      const submitter = response.submitters?.[0];
+      if (!submitter) {
+        throw new InternalServerErrorException(
+          'DocuSeal no devolvió información del firmante.',
+        );
+      }
+
+      return {
+        id: submitter.id,
+        submissionId: response.id,
+        uuid: submitter.uuid,
+        email: submitter.email,
+        slug: submitter.slug,
+        status: submitter.status,
+        sentAt: submitter.sent_at,
+        embedSrc: submitter.embed_src ?? '',
+      };
+    } catch (err) {
+      this.logger.error(
+        `DocuSeal createSubmissionFromHtml failed: ${(err as Error).message}`,
       );
       throw err;
     }

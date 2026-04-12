@@ -6,6 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromissoryNotesRepository } from './promissory-notes.repository.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
@@ -14,6 +17,9 @@ import { SupabaseService } from '../auth/supabase.service.js';
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
 import { numberToSpanishWords } from './utils/number-to-words.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // ── Hardcoded payment schedule values (temporary — will come from DB later) ──
 const HARDCODED_PAYMENT_METHOD = 'DOS PLAZOS';
@@ -177,6 +183,181 @@ export class PromissoryNotesService {
       });
       throw err;
     }
+  }
+
+  /**
+   * Creates a promissory note using an HTML template instead of a DocuSeal
+   * template ID. The HTML is read from disk, field placeholders are replaced
+   * with stamp-field / signature-field tags pre-filled with the real values,
+   * and then sent via `createSubmissionFromHtml`.
+   */
+  async createFromHtml(
+    companyId: string,
+    userId: string,
+    dto: CreatePromissoryNoteDto,
+  ) {
+    // 1. Load the credit study with customer and company details
+    const creditStudy = await this.prisma.creditStudy.findFirst({
+      where: { id: dto.creditStudyId, companyId },
+      include: {
+        customer: { include: { identificationType: true } },
+        company: { include: { accountType: true, accountBank: true } },
+      },
+    });
+
+    if (!creditStudy) {
+      throw new NotFoundException(
+        'El estudio de crédito no existe o no pertenece a esta empresa.',
+      );
+    }
+
+    const { customer, company } = creditStudy;
+
+    // 2. Derive the amount
+    if (
+      creditStudy.requestedMonthlyCreditLine === null ||
+      creditStudy.requestedMonthlyCreditLine === undefined ||
+      creditStudy.requestedMonthlyCreditLine <= 0
+    ) {
+      throw new BadRequestException(
+        'El estudio de crédito no tiene un cupo mensual solicitado válido. No se puede generar el pagaré.',
+      );
+    }
+
+    const amount = Math.trunc(creditStudy.requestedMonthlyCreditLine);
+    const amountInWords = numberToSpanishWords(amount);
+
+    // 3. Enforce one active promissory note per credit study
+    const activeCount = await this.repository.countActiveByCreditStudy(
+      dto.creditStudyId,
+    );
+    if (activeCount > 0) {
+      throw new ConflictException(
+        'Este estudio de crédito ya tiene un pagaré activo (pendiente de firma o firmado).',
+      );
+    }
+
+    // 4. Validate customer and company
+    this.validateCustomer(customer);
+    this.validateCompany(company);
+
+    // 5. Resolve pending status
+    const pendingStatus = await this.parametersRepository.findByTypeAndCode(
+      'promissory_note_status',
+      'PENDING_SIGNATURE',
+    );
+    if (!pendingStatus) {
+      throw new BadRequestException(
+        'No se encontró el estado "Pendiente de firma" en la base de datos. Contacta al administrador.',
+      );
+    }
+
+    // 6. Create the promissory note record
+    const promissoryNote = await this.repository.create({
+      companyId,
+      creditStudyId: dto.creditStudyId,
+      customerId: customer.id,
+      createdBy: userId,
+      statusId: pendingStatus.id,
+      amount,
+      amountInWords,
+    });
+
+    // 7. Build HTML from template and send to DocuSeal
+    try {
+      const values = this.buildDocuSealValues({
+        promissoryNoteId: promissoryNote.id,
+        amount,
+        amountInWords,
+        customer,
+        company,
+      });
+
+      const html = this.renderHtmlTemplate(values);
+
+      const submitter = await this.docusealService.createSubmissionFromHtml({
+        html,
+        signerEmail: customer.email!,
+        signerName: customer.businessName,
+        submissionName: `Pagaré #${promissoryNote.id}`,
+        documentName: `Pagaré #${promissoryNote.id}`,
+      });
+
+      // 8. Persist DocuSeal identifiers
+      const updated = await this.repository.update(promissoryNote.id, {
+        docusealSubmissionId: submitter.submissionId,
+        docusealSubmitterId: submitter.id,
+        docusealSubmitterUuid: submitter.uuid,
+        docusealSlug: submitter.slug,
+        signingUrl: submitter.embedSrc || null,
+        sentAt: submitter.sentAt ? new Date(submitter.sentAt) : new Date(),
+      });
+
+      return updated;
+    } catch (err) {
+      this.logger.error(
+        `DocuSeal HTML submission failed, rolling back promissory note ${promissoryNote.id}`,
+        err as Error,
+      );
+      await this.prisma.promissoryNote.delete({
+        where: { id: promissoryNote.id },
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * Returns a preview of the promissory note as clean HTML (no DocuSeal tags).
+   * Dynamic values are wrapped in <strong> to highlight them visually.
+   * No records are created and DocuSeal is not called.
+   */
+  async preview(companyId: string, dto: CreatePromissoryNoteDto) {
+    // 1. Load the credit study with customer and company details
+    const creditStudy = await this.prisma.creditStudy.findFirst({
+      where: { id: dto.creditStudyId, companyId },
+      include: {
+        customer: { include: { identificationType: true } },
+        company: { include: { accountType: true, accountBank: true } },
+      },
+    });
+
+    if (!creditStudy) {
+      throw new NotFoundException(
+        'El estudio de crédito no existe o no pertenece a esta empresa.',
+      );
+    }
+
+    const { customer, company } = creditStudy;
+
+    // 2. Derive the amount
+    if (
+      creditStudy.requestedMonthlyCreditLine === null ||
+      creditStudy.requestedMonthlyCreditLine === undefined ||
+      creditStudy.requestedMonthlyCreditLine <= 0
+    ) {
+      throw new BadRequestException(
+        'El estudio de crédito no tiene un cupo mensual solicitado válido.',
+      );
+    }
+
+    const amount = Math.trunc(creditStudy.requestedMonthlyCreditLine);
+    const amountInWords = numberToSpanishWords(amount);
+
+    // 3. Validate customer and company
+    this.validateCustomer(customer);
+    this.validateCompany(company);
+
+    // 4. Build values (use a placeholder ID since no record is created yet)
+    const values = this.buildDocuSealValues({
+      promissoryNoteId: 0,
+      amount,
+      amountInWords,
+      customer,
+      company,
+    });
+
+    // 5. Render the preview HTML
+    return { html: this.renderPreviewHtml(values) };
   }
 
   async findById(id: number, companyId: string) {
@@ -472,6 +653,54 @@ export class PromissoryNotesService {
       customerPhoneNumber: params.customer.phone ?? '',
       customerEmail: params.customer.email ?? '',
     };
+  }
+
+  /**
+   * Renders the HTML template as a browser-friendly preview:
+   * - Replaces `{{key}}` with `<strong>value</strong>` so dynamic data stands out.
+   * - Strips DocuSeal-specific tags (stamp-field, signature-field, text-field)
+   *   and replaces them with plain `<span>` wrappers.
+   * - Replaces signature placeholders with a visible "[Firma]" label.
+   */
+  private renderPreviewHtml(values: Record<string, string>): string {
+    const templatePath = join(__dirname, 'templates', 'promissory-note.html');
+    let html = readFileSync(templatePath, 'utf-8');
+
+    // Replace {{key}} placeholders with bold values
+    for (const [key, value] of Object.entries(values)) {
+      html = html.replaceAll(
+        `{{${key}}}`,
+        `<strong>${value}</strong>`,
+      );
+    }
+
+    // Replace signature-field tags with a visible placeholder
+    html = html.replace(
+      /<signature-field[^>]*>.*?<\/signature-field>/gs,
+      '<span style="display:inline-block;width:200px;height:80px;border-bottom:2px solid #1a1a1a;text-align:center;line-height:80px;color:#6b7280;font-style:italic;">[Firma]</span>',
+    );
+
+    // The template already uses plain <span class="field"> tags,
+    // so no DocuSeal tags to strip for readonly values.
+
+    return html;
+  }
+
+  /**
+   * Reads the HTML template from disk and replaces `{{key}}` placeholders
+   * with the corresponding values from the dictionary. The HTML contains
+   * DocuSeal field tags (stamp-field, signature-field) with the placeholders
+   * inside — we only replace the `{{key}}` text, leaving the tags intact.
+   */
+  private renderHtmlTemplate(values: Record<string, string>): string {
+    const templatePath = join(__dirname, 'templates', 'promissory-note.html');
+    let html = readFileSync(templatePath, 'utf-8');
+
+    for (const [key, value] of Object.entries(values)) {
+      html = html.replaceAll(`{{${key}}}`, value);
+    }
+
+    return html;
   }
 
   private formatCOP(amount: number): string {

@@ -76,6 +76,55 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.create(companyId, userId, dto);
   }
 
+  @Post('companies/:companyId/promissory-notes/html')
+  @ApiOperation({
+    summary:
+      'Crea un pagaré desde un template HTML y lo envía al cliente vía DocuSeal para su firma',
+  })
+  @ApiResponse({ status: 201, description: 'Pagaré creado y enviado (HTML)' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Datos inválidos, faltan campos obligatorios del cliente/empresa, o error de DocuSeal',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'El estudio de crédito no existe en esta empresa',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Este estudio de crédito ya tiene un pagaré activo',
+  })
+  createFromHtml(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Body() dto: CreatePromissoryNoteDto,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user.id as string;
+    return this.promissoryNotesService.createFromHtml(companyId, userId, dto);
+  }
+
+  @Post('companies/:companyId/promissory-notes/preview')
+  @ApiOperation({
+    summary:
+      'Retorna un preview del pagaré como HTML con los valores resaltados en negrita',
+  })
+  @ApiResponse({ status: 200, description: 'Preview HTML del pagaré' })
+  @ApiResponse({
+    status: 400,
+    description: 'Faltan campos obligatorios del cliente o la empresa',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'El estudio de crédito no existe en esta empresa',
+  })
+  preview(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Body() dto: CreatePromissoryNoteDto,
+  ) {
+    return this.promissoryNotesService.preview(companyId, dto);
+  }
+
   @Get('companies/:companyId/promissory-notes')
   @ApiOperation({ summary: 'Lista los pagarés de una empresa' })
   findAll(

@@ -1,0 +1,263 @@
+<style>
+  body {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 0;
+  }
+
+  .document {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  .document-title {
+    text-align: center;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    margin-bottom: 4px;
+  }
+
+  .document-number {
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 28px;
+  }
+
+  .paragraph {
+    text-align: justify;
+    margin-bottom: 14px;
+  }
+
+  .bold {
+    font-weight: bold;
+  }
+
+  .field {
+    font-weight: bold;
+  }
+
+  .signature-block {
+    margin-top: 40px;
+    margin-bottom: 8px;
+  }
+
+  .signature-label {
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .signer-info {
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 4px;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  .authorization-title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    line-height: 1.4;
+  }
+
+  .authorization-subtitle {
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 24px;
+  }
+
+  .recipient-block {
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  signature-field {
+    display: inline-block;
+    width: 200px;
+    height: 80px;
+  }
+</style>
+
+<div class="document">
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- DOCUMENTO 1: PAGARÉ                                           -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <div class="document-title">PAGARÉ</div>
+  <div class="document-number">
+    No. <span class="field">{{promissoryId}}</span>
+  </div>
+
+  <p class="paragraph">
+    Yo, <span class="field">{{customerName}}</span>,
+    mayor de edad, identificado como aparece al pie de mi firma y actuando en nombre propio,
+    por medio del presente escrito manifiesto lo siguiente:
+  </p>
+
+  <p class="paragraph">
+    <span class="bold">Primero:</span> que debo y pagaré, incondicionalmente a la orden de
+    <span class="field">{{companyName}}</span>
+    identificado con
+    <span class="field">{{customerIdentification}}</span>,
+    la suma cierta de
+    <span class="field">{{priceDescription}}</span>
+    pesos
+    <span class="field">{{price}}</span>
+    moneda legal colombiana.
+  </p>
+
+  <p class="paragraph">
+    <span class="bold">Segundo:</span> que el pago total de la mencionada obligación se efectuará en
+    <span class="field">{{paymentMethod}}</span>,
+    el
+    <span class="field">{{paymentDay}}</span>
+    de
+    <span class="field">{{paymentMonth}}</span>
+    de
+    <span class="field">{{paymentYear}}</span>
+    en las dependencias de
+    <span class="field">{{companyName}}</span>,
+    ubicado en
+    <span class="field">{{companyAddress}}</span>
+    en la ciudad de
+    <span class="field">{{companyCity}}</span>,
+    o en su cuenta
+    <span class="field">{{accountType}}</span>
+    no.
+    <span class="field">{{accountNumber}}</span>
+    del
+    <span class="field">{{accountBank}}</span>.
+  </p>
+
+  <p class="paragraph">
+    <span class="bold">Tercero:</span> que en caso de mora pagaré a
+    <span class="field">{{companyName}}</span>,
+    intereses de mora a la más alta tasa permitida por la ley, desde el día siguiente
+    a la fecha de exigibilidad del presente pagaré, y hasta cuando su pago total se efectúe.
+  </p>
+
+  <p class="paragraph">
+    <span class="bold">Cuarto:</span> expresamente declaro excusado el protesto del presente pagaré
+    y los requerimientos judiciales o extrajudiciales para la constitución en mora.
+  </p>
+
+  <p class="paragraph">
+    <span class="bold">Quinto:</span> en caso de que haya lugar al recaudo judicial o extrajudicial
+    de la obligación contenida en el presente título valor, estarán a mi cargo las costas judiciales
+    y/o los honorarios que se causen por tal razón.
+  </p>
+
+  <p class="paragraph">
+    En constancia de lo anterior, se suscribe este pagaré no
+    <span class="field">{{promissoryId}}</span>
+    en la ciudad de
+    <span class="field">{{companyCity}}</span>
+    a los
+    <span class="field">{{currentDay}}</span>
+    días del mes de
+    <span class="field">{{currentMonth}}</span>
+    del año
+    <span class="field">{{currentYear}}</span>.
+  </p>
+
+  <div class="signature-block">
+    <div class="signature-label">El deudor,</div>
+    <div>
+      Firma
+      <signature-field style="width: 200px; height: 80px; display: inline-block;"></signature-field>
+    </div>
+    <div class="signer-info">
+      <span class="field">{{customerName}}</span><br>
+      <span class="field">{{customerIdentificationType}}</span>
+      <span class="field">{{customerIdentification}}</span><br>
+      <span class="field">{{customerAddress}}</span>,
+      <span class="field">{{customerPhoneNumber}}</span>
+      <span class="field">{{customerEmail}}</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- DOCUMENTO 2: AUTORIZACIÓN PARA LLENAR ESPACIOS EN BLANCO      -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+
+  <div class="page-break"></div>
+
+  <div class="authorization-title">AUTORIZACIÓN PARA LLENAR ESPACIOS EN BLANCO</div>
+  <div class="authorization-subtitle">
+    DEL PAGARÉ No. <span class="field">{{promissoryId}}</span>
+  </div>
+
+  <div class="recipient-block">
+    Señores:<br>
+    <span class="field">{{customerName}}</span><br>
+    <span class="field">{{customerIdentificationType}}</span>
+    <span class="field">{{customerIdentification}}</span>
+  </div>
+
+  <p class="paragraph">
+    Yo, <span class="field">{{customerName}}</span>,
+    mayor de edad, identificado como aparece al pie de mi firma, actuando en nombre propio,
+    por medio del presente escrito manifiesto que le faculto a usted, de manera permanente e
+    irrevocable para que, en caso de incumplimiento en el pago oportuno de alguna de las
+    obligaciones que hemos adquirido, derivadas de los negocios comerciales y contractuales
+    bien sean verbales o escritos, sin previo aviso, proceda a llenar los espacios en blanco del
+    pagaré no
+    <span class="field">{{promissoryId}}</span>,
+    que he suscrito en la fecha a su favor y que se anexa, con el fin de convertir el pagaré en
+    un documento que presta mérito ejecutivo y que está sujeto a los parámetros legales del
+    artículo 622 del Código de Comercio Colombiano.
+  </p>
+
+  <p class="paragraph">
+    1. El espacio correspondiente a "la suma cierta de" se llenará por una suma igual a la que
+    resulte pendiente de pago de todas las obligaciones contraídas con el acreedor, por concepto
+    de capital, intereses, seguros, cobranza extrajudicial, según la contabilidad del acreedor a
+    la fecha en que sea llenado el pagaré.
+  </p>
+
+  <p class="paragraph">
+    2. El espacio correspondiente a la "fecha en que se debe hacer el pago" se diligenciará con
+    la fecha correspondiente al día en que sea llenado el pagaré, que se entiende es la de su
+    vencimiento.
+  </p>
+
+  <p class="paragraph">
+    En constancia de lo anterior, se firma la presente autorización para llenar espacios en blanco
+    del pagaré no
+    <span class="field">{{promissoryId}}</span>
+    en la ciudad de
+    <span class="field">{{companyCity}}</span>
+    a los
+    <span class="field">{{currentDay}}</span>
+    días del mes de
+    <span class="field">{{currentMonth}}</span>
+    del año
+    <span class="field">{{currentYear}}</span>.
+  </p>
+
+  <div class="signature-block">
+    <div class="signature-label">El deudor,</div>
+    <div>
+      Firma
+      <signature-field style="width: 200px; height: 80px; display: inline-block;"></signature-field>
+    </div>
+    <div class="signer-info">
+      <span class="field">{{customerName}}</span><br>
+      <span class="field">{{customerIdentificationType}}</span>
+      <span class="field">{{customerIdentification}}</span><br>
+      <span class="field">{{customerAddress}}</span>,
+      <span class="field">{{customerPhoneNumber}}</span>
+      <span class="field">{{customerEmail}}</span>
+    </div>
+  </div>
+</div>
