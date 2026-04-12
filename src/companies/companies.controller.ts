@@ -11,12 +11,18 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CompaniesService } from './companies.service.js';
@@ -115,6 +121,49 @@ export class CompaniesController {
     @Body() dto: UpdateCompanyDto,
   ) {
     return this.companiesService.update(id, dto);
+  }
+
+  @Patch(':id/logo')
+  @UseInterceptors(FileInterceptor('logo'))
+  @ApiOperation({ summary: 'Upload or update company logo' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        logo: {
+          type: 'string',
+          format: 'binary',
+          description: 'Image file (PNG, JPG, WEBP) max 2MB',
+        },
+      },
+      required: ['logo'],
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Logo updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file' })
+  @ApiResponse({ status: 404, description: 'Company not found' })
+  uploadLogo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Logo file is required');
+    }
+
+    const allowedMimes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Invalid file type. Allowed: PNG, JPG, WEBP',
+      );
+    }
+
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('File size must not exceed 2MB');
+    }
+
+    return this.companiesService.uploadLogo(id, file);
   }
 
   @Delete(':id')

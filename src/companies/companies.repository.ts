@@ -135,6 +135,14 @@ export class CompaniesRepository {
     });
   }
 
+  async updateLogoUrl(id: string, logoUrl: string | null) {
+    return this.prisma.company.update({
+      where: { id },
+      data: { logoUrl },
+      include: { ...this.subscriptionInclude, sector: true },
+    });
+  }
+
   async delete(id: string) {
     return this.prisma.company.delete({ where: { id } });
   }

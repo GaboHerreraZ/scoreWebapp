@@ -5,15 +5,21 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { CompaniesRepository } from './companies.repository.js';
+import { SupabaseService } from '../auth/supabase.service.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
+const LOGO_BUCKET = 'company-logos';
+
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly repository: CompaniesRepository) {}
+  constructor(
+    private readonly repository: CompaniesRepository,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   async create(dto: CreateCompanyDto, userId: string) {
     const existing = await this.repository.findByNit(dto.nit);
@@ -85,11 +91,33 @@ export class CompaniesService {
     if (!company) {
       throw new NotFoundException(`Company with id=${id} not found`);
     }
-    return company;
+
+    let logoSignedUrl: string | null = null;
+    if (company.logoUrl) {
+      logoSignedUrl = await this.supabaseService.createSignedUrl(
+        LOGO_BUCKET,
+        company.logoUrl,
+      );
+    }
+
+    return { ...company, logoSignedUrl };
   }
 
   async findByUserId(userId: string) {
-    return this.repository.findByUserId(userId);
+    const companies = await this.repository.findByUserId(userId);
+
+    return Promise.all(
+      companies.map(async (company) => {
+        let logoSignedUrl: string | null = null;
+        if (company.logoUrl) {
+          logoSignedUrl = await this.supabaseService.createSignedUrl(
+            LOGO_BUCKET,
+            company.logoUrl,
+          );
+        }
+        return { ...company, logoSignedUrl };
+      }),
+    );
   }
 
   async update(id: string, dto: UpdateCompanyDto) {
@@ -119,6 +147,32 @@ export class CompaniesService {
       accountNumber: dto.accountNumber,
       isActive: dto.isActive,
     });
+  }
+
+  async uploadLogo(id: string, file: Express.Multer.File) {
+    const company = await this.repository.findById(id);
+    if (!company) {
+      throw new NotFoundException(`Company with id=${id} not found`);
+    }
+
+    const ext = file.originalname.split('.').pop() ?? 'png';
+    const storagePath = `${id}/logo.${ext}`;
+
+    await this.supabaseService.uploadFile(
+      LOGO_BUCKET,
+      storagePath,
+      file.buffer,
+      file.mimetype,
+    );
+
+    await this.repository.updateLogoUrl(id, storagePath);
+
+    const logoSignedUrl = await this.supabaseService.createSignedUrl(
+      LOGO_BUCKET,
+      storagePath,
+    );
+
+    return { logoUrl: storagePath, logoSignedUrl };
   }
 
   async remove(id: string) {
