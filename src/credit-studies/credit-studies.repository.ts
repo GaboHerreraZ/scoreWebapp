@@ -88,6 +88,24 @@ export class CreditStudiesRepository {
           },
           orderBy: { createdAt: 'desc' },
         },
+        promissoryNotes: {
+          select: {
+            id: true,
+            amount: true,
+            amountInWords: true,
+            signingUrl: true,
+            signedDocumentUrl: true,
+            signedFileStoragePath: true,
+            sentAt: true,
+            signedAt: true,
+            declinedAt: true,
+            createdAt: true,
+            status: {
+              select: { id: true, label: true, code: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
   }
