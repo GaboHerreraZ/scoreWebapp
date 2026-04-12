@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,6 +25,7 @@ import { PromissoryNotesService } from './promissory-notes.service.js';
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import type { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
+import { DocuSealWebhookGuard } from './guards/docuseal-webhook.guard.js';
 
 // ── Spanish-message pipes reused across this controller ──
 const companyIdPipe = new ParseUUIDPipe({
@@ -97,8 +99,9 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.findById(id, companyId);
   }
 
-  // ─── DocuSeal webhook (public; authenticity verified by querying DocuSeal) ──
+  // ─── DocuSeal webhook (public; verified by X-Webhook-Secret header + DocuSeal API check) ──
   @Public()
+  @UseGuards(DocuSealWebhookGuard)
   @Post('promissory-notes/webhooks/docuseal')
   @HttpCode(HttpStatus.OK)
   @ApiExcludeEndpoint()
