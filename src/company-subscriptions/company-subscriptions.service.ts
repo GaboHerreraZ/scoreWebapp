@@ -243,9 +243,8 @@ export class CompanySubscriptionsService {
 
     // Calculate price with discount
     const basePrice = subscription.price ?? 0;
-    const finalPrice = discount > 0
-      ? Math.round(basePrice * (1 - discount / 100))
-      : basePrice;
+    const finalPrice =
+      discount > 0 ? Math.round(basePrice * (1 - discount / 100)) : basePrice;
 
     // Check if a record already exists for this company + subscription
     const existing = await this.repository.findByCompanyAndSubscription(

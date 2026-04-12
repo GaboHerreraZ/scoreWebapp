@@ -23,7 +23,12 @@ export class InvitationsRepository {
 
   async createWithUserCompany(
     invitationData: Prisma.InvitationUncheckedCreateInput,
-    userCompanyData: { userId: string; companyId: string; roleId: number; invitedBy: string },
+    userCompanyData: {
+      userId: string;
+      companyId: string;
+      roleId: number;
+      invitedBy: string;
+    },
   ) {
     return this.prisma.$transaction(async (tx) => {
       const invitation = await tx.invitation.create({
@@ -81,14 +86,22 @@ export class InvitationsRepository {
     });
   }
 
-  async findInactiveByEmailAndCompany(email: string, companyId: string, statusIds: number[]) {
+  async findInactiveByEmailAndCompany(
+    email: string,
+    companyId: string,
+    statusIds: number[],
+  ) {
     return this.prisma.invitation.findFirst({
       where: { email, companyId, statusId: { in: statusIds } },
       include: this.defaultInclude,
     });
   }
 
-  async findPendingByEmailAndCompany(email: string, companyId: string, pendingStatusId: number) {
+  async findPendingByEmailAndCompany(
+    email: string,
+    companyId: string,
+    pendingStatusId: number,
+  ) {
     return this.prisma.invitation.findFirst({
       where: { email, companyId, statusId: pendingStatusId },
     });
@@ -115,7 +128,10 @@ export class InvitationsRepository {
     });
   }
 
-  async getCompanyPendingInvitationsCount(companyId: string, pendingStatusId: number): Promise<number> {
+  async getCompanyPendingInvitationsCount(
+    companyId: string,
+    pendingStatusId: number,
+  ): Promise<number> {
     return this.prisma.invitation.count({
       where: { companyId, statusId: pendingStatusId },
     });
@@ -180,7 +196,12 @@ export class InvitationsRepository {
     return this.prisma.invitation.delete({ where: { id } });
   }
 
-  async cancelInvitation(invitationId: string, cancelledStatusId: number, email: string, companyId: string) {
+  async cancelInvitation(
+    invitationId: string,
+    cancelledStatusId: number,
+    email: string,
+    companyId: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       // Eliminar físicamente el UserCompany inactivo (si existe), ya que nunca se activó
       const profile = await tx.profile.findUnique({ where: { email } });
@@ -201,14 +222,23 @@ export class InvitationsRepository {
     });
   }
 
-  async updateUserCompanyStatus(userId: string, companyId: string, isActive: boolean) {
+  async updateUserCompanyStatus(
+    userId: string,
+    companyId: string,
+    isActive: boolean,
+  ) {
     return this.prisma.userCompany.update({
       where: { userId_companyId: { userId, companyId } },
       data: { isActive },
     });
   }
 
-  async createUserCompanyInactive(userId: string, companyId: string, roleId: number, invitedBy: string) {
+  async createUserCompanyInactive(
+    userId: string,
+    companyId: string,
+    roleId: number,
+    invitedBy: string,
+  ) {
     return this.prisma.userCompany.create({
       data: { userId, companyId, roleId, invitedBy, isActive: false },
     });
@@ -220,7 +250,9 @@ export class InvitationsRepository {
   }
 
   async parameterExists(parameterId: number): Promise<boolean> {
-    const count = await this.prisma.parameter.count({ where: { id: parameterId } });
+    const count = await this.prisma.parameter.count({
+      where: { id: parameterId },
+    });
     return count > 0;
   }
 
@@ -242,7 +274,15 @@ export class InvitationsRepository {
     acceptedStatusId: number;
     invitedBy: string;
   }) {
-    const { invitationId, userId, email, companyId, roleId, acceptedStatusId, invitedBy } = params;
+    const {
+      invitationId,
+      userId,
+      email,
+      companyId,
+      roleId,
+      acceptedStatusId,
+      invitedBy,
+    } = params;
 
     return this.prisma.$transaction(async (tx) => {
       // Crear profile con datos placeholder
@@ -290,7 +330,10 @@ export class InvitationsRepository {
     });
   }
 
-  async userAlreadyInCompany(email: string, companyId: string): Promise<boolean> {
+  async userAlreadyInCompany(
+    email: string,
+    companyId: string,
+  ): Promise<boolean> {
     const profile = await this.prisma.profile.findUnique({ where: { email } });
     if (!profile) return false;
 
@@ -300,7 +343,13 @@ export class InvitationsRepository {
     return count > 0;
   }
 
-  async acceptInvitation(invitationId: string, userId: string, companyId: string, roleId: number, acceptedStatusId: number) {
+  async acceptInvitation(
+    invitationId: string,
+    userId: string,
+    companyId: string,
+    roleId: number,
+    acceptedStatusId: number,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const invitation = await tx.invitation.update({
         where: { id: invitationId },

@@ -33,8 +33,14 @@ export class CompanySubscriptionsController {
 
   @Post()
   @ApiOperation({ summary: 'Assign a subscription plan to a company' })
-  @ApiResponse({ status: 201, description: 'Subscription assigned successfully' })
-  @ApiResponse({ status: 404, description: 'Company, subscription, or status not found' })
+  @ApiResponse({
+    status: 201,
+    description: 'Subscription assigned successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Company, subscription, or status not found',
+  })
   create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateCompanySubscriptionDto,
@@ -44,7 +50,10 @@ export class CompanySubscriptionsController {
 
   @Get()
   @ApiOperation({ summary: 'List subscription history for a company' })
-  @ApiResponse({ status: 200, description: 'Paginated list of company subscriptions' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of company subscriptions',
+  })
   findAll(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query() filters: FilterCompanySubscriptionDto,
@@ -55,8 +64,14 @@ export class CompanySubscriptionsController {
   @Post('create-transaction')
   @ApiOperation({ summary: 'Create a subscription transaction for a company' })
   @ApiResponse({ status: 201, description: 'Transaction created successfully' })
-  @ApiResponse({ status: 404, description: 'Company, subscription, or status parameter not found' })
-  @ApiResponse({ status: 409, description: 'Company already has an active subscription' })
+  @ApiResponse({
+    status: 404,
+    description: 'Company, subscription, or status parameter not found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Company already has an active subscription',
+  })
   createTransaction(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateTransactionDto,
@@ -75,7 +90,10 @@ export class CompanySubscriptionsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a specific subscription assignment by ID' })
   @ApiResponse({ status: 200, description: 'Subscription assignment found' })
-  @ApiResponse({ status: 404, description: 'Subscription assignment not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Subscription assignment not found',
+  })
   findById(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -86,7 +104,10 @@ export class CompanySubscriptionsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update a subscription assignment' })
   @ApiResponse({ status: 200, description: 'Subscription assignment updated' })
-  @ApiResponse({ status: 404, description: 'Subscription assignment not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Subscription assignment not found',
+  })
   update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -99,7 +120,10 @@ export class CompanySubscriptionsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a subscription assignment' })
   @ApiResponse({ status: 204, description: 'Subscription assignment removed' })
-  @ApiResponse({ status: 404, description: 'Subscription assignment not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Subscription assignment not found',
+  })
   remove(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,

@@ -70,10 +70,8 @@ export class DashboardService {
         activeUsers,
       },
       creditSummary: {
-        totalRequestedThisMonth:
-          creditAgg._sum.requestedMonthlyCreditLine ?? 0,
-        avgRequestedThisMonth:
-          creditAgg._avg.requestedMonthlyCreditLine ?? 0,
+        totalRequestedThisMonth: creditAgg._sum.requestedMonthlyCreditLine ?? 0,
+        avgRequestedThisMonth: creditAgg._avg.requestedMonthlyCreditLine ?? 0,
         avgRequestedTerm: creditAgg._avg.requestedTerm ?? 0,
       },
       studiesByStatus,
@@ -128,10 +126,8 @@ export class DashboardService {
       avgEbitda: financialIndicatorsRaw._avg.ebitda ?? 0,
       avgMonthlyPaymentCapacity:
         financialIndicatorsRaw._avg.monthlyPaymentCapacity ?? 0,
-      avgStabilityFactor:
-        financialIndicatorsRaw._avg.stabilityFactor ?? 0,
-      avgMaxPaymentTime:
-        financialIndicatorsRaw._avg.maximumPaymentTime ?? 0,
+      avgStabilityFactor: financialIndicatorsRaw._avg.stabilityFactor ?? 0,
+      avgMaxPaymentTime: financialIndicatorsRaw._avg.maximumPaymentTime ?? 0,
     };
 
     const paymentCapacityTrend = this.fillMonthsWithValue(
@@ -175,8 +171,7 @@ export class DashboardService {
     const customersByEconomicActivity = customersByEconomicActivityRaw.map(
       (c) => ({
         economicActivityId: c.economicActivityId,
-        label:
-          paramLabels.get(c.economicActivityId!) ?? 'Desconocido',
+        label: paramLabels.get(c.economicActivityId!) ?? 'Desconocido',
         count: c._count.id,
       }),
     );
@@ -201,14 +196,16 @@ export class DashboardService {
     const company = await this.repository.getCompanySubscription(companyId);
 
     if (!company) {
-      throw new NotFoundException(
-        `Company with id=${companyId} not found`,
-      );
+      throw new NotFoundException(`Company with id=${companyId} not found`);
     }
 
-    const dashboardLevel = company.companySubscriptions[0]?.subscription?.dashboardLevel;
+    const dashboardLevel =
+      company.companySubscriptions[0]?.subscription?.dashboardLevel;
 
-    if (dashboardLevel?.code !== 'advanced' && dashboardLevel?.code !== 'premium') {
+    if (
+      dashboardLevel?.code !== 'advanced' &&
+      dashboardLevel?.code !== 'premium'
+    ) {
       throw new ForbiddenException(
         'Your subscription does not include access to the advanced dashboard. Please upgrade to an advanced or premium plan.',
       );

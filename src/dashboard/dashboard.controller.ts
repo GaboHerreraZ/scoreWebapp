@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  ParseUUIDPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -24,9 +18,7 @@ export class DashboardController {
   @ApiOperation({ summary: 'Get basic dashboard KPIs and charts' })
   @ApiResponse({ status: 200, description: 'Basic dashboard data' })
   @ApiResponse({ status: 404, description: 'Company not found' })
-  getBasic(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-  ) {
+  getBasic(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.dashboardService.getBasicDashboard(companyId);
   }
 

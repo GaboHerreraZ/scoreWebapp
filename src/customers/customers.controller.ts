@@ -34,7 +34,11 @@ export class CustomersController {
   @Post()
   @ApiOperation({ summary: 'Create a customer in a company' })
   @ApiResponse({ status: 201, description: 'Customer created successfully' })
-  @ApiResponse({ status: 409, description: 'Customer with that identification already exists in this company' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Customer with that identification already exists in this company',
+  })
   create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateCustomerDto,
@@ -46,7 +50,10 @@ export class CustomersController {
 
   @Get('autocomplete')
   @ApiOperation({ summary: 'Autocomplete customers by business name' })
-  @ApiResponse({ status: 200, description: 'List of customers with id and businessName only' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of customers with id and businessName only',
+  })
   autocomplete(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query() filters: AutocompleteCustomerDto,
@@ -55,7 +62,9 @@ export class CustomersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List customers of a company with pagination and filters' })
+  @ApiOperation({
+    summary: 'List customers of a company with pagination and filters',
+  })
   @ApiResponse({ status: 200, description: 'Paginated list of customers' })
   findAll(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -67,7 +76,10 @@ export class CustomersController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a customer by ID within a company' })
   @ApiResponse({ status: 200, description: 'Customer found' })
-  @ApiResponse({ status: 404, description: 'Customer not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
   findById(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -78,7 +90,10 @@ export class CustomersController {
   @Get(':id/credit-studies')
   @ApiOperation({ summary: 'List credit studies of a customer' })
   @ApiResponse({ status: 200, description: 'Paginated list of credit studies' })
-  @ApiResponse({ status: 404, description: 'Customer not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
   findCreditStudies(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -89,8 +104,14 @@ export class CustomersController {
   @Patch(':id')
   @ApiOperation({ summary: 'Partially update a customer' })
   @ApiResponse({ status: 200, description: 'Customer updated successfully' })
-  @ApiResponse({ status: 404, description: 'Customer not found in this company' })
-  @ApiResponse({ status: 409, description: 'Identification uniqueness conflict' })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Identification uniqueness conflict',
+  })
   update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -105,8 +126,14 @@ export class CustomersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a customer' })
   @ApiResponse({ status: 204, description: 'Customer deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Customer not found in this company' })
-  @ApiResponse({ status: 409, description: 'Cannot delete: has credit studies' })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Cannot delete: has credit studies',
+  })
   remove(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,

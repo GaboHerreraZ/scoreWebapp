@@ -302,11 +302,7 @@ export class DashboardRepository {
     }));
   }
 
-  async avgDebtStructure(
-    companyId: string,
-    dateFrom?: Date,
-    dateTo?: Date,
-  ) {
+  async avgDebtStructure(companyId: string, dateFrom?: Date, dateTo?: Date) {
     const where: Prisma.CreditStudyWhereInput = { companyId };
     if (dateFrom || dateTo) {
       where.studyDate = {};
@@ -325,11 +321,7 @@ export class DashboardRepository {
     });
   }
 
-  async studiesByAnalyst(
-    companyId: string,
-    dateFrom?: Date,
-    dateTo?: Date,
-  ) {
+  async studiesByAnalyst(companyId: string, dateFrom?: Date, dateTo?: Date) {
     const where: Prisma.CreditStudyWhereInput = { companyId };
     if (dateFrom || dateTo) {
       where.studyDate = {};

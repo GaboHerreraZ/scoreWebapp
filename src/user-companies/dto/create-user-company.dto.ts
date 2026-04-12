@@ -6,7 +6,10 @@ export class CreateUserCompanyDto {
   @IsUUID()
   userId: string;
 
-  @ApiProperty({ example: 1, description: 'ID del parámetro de rol (type=user_company_role)' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID del parámetro de rol (type=user_company_role)',
+  })
   @IsInt()
   roleId: number;
 }

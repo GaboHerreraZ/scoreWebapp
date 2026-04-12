@@ -59,10 +59,9 @@ export class AiService {
       content: textContent?.text ?? null,
       promptTokens: response.usage?.input_tokens ?? null,
       completionTokens: response.usage?.output_tokens ?? null,
-      totalTokens:
-        response.usage
-          ? response.usage.input_tokens + response.usage.output_tokens
-          : null,
+      totalTokens: response.usage
+        ? response.usage.input_tokens + response.usage.output_tokens
+        : null,
       model: response.model,
       durationMs,
     };
@@ -106,10 +105,9 @@ export class AiService {
       content: textContent?.text ?? null,
       promptTokens: response.usage?.input_tokens ?? null,
       completionTokens: response.usage?.output_tokens ?? null,
-      totalTokens:
-        response.usage
-          ? response.usage.input_tokens + response.usage.output_tokens
-          : null,
+      totalTokens: response.usage
+        ? response.usage.input_tokens + response.usage.output_tokens
+        : null,
       model: response.model,
       durationMs,
     };

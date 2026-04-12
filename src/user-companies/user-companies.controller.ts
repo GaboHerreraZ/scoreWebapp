@@ -34,7 +34,10 @@ export class UserCompaniesController {
   @ApiOperation({ summary: 'Invite a user to a company' })
   @ApiResponse({ status: 201, description: 'User invited successfully' })
   @ApiResponse({ status: 404, description: 'Profile or company not found' })
-  @ApiResponse({ status: 409, description: 'User is already associated with this company' })
+  @ApiResponse({
+    status: 409,
+    description: 'User is already associated with this company',
+  })
   create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateUserCompanyDto,
@@ -57,7 +60,10 @@ export class UserCompaniesController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a user-company relation by ID' })
   @ApiResponse({ status: 200, description: 'Relation found' })
-  @ApiResponse({ status: 404, description: 'Relation not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Relation not found in this company',
+  })
   findById(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -68,7 +74,10 @@ export class UserCompaniesController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update role or status of a user in a company' })
   @ApiResponse({ status: 200, description: 'Relation updated successfully' })
-  @ApiResponse({ status: 404, description: 'Relation not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Relation not found in this company',
+  })
   @ApiResponse({ status: 400, description: 'Invalid role' })
   update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -82,7 +91,10 @@ export class UserCompaniesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a user from a company' })
   @ApiResponse({ status: 204, description: 'Relation deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Relation not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Relation not found in this company',
+  })
   remove(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,

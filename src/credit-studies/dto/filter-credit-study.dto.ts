@@ -15,7 +15,10 @@ export class FilterCreditStudyDto extends PaginationDto {
   @IsInt()
   statusId?: number;
 
-  @ApiPropertyOptional({ example: '2026-01-01', description: 'Study date from' })
+  @ApiPropertyOptional({
+    example: '2026-01-01',
+    description: 'Study date from',
+  })
   @IsOptional()
   @IsDateString()
   studyDateFrom?: string;

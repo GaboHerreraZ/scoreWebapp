@@ -20,16 +20,12 @@ export class UserCompaniesService {
   ) {
     const profileExists = await this.repository.profileExists(dto.userId);
     if (!profileExists) {
-      throw new NotFoundException(
-        `Profile with id=${dto.userId} not found`,
-      );
+      throw new NotFoundException(`Profile with id=${dto.userId} not found`);
     }
 
     const companyExists = await this.repository.companyExists(companyId);
     if (!companyExists) {
-      throw new NotFoundException(
-        `Company with id=${companyId} not found`,
-      );
+      throw new NotFoundException(`Company with id=${companyId} not found`);
     }
 
     const roleExists = await this.repository.parameterExists(dto.roleId);

@@ -25,7 +25,10 @@ export class CreateParameterDto {
   @MaxLength(150)
   label: string;
 
-  @ApiPropertyOptional({ example: 'Plan básico con funciones limitadas', maxLength: 255 })
+  @ApiPropertyOptional({
+    example: 'Plan básico con funciones limitadas',
+    maxLength: 255,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)

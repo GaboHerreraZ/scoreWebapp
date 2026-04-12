@@ -46,5 +46,4 @@ export class CreateProfileDto {
   @IsString()
   @MaxLength(150)
   position?: string;
-
 }

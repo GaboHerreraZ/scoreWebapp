@@ -34,7 +34,10 @@ export class CompaniesController {
   @Post()
   @ApiOperation({ summary: 'Create a company' })
   @ApiResponse({ status: 201, description: 'Company created successfully' })
-  @ApiResponse({ status: 409, description: 'Company with that NIT already exists' })
+  @ApiResponse({
+    status: 409,
+    description: 'Company with that NIT already exists',
+  })
   create(@Body() dto: CreateCompanyDto, @Req() req: Request) {
     const userId = (req as any).user.id as string;
     return this.companiesService.create(dto, userId);
@@ -63,16 +66,26 @@ export class CompaniesController {
   }
 
   @Get(':id/available-plans')
-  @ApiOperation({ summary: 'Get all available subscription plans with current plan indicated' })
-  @ApiResponse({ status: 200, description: 'List of active plans with current plan marked' })
+  @ApiOperation({
+    summary: 'Get all available subscription plans with current plan indicated',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of active plans with current plan marked',
+  })
   @ApiResponse({ status: 404, description: 'Company not found' })
   getAvailablePlans(@Param('id', ParseUUIDPipe) id: string) {
     return this.companiesService.getAvailablePlans(id);
   }
 
   @Get(':id/subscription-usage')
-  @ApiOperation({ summary: 'Get subscription details and remaining usage for a company' })
-  @ApiResponse({ status: 200, description: 'Subscription data with usage and remaining limits' })
+  @ApiOperation({
+    summary: 'Get subscription details and remaining usage for a company',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Subscription data with usage and remaining limits',
+  })
   @ApiResponse({ status: 404, description: 'Company not found' })
   getSubscriptionUsage(@Param('id', ParseUUIDPipe) id: string) {
     return this.companiesService.getSubscriptionUsage(id);
@@ -80,7 +93,10 @@ export class CompaniesController {
 
   @Get(':id/customers')
   @ApiOperation({ summary: 'List customers of a company' })
-  @ApiResponse({ status: 200, description: 'Paginated list of company customers' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of company customers',
+  })
   @ApiResponse({ status: 404, description: 'Company not found' })
   findCustomers(
     @Param('id', ParseUUIDPipe) id: string,

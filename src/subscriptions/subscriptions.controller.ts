@@ -33,7 +33,10 @@ export class SubscriptionsController {
   @ApiBearerAuth()
   @Post()
   @ApiOperation({ summary: 'Create a subscription' })
-  @ApiResponse({ status: 201, description: 'Subscription created successfully' })
+  @ApiResponse({
+    status: 201,
+    description: 'Subscription created successfully',
+  })
   create(@Body() dto: CreateSubscriptionDto) {
     return this.subscriptionsService.create(dto);
   }
@@ -50,7 +53,10 @@ export class SubscriptionsController {
   @Get('check-transaction/:paymentId')
   @ApiOperation({ summary: 'Check transaction status by paymentId' })
   @ApiResponse({ status: 200, description: 'Company subscription found' })
-  @ApiResponse({ status: 404, description: 'Company subscription not found for the given paymentId' })
+  @ApiResponse({
+    status: 404,
+    description: 'Company subscription not found for the given paymentId',
+  })
   checkTransaction(@Param('paymentId') paymentId: string) {
     return this.companySubscriptionsService.checkTransaction(paymentId);
   }
@@ -67,7 +73,10 @@ export class SubscriptionsController {
   @ApiBearerAuth()
   @Patch(':id')
   @ApiOperation({ summary: 'Partially update a subscription' })
-  @ApiResponse({ status: 200, description: 'Subscription updated successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Subscription updated successfully',
+  })
   @ApiResponse({ status: 404, description: 'Subscription not found' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -80,9 +89,15 @@ export class SubscriptionsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a subscription' })
-  @ApiResponse({ status: 204, description: 'Subscription deleted successfully' })
+  @ApiResponse({
+    status: 204,
+    description: 'Subscription deleted successfully',
+  })
   @ApiResponse({ status: 404, description: 'Subscription not found' })
-  @ApiResponse({ status: 409, description: 'Cannot delete: has associated companies' })
+  @ApiResponse({
+    status: 409,
+    description: 'Cannot delete: has associated companies',
+  })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.subscriptionsService.remove(id);
   }

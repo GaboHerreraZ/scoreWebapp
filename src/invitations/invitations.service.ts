@@ -23,42 +23,63 @@ export class InvitationsService {
   async create(companyId: string, invitedBy: string, dto: CreateInvitationDto) {
     const companyExists = await this.repository.companyExists(companyId);
     if (!companyExists) {
-      throw new NotFoundException(`La empresa con id=${companyId} no fue encontrada`);
+      throw new NotFoundException(
+        `La empresa con id=${companyId} no fue encontrada`,
+      );
     }
 
     // Obtener el parámetro de rol "invited"
     const invitedRoleId = await this.repository.getRoleId('invitado');
     if (!invitedRoleId) {
-      throw new BadRequestException('No se encontró el parámetro de rol "invited". Cree un parámetro con type=user_company_role, code=invitado');
+      throw new BadRequestException(
+        'No se encontró el parámetro de rol "invited". Cree un parámetro con type=user_company_role, code=invitado',
+      );
     }
 
     // Verificar si el usuario ya pertenece a la empresa
-    const alreadyInCompany = await this.repository.userAlreadyInCompany(dto.email, companyId);
+    const alreadyInCompany = await this.repository.userAlreadyInCompany(
+      dto.email,
+      companyId,
+    );
     if (alreadyInCompany) {
       throw new ConflictException('Este usuario ya es miembro de esta empresa');
     }
 
     // Obtener el ID del estado "pending"
-    const pendingStatusId = await this.repository.getInvitationStatusId('pendiente');
+    const pendingStatusId =
+      await this.repository.getInvitationStatusId('pendiente');
     if (!pendingStatusId) {
-      throw new BadRequestException('No se encontró el parámetro de estado "pendiente". Cree parámetros con type=invitation_status');
+      throw new BadRequestException(
+        'No se encontró el parámetro de estado "pendiente". Cree parámetros con type=invitation_status',
+      );
     }
 
     // Verificar si ya existe una invitación pendiente para este correo en esta empresa
-    const existingPending = await this.repository.findPendingByEmailAndCompany(dto.email, companyId, pendingStatusId);
+    const existingPending = await this.repository.findPendingByEmailAndCompany(
+      dto.email,
+      companyId,
+      pendingStatusId,
+    );
     if (existingPending) {
-      throw new ConflictException('Ya existe una invitación pendiente para este correo en esta empresa');
+      throw new ConflictException(
+        'Ya existe una invitación pendiente para este correo en esta empresa',
+      );
     }
 
     // Validar límite de suscripción (usuarios activos + invitaciones pendientes)
     const maxUsers = await this.repository.getCompanyMaxUsers(companyId);
     if (maxUsers === null) {
-      throw new BadRequestException('Esta empresa no tiene una suscripción activa');
+      throw new BadRequestException(
+        'Esta empresa no tiene una suscripción activa',
+      );
     }
 
     const [activeUsersCount, pendingInvitationsCount] = await Promise.all([
       this.repository.getCompanyActiveUsersCount(companyId),
-      this.repository.getCompanyPendingInvitationsCount(companyId, pendingStatusId),
+      this.repository.getCompanyPendingInvitationsCount(
+        companyId,
+        pendingStatusId,
+      ),
     ]);
 
     if (activeUsersCount + pendingInvitationsCount >= maxUsers) {
@@ -72,12 +93,18 @@ export class InvitationsService {
     expiresAt.setDate(expiresAt.getDate() + 7); // Expira en 7 días
 
     // Verificar si existe una invitación rechazada para reactivarla
-    const rejectedStatusId = await this.repository.getInvitationStatusId('rejected');
+    const rejectedStatusId =
+      await this.repository.getInvitationStatusId('rejected');
 
     let invitation;
 
     if (rejectedStatusId) {
-      const existingRejected = await this.repository.findInactiveByEmailAndCompany(dto.email, companyId, [rejectedStatusId]);
+      const existingRejected =
+        await this.repository.findInactiveByEmailAndCompany(
+          dto.email,
+          companyId,
+          [rejectedStatusId],
+        );
 
       if (existingRejected) {
         // Reactivar la invitación existente
@@ -93,15 +120,29 @@ export class InvitationsService {
         // Si el profile existe y no tiene UserCompany, crearlo inactivo
         const profile = await this.repository.profileExistsByEmail(dto.email);
         if (profile) {
-          const alreadyHasUC = await this.repository.userAlreadyInCompany(dto.email, companyId);
+          const alreadyHasUC = await this.repository.userAlreadyInCompany(
+            dto.email,
+            companyId,
+          );
           if (!alreadyHasUC) {
-            await this.repository.createUserCompanyInactive(profile.id, companyId, invitedRoleId, invitedBy);
+            await this.repository.createUserCompanyInactive(
+              profile.id,
+              companyId,
+              invitedRoleId,
+              invitedBy,
+            );
           }
         }
 
         // Enviar correo
-        const invitedByUser = invitation.invitedByUser as { name?: string | null; lastName?: string | null };
-        const invitedByName = [invitedByUser.name, invitedByUser.lastName].filter(Boolean).join(' ') || 'Un usuario';
+        const invitedByUser = invitation.invitedByUser as {
+          name?: string | null;
+          lastName?: string | null;
+        };
+        const invitedByName =
+          [invitedByUser.name, invitedByUser.lastName]
+            .filter(Boolean)
+            .join(' ') || 'Un usuario';
 
         await this.mailService.sendInvitationEmail({
           to: dto.email,
@@ -139,8 +180,13 @@ export class InvitationsService {
     }
 
     // Enviar correo de invitación
-    const invitedByUser = invitation.invitedByUser as { name?: string | null; lastName?: string | null };
-    const invitedByName = [invitedByUser.name, invitedByUser.lastName].filter(Boolean).join(' ') || 'Un usuario';
+    const invitedByUser = invitation.invitedByUser as {
+      name?: string | null;
+      lastName?: string | null;
+    };
+    const invitedByName =
+      [invitedByUser.name, invitedByUser.lastName].filter(Boolean).join(' ') ||
+      'Un usuario';
 
     await this.mailService.sendInvitationEmail({
       to: dto.email,
@@ -187,12 +233,18 @@ export class InvitationsService {
   }
 
   async findPendingByEmail(email: string) {
-    const pendingStatusId = await this.repository.getInvitationStatusId('pendiente');
+    const pendingStatusId =
+      await this.repository.getInvitationStatusId('pendiente');
     if (!pendingStatusId) {
-      throw new BadRequestException('No se encontró el parámetro de estado "pending"');
+      throw new BadRequestException(
+        'No se encontró el parámetro de estado "pending"',
+      );
     }
 
-    const invitation = await this.repository.findPendingByEmail(email, pendingStatusId);
+    const invitation = await this.repository.findPendingByEmail(
+      email,
+      pendingStatusId,
+    );
 
     return {
       hasPendingInvitation: !!invitation,
@@ -203,7 +255,9 @@ export class InvitationsService {
   async findById(id: string) {
     const invitation = await this.repository.findById(id);
     if (!invitation) {
-      throw new NotFoundException(`La invitación con id=${id} no fue encontrada`);
+      throw new NotFoundException(
+        `La invitación con id=${id} no fue encontrada`,
+      );
     }
     return invitation;
   }
@@ -255,7 +309,10 @@ export class InvitationsService {
   }
 
   async acceptAndRegister(invitationId: string, userId: string, token: string) {
-    const invitation = await this.repository.findByIdAndToken(invitationId, token);
+    const invitation = await this.repository.findByIdAndToken(
+      invitationId,
+      token,
+    );
     if (!invitation) {
       throw new NotFoundException('Invitación no encontrada o token inválido');
     }
@@ -265,7 +322,8 @@ export class InvitationsService {
     }
 
     // Verificar que la invitación esté pendiente
-    const pendingStatusId = await this.repository.getInvitationStatusId('pendiente');
+    const pendingStatusId =
+      await this.repository.getInvitationStatusId('pendiente');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
@@ -277,26 +335,39 @@ export class InvitationsService {
     }
 
     // Verificar que no exista un profile con este email
-    const emailExists = await this.repository.profileExistsByEmail(invitation.email);
+    const emailExists = await this.repository.profileExistsByEmail(
+      invitation.email,
+    );
     if (emailExists) {
-      throw new ConflictException('Ya existe un perfil con este correo electrónico');
+      throw new ConflictException(
+        'Ya existe un perfil con este correo electrónico',
+      );
     }
 
-    const acceptedStatusId = await this.repository.getInvitationStatusId('aceptada');
+    const acceptedStatusId =
+      await this.repository.getInvitationStatusId('aceptada');
     if (!acceptedStatusId) {
-      throw new BadRequestException('No se encontró el parámetro de estado "aceptada"');
+      throw new BadRequestException(
+        'No se encontró el parámetro de estado "aceptada"',
+      );
     }
 
     // Obtener el rol "auxiliar" para asignar al usuario aceptado
     const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
     if (!auxiliarRoleId) {
-      throw new BadRequestException('No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar');
+      throw new BadRequestException(
+        'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
+      );
     }
 
     // Re-validar límite de suscripción
-    const maxUsers = await this.repository.getCompanyMaxUsers(invitation.companyId);
+    const maxUsers = await this.repository.getCompanyMaxUsers(
+      invitation.companyId,
+    );
     if (maxUsers !== null) {
-      const activeUsersCount = await this.repository.getCompanyActiveUsersCount(invitation.companyId);
+      const activeUsersCount = await this.repository.getCompanyActiveUsersCount(
+        invitation.companyId,
+      );
       if (activeUsersCount >= maxUsers) {
         throw new ForbiddenException(
           'La empresa ha alcanzado el número máximo de usuarios permitidos por su suscripción. No se puede aceptar la invitación en este momento.',
@@ -325,46 +396,72 @@ export class InvitationsService {
       throw new BadRequestException('Esta invitación ha expirado');
     }
 
-    const pendingStatusId = await this.repository.getInvitationStatusId('pendiente');
+    const pendingStatusId =
+      await this.repository.getInvitationStatusId('pendiente');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
 
-    const rejectedStatusId = await this.repository.getInvitationStatusId('rejected');
+    const rejectedStatusId =
+      await this.repository.getInvitationStatusId('rejected');
     if (!rejectedStatusId) {
-      throw new BadRequestException('No se encontró el parámetro de estado "rejected"');
+      throw new BadRequestException(
+        'No se encontró el parámetro de estado "rejected"',
+      );
     }
 
     // Eliminar UserCompany inactivo si existe
-    await this.repository.cancelInvitation(id, rejectedStatusId, invitation.email, invitation.companyId);
+    await this.repository.cancelInvitation(
+      id,
+      rejectedStatusId,
+      invitation.email,
+      invitation.companyId,
+    );
   }
 
   async toggleUserStatus(id: string, isActive: boolean) {
     const invitation = await this.repository.findById(id);
     if (!invitation) {
-      throw new NotFoundException(`La invitación con id=${id} no fue encontrada`);
+      throw new NotFoundException(
+        `La invitación con id=${id} no fue encontrada`,
+      );
     }
 
     // Solo se puede activar/desactivar invitaciones aceptadas o canceladas
-    const acceptedStatusId = await this.repository.getInvitationStatusId('aceptada');
-    const cancelledStatusId = await this.repository.getInvitationStatusId('cancelado');
-    const allowedStatuses = [acceptedStatusId, cancelledStatusId].filter((id): id is number => id !== null);
+    const acceptedStatusId =
+      await this.repository.getInvitationStatusId('aceptada');
+    const cancelledStatusId =
+      await this.repository.getInvitationStatusId('cancelado');
+    const allowedStatuses = [acceptedStatusId, cancelledStatusId].filter(
+      (id): id is number => id !== null,
+    );
 
     if (!allowedStatuses.includes(invitation.statusId)) {
-      throw new BadRequestException('Solo se puede activar o desactivar usuarios con invitaciones aceptadas o canceladas');
+      throw new BadRequestException(
+        'Solo se puede activar o desactivar usuarios con invitaciones aceptadas o canceladas',
+      );
     }
 
     // Actualizar isActive del UserCompany asociado
-    const profile = await this.repository.profileExistsByEmail(invitation.email);
+    const profile = await this.repository.profileExistsByEmail(
+      invitation.email,
+    );
     if (!profile) {
-      throw new NotFoundException('No se encontró el perfil del usuario invitado');
+      throw new NotFoundException(
+        'No se encontró el perfil del usuario invitado',
+      );
     }
 
-    await this.repository.updateUserCompanyStatus(profile.id, invitation.companyId, isActive);
+    await this.repository.updateUserCompanyStatus(
+      profile.id,
+      invitation.companyId,
+      isActive,
+    );
 
     // Si se desactiva, cambiar invitación a cancelled y enviar correo
     if (!isActive) {
-      const cancelledStatusId = await this.repository.getInvitationStatusId('cancelado');
+      const cancelledStatusId =
+        await this.repository.getInvitationStatusId('cancelado');
       if (cancelledStatusId) {
         await this.repository.update(id, { statusId: cancelledStatusId });
       }
@@ -381,10 +478,17 @@ export class InvitationsService {
     return this.repository.findById(id);
   }
 
-  async respond(id: string, userId: string, userEmail: string, dto: RespondInvitationDto) {
+  async respond(
+    id: string,
+    userId: string,
+    userEmail: string,
+    dto: RespondInvitationDto,
+  ) {
     const invitation = await this.repository.findById(id);
     if (!invitation) {
-      throw new NotFoundException(`La invitación con id=${id} no fue encontrada`);
+      throw new NotFoundException(
+        `La invitación con id=${id} no fue encontrada`,
+      );
     }
 
     // Verificar que la invitación pertenece al email del usuario autenticado
@@ -393,27 +497,38 @@ export class InvitationsService {
     }
 
     // Verificar que aún esté pendiente
-    const pendingStatusId = await this.repository.getInvitationStatusId('pendiente');
+    const pendingStatusId =
+      await this.repository.getInvitationStatusId('pendiente');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
 
     if (dto.accept) {
-      const acceptedStatusId = await this.repository.getInvitationStatusId('accepted');
+      const acceptedStatusId =
+        await this.repository.getInvitationStatusId('accepted');
       if (!acceptedStatusId) {
-        throw new BadRequestException('No se encontró el parámetro de estado "accepted"');
+        throw new BadRequestException(
+          'No se encontró el parámetro de estado "accepted"',
+        );
       }
 
       // Obtener el rol "auxiliar" para asignar al usuario aceptado
       const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
       if (!auxiliarRoleId) {
-        throw new BadRequestException('No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar');
+        throw new BadRequestException(
+          'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
+        );
       }
 
       // Re-validar límite de suscripción al momento de aceptar
-      const maxUsers = await this.repository.getCompanyMaxUsers(invitation.companyId);
+      const maxUsers = await this.repository.getCompanyMaxUsers(
+        invitation.companyId,
+      );
       if (maxUsers !== null) {
-        const activeUsersCount = await this.repository.getCompanyActiveUsersCount(invitation.companyId);
+        const activeUsersCount =
+          await this.repository.getCompanyActiveUsersCount(
+            invitation.companyId,
+          );
         if (activeUsersCount >= maxUsers) {
           throw new ForbiddenException(
             'La empresa ha alcanzado el número máximo de usuarios permitidos por su suscripción. No se puede aceptar la invitación en este momento.',
@@ -429,9 +544,12 @@ export class InvitationsService {
         acceptedStatusId,
       );
     } else {
-      const rejectedStatusId = await this.repository.getInvitationStatusId('rechazada');
+      const rejectedStatusId =
+        await this.repository.getInvitationStatusId('rechazada');
       if (!rejectedStatusId) {
-        throw new BadRequestException('No se encontró el parámetro de estado "rejected"');
+        throw new BadRequestException(
+          'No se encontró el parámetro de estado "rejected"',
+        );
       }
 
       return this.repository.update(id, {

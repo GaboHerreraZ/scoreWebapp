@@ -20,8 +20,12 @@ export class AiAnalysesRepository {
     errorMessage: true,
     type: { select: { id: true, code: true, label: true } },
     customer: { select: { id: true, businessName: true } },
-    creditStudy: { select: { id: true, viabilityScore: true, viabilityStatus: true } },
-    performedByUser: { select: { id: true, name: true, lastName: true, email: true } },
+    creditStudy: {
+      select: { id: true, viabilityScore: true, viabilityStatus: true },
+    },
+    performedByUser: {
+      select: { id: true, name: true, lastName: true, email: true },
+    },
   } as const;
 
   async create(data: Prisma.AiAnalysisUncheckedCreateInput) {
@@ -96,7 +100,10 @@ export class AiAnalysesRepository {
     });
   }
 
-  async countThisMonthByType(companyId: string, typeId: number): Promise<number> {
+  async countThisMonthByType(
+    companyId: string,
+    typeId: number,
+  ): Promise<number> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 

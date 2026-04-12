@@ -71,7 +71,9 @@ export class UserCompaniesRepository {
   }
 
   async parameterExists(parameterId: number): Promise<boolean> {
-    const count = await this.prisma.parameter.count({ where: { id: parameterId } });
+    const count = await this.prisma.parameter.count({
+      where: { id: parameterId },
+    });
     return count > 0;
   }
 }

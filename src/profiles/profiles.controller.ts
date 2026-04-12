@@ -33,7 +33,10 @@ export class ProfilesController {
   @Post()
   @ApiOperation({ summary: 'Create a profile' })
   @ApiResponse({ status: 201, description: 'Profile created successfully' })
-  @ApiResponse({ status: 409, description: 'Profile with that email already exists' })
+  @ApiResponse({
+    status: 409,
+    description: 'Profile with that email already exists',
+  })
   create(@Body() dto: CreateProfileDto) {
     return this.profilesService.create(dto);
   }
@@ -47,7 +50,11 @@ export class ProfilesController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a profile by ID' })
-  @ApiResponse({ status: 200, description: 'Profile found', type: ProfileResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile found',
+    type: ProfileResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Profile not found' })
   findById(@Param('id', ParseUUIDPipe) id: string) {
     return this.profilesService.findById(id);
@@ -55,7 +62,10 @@ export class ProfilesController {
 
   @Get(':id/companies')
   @ApiOperation({ summary: 'List companies associated with a profile' })
-  @ApiResponse({ status: 200, description: 'Paginated list of profile companies (with role and sector)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of profile companies (with role and sector)',
+  })
   @ApiResponse({ status: 404, description: 'Profile not found' })
   findCompanies(
     @Param('id', ParseUUIDPipe) id: string,
@@ -66,7 +76,10 @@ export class ProfilesController {
 
   @Get(':id/invited-users')
   @ApiOperation({ summary: 'List users invited by this profile' })
-  @ApiResponse({ status: 200, description: 'Paginated list of invited users (with company and user data)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of invited users (with company and user data)',
+  })
   @ApiResponse({ status: 404, description: 'Profile not found' })
   findInvitedUsers(
     @Param('id', ParseUUIDPipe) id: string,

@@ -56,7 +56,10 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async update(id: string, data: Prisma.CompanySubscriptionUncheckedUpdateInput) {
+  async update(
+    id: string,
+    data: Prisma.CompanySubscriptionUncheckedUpdateInput,
+  ) {
     return this.prisma.companySubscription.update({
       where: { id },
       data,
@@ -68,7 +71,10 @@ export class CompanySubscriptionsRepository {
     return this.prisma.companySubscription.delete({ where: { id } });
   }
 
-  async deactivateCurrentSubscription(companyId: string, upgradedStatusId: number) {
+  async deactivateCurrentSubscription(
+    companyId: string,
+    upgradedStatusId: number,
+  ) {
     return this.prisma.companySubscription.updateMany({
       where: { companyId, isCurrent: true },
       data: { isCurrent: false, statusId: upgradedStatusId },
@@ -106,14 +112,20 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async findActiveSubscriptionByCompanyId(companyId: string, activeStatusId: number) {
+  async findActiveSubscriptionByCompanyId(
+    companyId: string,
+    activeStatusId: number,
+  ) {
     return this.prisma.companySubscription.findFirst({
       where: { companyId, statusId: activeStatusId },
       include: this.defaultInclude,
     });
   }
 
-  async findByCompanyAndSubscription(companyId: string, subscriptionId: string) {
+  async findByCompanyAndSubscription(
+    companyId: string,
+    subscriptionId: string,
+  ) {
     return this.prisma.companySubscription.findFirst({
       where: { companyId, subscriptionId },
       include: this.defaultInclude,

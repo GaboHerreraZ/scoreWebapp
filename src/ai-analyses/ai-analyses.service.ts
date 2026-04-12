@@ -51,7 +51,11 @@ export class AiAnalysesService {
     }
 
     // 3. Validate study has been performed (has viability data)
-    if (!study.viabilityScore || !study.viabilityStatus || !study.viabilityConditions) {
+    if (
+      !study.viabilityScore ||
+      !study.viabilityStatus ||
+      !study.viabilityConditions
+    ) {
       throw new BadRequestException(
         'El estudio de credito debe ser realizado antes de ejecutar el analisis con IA. Ejecute primero el endpoint de realizar estudio.',
       );
@@ -67,7 +71,10 @@ export class AiAnalysesService {
 
     const maxAnalyses = companySub.subscription.maxAiAnalysisPerMonth;
     if (maxAnalyses != null && maxAnalyses > 0) {
-      const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
+      const usageThisMonth = await this.repository.countThisMonthByType(
+        companyId,
+        typeId,
+      );
       if (usageThisMonth >= maxAnalyses) {
         throw new BadRequestException(
           `Limite de analisis IA alcanzado para este mes (${maxAnalyses}). Actualice su suscripcion para obtener mas analisis.`,
@@ -78,7 +85,10 @@ export class AiAnalysesService {
     // 5. Build the prompt
     const customer = study.customer;
     const viabilityConditions = study.viabilityConditions as {
-      dimensions: Record<string, { score: number; maxScore: number; status: string; label: string }>;
+      dimensions: Record<
+        string,
+        { score: number; maxScore: number; status: string; label: string }
+      >;
       alerts: Array<{ type: string; dimension: string; message: string }>;
       summary: { totalScore: number; maxScore: number; status: string };
     };
@@ -160,9 +170,7 @@ export class AiAnalysesService {
         errorMessage,
       });
 
-      throw new BadRequestException(
-        `El analisis IA fallo: ${errorMessage}`,
-      );
+      throw new BadRequestException(`El analisis IA fallo: ${errorMessage}`);
     }
   }
 
@@ -186,7 +194,10 @@ export class AiAnalysesService {
       );
     }
 
-    const usageThisMonth = await this.repository.countThisMonthByType(companyId, typeId);
+    const usageThisMonth = await this.repository.countThisMonthByType(
+      companyId,
+      typeId,
+    );
     if (usageThisMonth >= maxExtractions) {
       throw new BadRequestException(
         `Limite de extracciones PDF alcanzado para este mes (${maxExtractions}). Actualice su suscripcion para obtener mas extracciones.`,
@@ -346,7 +357,8 @@ export class AiAnalysesService {
     const companySub = await this.repository.findCurrentSubscription(companyId);
 
     const maxAnalyses = companySub?.subscription.maxAiAnalysisPerMonth ?? null;
-    const maxExtractions = companySub?.subscription.maxPdfExtractionsPerMonth ?? null;
+    const maxExtractions =
+      companySub?.subscription.maxPdfExtractionsPerMonth ?? null;
 
     // Get type IDs for counting per type
     const [analysisType, extractionType] = await Promise.all([
@@ -367,12 +379,16 @@ export class AiAnalysesService {
       aiAnalysis: {
         usedThisMonth: analysisUsage,
         maxPerMonth: maxAnalyses,
-        remaining: maxAnalyses != null ? Math.max(0, maxAnalyses - analysisUsage) : null,
+        remaining:
+          maxAnalyses != null ? Math.max(0, maxAnalyses - analysisUsage) : null,
       },
       pdfExtraction: {
         usedThisMonth: extractionUsage,
         maxPerMonth: maxExtractions,
-        remaining: maxExtractions != null ? Math.max(0, maxExtractions - extractionUsage) : null,
+        remaining:
+          maxExtractions != null
+            ? Math.max(0, maxExtractions - extractionUsage)
+            : null,
       },
     };
   }

@@ -39,7 +39,11 @@ export class AiAnalysesController {
     schema: {
       type: 'object',
       properties: {
-        file: { type: 'string', format: 'binary', description: 'PDF file with financial statements' },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'PDF file with financial statements',
+        },
       },
       required: ['file'],
     },
@@ -50,7 +54,8 @@ export class AiAnalysesController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid file, subscription limit reached, or extraction failed',
+    description:
+      'Invalid file, subscription limit reached, or extraction failed',
   })
   extractPdf(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -75,7 +80,8 @@ export class AiAnalysesController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Study not performed, subscription limit reached, or AI call failed',
+    description:
+      'Study not performed, subscription limit reached, or AI call failed',
   })
   @ApiResponse({
     status: 404,

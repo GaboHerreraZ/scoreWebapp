@@ -14,12 +14,16 @@ export class MailService {
 
   constructor(private readonly configService: ConfigService) {
     this.resend = new Resend(this.configService.get<string>('RESEND_API_KEY'));
-    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
     const __dirname = dirname(fileURLToPath(import.meta.url));
     this.templatesDir = join(__dirname, '..', '..', 'mail', 'templates');
   }
 
-  private loadTemplate(templateName: string, variables: Record<string, string>): string {
+  private loadTemplate(
+    templateName: string,
+    variables: Record<string, string>,
+  ): string {
     const filePath = join(this.templatesDir, `${templateName}.html`);
     let html = readFileSync(filePath, 'utf-8');
 
@@ -54,10 +58,7 @@ export class MailService {
     });
   }
 
-  async sendUserDeactivatedEmail(params: {
-    to: string;
-    companyName: string;
-  }) {
+  async sendUserDeactivatedEmail(params: { to: string; companyName: string }) {
     const { to, companyName } = params;
 
     const html = this.loadTemplate('user-deactivated', { companyName });

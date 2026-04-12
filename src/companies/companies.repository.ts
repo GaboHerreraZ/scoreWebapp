@@ -203,40 +203,47 @@ export class CompaniesRepository {
     // Get parameter IDs for AI analysis types
     const [estudioCreditoParam, cargaPdfParam] = await Promise.all([
       this.prisma.parameter.findFirst({ where: { code: 'estudioCredito' } }),
-      this.prisma.parameter.findFirst({ where: { code: 'cargaPdfEstadosFinancieros' } }),
+      this.prisma.parameter.findFirst({
+        where: { code: 'cargaPdfEstadosFinancieros' },
+      }),
     ]);
 
-    const [usersCount, customersCount, studiesThisMonth, aiAnalysesThisMonth, pdfExtractionsThisMonth] =
-      await Promise.all([
-        this.prisma.userCompany.count({
-          where: { companyId, isActive: true },
-        }),
-        this.prisma.customer.count({
-          where: { companyId },
-        }),
-        this.prisma.creditStudy.count({
-          where: {
-            companyId,
-            createdAt: { gte: startOfMonth, lt: endOfMonth },
-          },
-        }),
-        this.prisma.aiAnalysis.count({
-          where: {
-            companyId,
-            status: 'success',
-            createdAt: { gte: startOfMonth, lt: endOfMonth },
-            ...(estudioCreditoParam ? { typeId: estudioCreditoParam.id } : {}),
-          },
-        }),
-        this.prisma.aiAnalysis.count({
-          where: {
-            companyId,
-            status: 'success',
-            createdAt: { gte: startOfMonth, lt: endOfMonth },
-            ...(cargaPdfParam ? { typeId: cargaPdfParam.id } : {}),
-          },
-        }),
-      ]);
+    const [
+      usersCount,
+      customersCount,
+      studiesThisMonth,
+      aiAnalysesThisMonth,
+      pdfExtractionsThisMonth,
+    ] = await Promise.all([
+      this.prisma.userCompany.count({
+        where: { companyId, isActive: true },
+      }),
+      this.prisma.customer.count({
+        where: { companyId },
+      }),
+      this.prisma.creditStudy.count({
+        where: {
+          companyId,
+          createdAt: { gte: startOfMonth, lt: endOfMonth },
+        },
+      }),
+      this.prisma.aiAnalysis.count({
+        where: {
+          companyId,
+          status: 'success',
+          createdAt: { gte: startOfMonth, lt: endOfMonth },
+          ...(estudioCreditoParam ? { typeId: estudioCreditoParam.id } : {}),
+        },
+      }),
+      this.prisma.aiAnalysis.count({
+        where: {
+          companyId,
+          status: 'success',
+          createdAt: { gte: startOfMonth, lt: endOfMonth },
+          ...(cargaPdfParam ? { typeId: cargaPdfParam.id } : {}),
+        },
+      }),
+    ]);
 
     return {
       company,

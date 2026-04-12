@@ -98,7 +98,7 @@ export class CustomersRepository {
       take: 50,
     });
 
-    return customers.map(customer => ({
+    return customers.map((customer) => ({
       id: customer.id,
       name: customer.businessName,
     }));

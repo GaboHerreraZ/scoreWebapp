@@ -37,8 +37,14 @@ export class InvitationsController {
   @Post('companies/:companyId/invitations')
   @ApiOperation({ summary: 'Send an invitation to collaborate in a company' })
   @ApiResponse({ status: 201, description: 'Invitation created successfully' })
-  @ApiResponse({ status: 403, description: 'Maximum users reached for subscription' })
-  @ApiResponse({ status: 409, description: 'User already in company or pending invitation exists' })
+  @ApiResponse({
+    status: 403,
+    description: 'Maximum users reached for subscription',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'User already in company or pending invitation exists',
+  })
   create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateInvitationDto,
@@ -59,7 +65,9 @@ export class InvitationsController {
   }
 
   @Get('invitations/pending/:email')
-  @ApiOperation({ summary: 'Verificar si un email tiene invitaciones pendientes' })
+  @ApiOperation({
+    summary: 'Verificar si un email tiene invitaciones pendientes',
+  })
   @ApiResponse({ status: 200, description: 'Resultado de la verificación' })
   findPendingByEmail(@Param('email') email: string) {
     return this.invitationsService.findPendingByEmail(email);
@@ -67,9 +75,14 @@ export class InvitationsController {
 
   @Public()
   @Get('invitations/:id')
-  @ApiOperation({ summary: 'Obtener una invitación por ID (público, requiere token)' })
+  @ApiOperation({
+    summary: 'Obtener una invitación por ID (público, requiere token)',
+  })
   @ApiResponse({ status: 200, description: 'Invitación encontrada' })
-  @ApiResponse({ status: 404, description: 'Invitación no encontrada o token inválido' })
+  @ApiResponse({
+    status: 404,
+    description: 'Invitación no encontrada o token inválido',
+  })
   @ApiResponse({ status: 400, description: 'Invitación expirada' })
   findByIdPublic(
     @Param('id', ParseUUIDPipe) id: string,
@@ -80,7 +93,10 @@ export class InvitationsController {
 
   @Get('users/:userId/invitations')
   @ApiOperation({ summary: 'Listar invitaciones enviadas por un usuario' })
-  @ApiResponse({ status: 200, description: 'Lista paginada de invitaciones enviadas' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de invitaciones enviadas',
+  })
   findAllByUser(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Query() filters: FilterInvitationDto,
@@ -89,9 +105,14 @@ export class InvitationsController {
   }
 
   @Patch('invitations/:id/toggle-status')
-  @ApiOperation({ summary: 'Activar o desactivar un usuario invitado en la empresa' })
+  @ApiOperation({
+    summary: 'Activar o desactivar un usuario invitado en la empresa',
+  })
   @ApiResponse({ status: 200, description: 'Estado del usuario actualizado' })
-  @ApiResponse({ status: 400, description: 'Solo se pueden activar/desactivar invitaciones aceptadas' })
+  @ApiResponse({
+    status: 400,
+    description: 'Solo se pueden activar/desactivar invitaciones aceptadas',
+  })
   @ApiResponse({ status: 404, description: 'Invitación no encontrada' })
   toggleUserStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -102,8 +123,14 @@ export class InvitationsController {
 
   @Patch('invitations/:id/respond')
   @ApiOperation({ summary: 'Accept or reject an invitation' })
-  @ApiResponse({ status: 200, description: 'Invitation responded successfully' })
-  @ApiResponse({ status: 403, description: 'Invitation does not belong to you' })
+  @ApiResponse({
+    status: 200,
+    description: 'Invitation responded successfully',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Invitation does not belong to you',
+  })
   @ApiResponse({ status: 400, description: 'Invitation already responded' })
   respond(
     @Param('id', ParseUUIDPipe) id: string,
@@ -117,11 +144,19 @@ export class InvitationsController {
 
   @Public()
   @Post('invitations/:id/accept-register')
-  @ApiOperation({ summary: 'Aceptar invitación y registrar perfil del usuario invitado' })
-  @ApiResponse({ status: 201, description: 'Perfil creado e invitación aceptada' })
+  @ApiOperation({
+    summary: 'Aceptar invitación y registrar perfil del usuario invitado',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Perfil creado e invitación aceptada',
+  })
   @ApiResponse({ status: 400, description: 'Invitación ya respondida' })
   @ApiResponse({ status: 404, description: 'Invitación no encontrada' })
-  @ApiResponse({ status: 409, description: 'Ya existe un perfil con este userId o email' })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe un perfil con este userId o email',
+  })
   acceptAndRegister(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AcceptInvitationRegisterDto,
@@ -132,10 +167,21 @@ export class InvitationsController {
   @Public()
   @Post('invitations/:id/reject')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Rechazar una invitación (público, requiere token)' })
-  @ApiResponse({ status: 204, description: 'Invitación rechazada correctamente' })
-  @ApiResponse({ status: 400, description: 'Invitación ya respondida o expirada' })
-  @ApiResponse({ status: 404, description: 'Invitación no encontrada o token inválido' })
+  @ApiOperation({
+    summary: 'Rechazar una invitación (público, requiere token)',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Invitación rechazada correctamente',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invitación ya respondida o expirada',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Invitación no encontrada o token inválido',
+  })
   rejectPublic(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RejectInvitationDto,
