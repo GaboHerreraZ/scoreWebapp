@@ -16,6 +16,7 @@ import { CampaignsModule } from './campaigns/campaigns.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
+import { PromissoryNotesModule } from './promissory-notes/promissory-notes.module.js';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { InvitationsModule } from './invitations/invitations.module.js';
     DashboardModule,
     AiAnalysesModule,
     InvitationsModule,
+    PromissoryNotesModule,
   ],
   providers: [
     {

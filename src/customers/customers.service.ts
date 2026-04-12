@@ -28,6 +28,7 @@ export class CustomersService {
     return this.repository.create({
       companyId,
       personTypeId: dto.personTypeId,
+      identificationTypeId: dto.identificationTypeId,
       businessName: dto.businessName,
       identificationNumber: dto.identificationNumber,
       legalRepName: dto.legalRepName,
@@ -65,7 +66,12 @@ export class CustomersService {
     if (filters.search) {
       where.OR = [
         { businessName: { contains: filters.search, mode: 'insensitive' } },
-        { identificationNumber: { contains: filters.search, mode: 'insensitive' } },
+        {
+          identificationNumber: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
         { email: { contains: filters.search, mode: 'insensitive' } },
       ];
     }

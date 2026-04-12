@@ -36,6 +36,10 @@ model Parameter {
   subscriptionsByDashboardLevel  Subscription[] @relation("SubscriptionDashboardLevel")
   aiAnalysesByType               AiAnalysis[]   @relation("AiAnalysisType")
   invitationsByStatus            Invitation[]   @relation("InvitationStatus")
+  customersByIdentificationType  Customer[]     @relation("CustomerIdentificationType")
+  companiesByAccountType         Company[]      @relation("CompanyAccountType")
+  companiesByAccountBank         Company[]      @relation("CompanyAccountBank")
+  promissoryNotesByStatus        PromissoryNote[] @relation("PromissoryNoteStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -64,6 +68,7 @@ model Profile {
   createdStudies   CreditStudy[]  @relation("CreditStudyCreatedBy")
   updatedStudies   CreditStudy[]  @relation("CreditStudyUpdatedBy")
   aiAnalyses       AiAnalysis[]   @relation("AiAnalysisPerformedBy")
+  createdPromissoryNotes PromissoryNote[] @relation("PromissoryNoteCreatedBy")
 
   @@map("profiles")
 }
@@ -108,17 +113,23 @@ model Company {
   state          String   @db.VarChar(150)
   city           String   @db.VarChar(150)
   address        String   @db.VarChar(255)
+  accountTypeId  Int?     @map("account_type_id")
+  accountBankId  Int?     @map("account_bank_id")
+  accountNumber  String?  @map("account_number") @db.VarChar(50)
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   sector       Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
+  accountType  Parameter?    @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
+  accountBank  Parameter?    @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
   companySubscriptions CompanySubscription[]
   userCompanies UserCompany[]
   invitations   Invitation[]
   customers     Customer[]
   creditStudies CreditStudy[]
   aiAnalyses    AiAnalysis[]
+  promissoryNotes PromissoryNote[]
 
   @@map("companies")
 }
@@ -195,6 +206,7 @@ model Customer {
   id                    String   @id @default(uuid()) @db.Uuid
   companyId             String   @map("company_id") @db.Uuid
   personTypeId          Int      @map("person_type_id")
+  identificationTypeId  Int?     @map("identification_type_id")
   businessName          String   @map("business_name") @db.VarChar(255)
   identificationNumber  String   @map("identification_number") @db.VarChar(50)
   legalRepName          String?  @map("legal_rep_name") @db.VarChar(255)
@@ -219,13 +231,15 @@ model Customer {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
-  company          Company     @relation(fields: [companyId], references: [id])
-  personType       Parameter   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
-  economicActivity Parameter?  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
-  createdByUser    Profile     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser    Profile     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
-  creditStudies    CreditStudy[]
-  aiAnalyses       AiAnalysis[]
+  company            Company     @relation(fields: [companyId], references: [id])
+  personType         Parameter   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
+  identificationType Parameter?  @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
+  economicActivity   Parameter?  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
+  createdByUser      Profile     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser      Profile     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
+  creditStudies      CreditStudy[]
+  aiAnalyses         AiAnalysis[]
+  promissoryNotes    PromissoryNote[]
 
   @@map("customers")
 }
@@ -314,6 +328,7 @@ model CreditStudy {
   createdByUser    Profile       @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
   updatedByUser    Profile       @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
   aiAnalyses       AiAnalysis[]
+  promissoryNotes  PromissoryNote[]
 
   @@map("credit_studies")
 }
@@ -369,4 +384,48 @@ model Invitation {
   status        Parameter @relation("InvitationStatus", fields: [statusId], references: [id])
 
   @@map("invitations")
+}
+
+// ─── Pagaré (Promissory Note) ───────────────────────────────
+
+model PromissoryNote {
+  id              Int       @id @default(autoincrement())
+  companyId       String    @map("company_id") @db.Uuid
+  creditStudyId   String    @map("credit_study_id") @db.Uuid
+  customerId      String    @map("customer_id") @db.Uuid
+  createdBy       String    @map("created_by") @db.Uuid
+  statusId        Int       @map("status_id")
+
+  // ── Datos económicos del pagaré (snapshot) ──────────
+  amount          Float
+  amountInWords   String    @map("amount_in_words") @db.VarChar(500)
+
+  // ── Datos DocuSeal ─────────────────────────────────
+  docusealSubmissionId  Int?      @map("docuseal_submission_id")
+  docusealSubmitterId   Int?      @map("docuseal_submitter_id")
+  docusealSubmitterUuid String?   @map("docuseal_submitter_uuid") @db.VarChar(100)
+  docusealSlug          String?   @map("docuseal_slug") @db.VarChar(100)
+  signingUrl            String?   @map("signing_url") @db.VarChar(500)
+  signedDocumentUrl     String?   @map("signed_document_url") @db.VarChar(500)
+  signedFileStoragePath String?   @map("signed_file_storage_path") @db.VarChar(500)
+
+  // ── Auditoría de firma ─────────────────────────────
+  sentAt          DateTime? @map("sent_at")
+  signedAt        DateTime? @map("signed_at")
+  declinedAt      DateTime? @map("declined_at")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  company       Company     @relation(fields: [companyId], references: [id])
+  creditStudy   CreditStudy @relation(fields: [creditStudyId], references: [id])
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  status        Parameter   @relation("PromissoryNoteStatus", fields: [statusId], references: [id])
+  createdByUser Profile     @relation("PromissoryNoteCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([companyId])
+  @@index([creditStudyId])
+  @@index([customerId])
+  @@index([docusealSubmissionId])
+  @@map("promissory_notes")
 }

@@ -14,6 +14,15 @@ export class CreateCustomerDto {
   @IsInt()
   personTypeId: number;
 
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'Identification type parameter ID (CC, CE, NIT, PA)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  identificationTypeId?: number;
+
   @ApiProperty({ example: 'Comercializadora XYZ S.A.S.', maxLength: 255 })
   @IsString()
   @MaxLength(255)
@@ -36,7 +45,10 @@ export class CreateCustomerDto {
   @MaxLength(50)
   legalRepId?: string;
 
-  @ApiPropertyOptional({ example: 1, description: 'Economic activity parameter ID' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Economic activity parameter ID',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

@@ -18,12 +18,16 @@ export class CompaniesService {
   async create(dto: CreateCompanyDto, userId: string) {
     const existing = await this.repository.findByNit(dto.nit);
     if (existing) {
-      throw new ConflictException(`Company with NIT "${dto.nit}" already exists`);
+      throw new ConflictException(
+        `Company with NIT "${dto.nit}" already exists`,
+      );
     }
 
     const adminRoleId = await this.repository.getRoleId('administrador');
     if (!adminRoleId) {
-      throw new BadRequestException('Role parameter "administrador" not found. Please create a parameter with type=user_company_role, code=administrador');
+      throw new BadRequestException(
+        'Role parameter "administrador" not found. Please create a parameter with type=user_company_role, code=administrador',
+      );
     }
 
     return this.repository.createWithUserCompany(
@@ -97,7 +101,9 @@ export class CompaniesService {
     if (dto.nit && dto.nit !== current.nit) {
       const duplicate = await this.repository.findByNit(dto.nit);
       if (duplicate) {
-        throw new ConflictException(`Company with NIT "${dto.nit}" already exists`);
+        throw new ConflictException(
+          `Company with NIT "${dto.nit}" already exists`,
+        );
       }
     }
 
@@ -108,6 +114,9 @@ export class CompaniesService {
       state: dto.state,
       city: dto.city,
       address: dto.address,
+      accountTypeId: dto.accountTypeId,
+      accountBankId: dto.accountBankId,
+      accountNumber: dto.accountNumber,
       isActive: dto.isActive,
     });
   }
@@ -129,7 +138,8 @@ export class CompaniesService {
   }
 
   async getAvailablePlans(companyId: string) {
-    const { company, plans } = await this.repository.getAvailablePlans(companyId);
+    const { company, plans } =
+      await this.repository.getAvailablePlans(companyId);
     if (!company) {
       throw new NotFoundException(`Company with id=${companyId} not found`);
     }
@@ -167,33 +177,38 @@ export class CompaniesService {
         customers: {
           used: usage.customersCount,
           max: subscription.maxCustomers,
-          remaining: subscription.maxCustomers !== null
-            ? subscription.maxCustomers - usage.customersCount
-            : null,
+          remaining:
+            subscription.maxCustomers !== null
+              ? subscription.maxCustomers - usage.customersCount
+              : null,
           unlimited: subscription.maxCustomers === null,
         },
         studiesThisMonth: {
           used: usage.studiesThisMonth,
           max: subscription.maxStudiesPerMonth,
-          remaining: subscription.maxStudiesPerMonth !== null
-            ? subscription.maxStudiesPerMonth - usage.studiesThisMonth
-            : null,
+          remaining:
+            subscription.maxStudiesPerMonth !== null
+              ? subscription.maxStudiesPerMonth - usage.studiesThisMonth
+              : null,
           unlimited: subscription.maxStudiesPerMonth === null,
         },
         aiAnalysesThisMonth: {
           used: usage.aiAnalysesThisMonth,
           max: subscription.maxAiAnalysisPerMonth,
-          remaining: subscription.maxAiAnalysisPerMonth !== null
-            ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
-            : null,
+          remaining:
+            subscription.maxAiAnalysisPerMonth !== null
+              ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
+              : null,
           unlimited: subscription.maxAiAnalysisPerMonth === null,
         },
         pdfExtractionsThisMonth: {
           used: usage.pdfExtractionsThisMonth,
           max: subscription.maxPdfExtractionsPerMonth,
-          remaining: subscription.maxPdfExtractionsPerMonth !== null
-            ? subscription.maxPdfExtractionsPerMonth - usage.pdfExtractionsThisMonth
-            : null,
+          remaining:
+            subscription.maxPdfExtractionsPerMonth !== null
+              ? subscription.maxPdfExtractionsPerMonth -
+                usage.pdfExtractionsThisMonth
+              : null,
           unlimited: subscription.maxPdfExtractionsPerMonth === null,
         },
       },
@@ -224,7 +239,12 @@ export class CompaniesService {
     if (filters.search) {
       where.OR = [
         { businessName: { contains: filters.search, mode: 'insensitive' } },
-        { identificationNumber: { contains: filters.search, mode: 'insensitive' } },
+        {
+          identificationNumber: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
       ];
     }
 
