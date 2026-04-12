@@ -171,6 +171,9 @@ export class PromissoryNotesService {
         sentAt: submitter.sentAt ? new Date(submitter.sentAt) : new Date(),
       });
 
+      // 10. Update credit study status to pendienteFirma
+      await this.updateCreditStudyToPendingSignature(dto.creditStudyId);
+
       return updated;
     } catch (err) {
       // Rollback: delete the local record so the user can retry
@@ -292,6 +295,9 @@ export class PromissoryNotesService {
         signingUrl: submitter.embedSrc || null,
         sentAt: submitter.sentAt ? new Date(submitter.sentAt) : new Date(),
       });
+
+      // 9. Update credit study status to pendienteFirma
+      await this.updateCreditStudyToPendingSignature(dto.creditStudyId);
 
       return updated;
     } catch (err) {
@@ -653,6 +659,24 @@ export class PromissoryNotesService {
       customerPhoneNumber: params.customer.phone ?? '',
       customerEmail: params.customer.email ?? '',
     };
+  }
+
+  private async updateCreditStudyToPendingSignature(
+    creditStudyId: string,
+  ): Promise<void> {
+    const pendingSignatureStatus =
+      await this.parametersRepository.findByCode('pendienteFirma');
+    if (!pendingSignatureStatus) {
+      this.logger.warn(
+        'Parameter with code "pendienteFirma" not found — credit study status was not updated',
+      );
+      return;
+    }
+
+    await this.prisma.creditStudy.update({
+      where: { id: creditStudyId },
+      data: { statusId: pendingSignatureStatus.id },
+    });
   }
 
   /**
