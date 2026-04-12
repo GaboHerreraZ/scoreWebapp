@@ -123,6 +123,12 @@ export class CreditStudiesService {
       );
     }
 
+    if (current.status?.code === 'estudioCompletado') {
+      throw new BadRequestException(
+        'No se puede modificar un estudio de crédito que ya fue completado.',
+      );
+    }
+
     if (dto.customerId && dto.customerId !== current.customerId) {
       const customerBelongs = await this.repository.customerBelongsToCompany(
         dto.customerId,
@@ -153,6 +159,12 @@ export class CreditStudiesService {
       );
     }
 
+    if (study.status?.code === 'estudioCompletado') {
+      throw new BadRequestException(
+        'No se puede eliminar un estudio de crédito que ya fue completado.',
+      );
+    }
+
     return this.repository.delete(id);
   }
 
@@ -161,6 +173,12 @@ export class CreditStudiesService {
     if (!study) {
       throw new NotFoundException(
         `Credit study with id=${id} not found in this company`,
+      );
+    }
+
+    if (study.status?.code === 'estudioCompletado') {
+      throw new BadRequestException(
+        'No se puede recalcular un estudio de crédito que ya fue completado.',
       );
     }
 

@@ -74,6 +74,7 @@ export class CreditStudiesRepository {
           select: {
             id: true,
             label: true,
+            code: true
           },
         },
         aiAnalyses: {
