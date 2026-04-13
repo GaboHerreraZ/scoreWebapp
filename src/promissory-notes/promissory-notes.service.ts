@@ -79,7 +79,13 @@ export class PromissoryNotesService {
     const creditStudy = await this.prisma.creditStudy.findFirst({
       where: { id: dto.creditStudyId, companyId },
       include: {
-        customer: { include: { identificationType: true } },
+        customer: {
+          include: {
+            identificationType: true,
+            personType: true,
+            legalRepIdentificationType: true,
+          },
+        },
         company: { include: { accountType: true, accountBank: true } },
       },
     });
@@ -163,9 +169,15 @@ export class PromissoryNotesService {
         companyLogoSignedUrl,
       });
 
+      const isLegalEntity =
+        customer.personType?.code === 'personaJuridica';
+      const signerEmail = isLegalEntity
+        ? customer.legalRepEmail!
+        : customer.email!;
+
       const submitter = await this.docusealService.createSubmission({
         templateId: this.templateId,
-        signerEmail: customer.email!,
+        signerEmail,
         signerName: customer.businessName,
         values,
       });
@@ -212,7 +224,13 @@ export class PromissoryNotesService {
     const creditStudy = await this.prisma.creditStudy.findFirst({
       where: { id: dto.creditStudyId, companyId },
       include: {
-        customer: { include: { identificationType: true } },
+        customer: {
+          include: {
+            identificationType: true,
+            personType: true,
+            legalRepIdentificationType: true,
+          },
+        },
         company: { include: { accountType: true, accountBank: true } },
       },
     });
@@ -296,9 +314,15 @@ export class PromissoryNotesService {
 
       const html = this.renderHtmlTemplate(values);
 
+      const isLegalEntity =
+        customer.personType?.code === 'personaJuridica';
+      const signerEmail = isLegalEntity
+        ? customer.legalRepEmail!
+        : customer.email!;
+
       const submitter = await this.docusealService.createSubmissionFromHtml({
         html,
-        signerEmail: customer.email!,
+        signerEmail,
         signerName: customer.businessName,
         submissionName: `Pagaré #${promissoryNote.id}`,
         documentName: `Pagaré #${promissoryNote.id}`,
@@ -340,7 +364,13 @@ export class PromissoryNotesService {
     const creditStudy = await this.prisma.creditStudy.findFirst({
       where: { id: dto.creditStudyId, companyId },
       include: {
-        customer: { include: { identificationType: true } },
+        customer: {
+          include: {
+            identificationType: true,
+            personType: true,
+            legalRepIdentificationType: true,
+          },
+        },
         company: { include: { accountType: true, accountBank: true } },
       },
     });
@@ -640,29 +670,67 @@ export class PromissoryNotesService {
     identificationNumber: string;
     identificationTypeId: number | null;
     identificationType: { label: string } | null;
+    personType: { code: string } | null;
+    legalRepName: string | null;
+    legalRepId: string | null;
+    legalRepIdentificationTypeId: number | null;
+    legalRepEmail: string | null;
+    legalRepPhone: string | null;
     address: string | null;
     phone: string | null;
   }): void {
-    const customerFieldLabels: Record<string, string> = {
-      email: 'correo electrónico',
-      identificationType: 'tipo de identificación',
-      address: 'dirección',
-      phone: 'teléfono',
-    };
+    const isLegalEntity = customer.personType?.code === 'personaJuridica';
 
-    const missing: string[] = [];
-    if (!customer.email) missing.push('email');
-    if (!customer.identificationTypeId) missing.push('identificationType');
-    if (!customer.address) missing.push('address');
-    if (!customer.phone) missing.push('phone');
+    if (isLegalEntity) {
+      const fieldLabels: Record<string, string> = {
+        legalRepName: 'nombre del representante legal',
+        legalRepId: 'identificación del representante legal',
+        legalRepIdentificationType:
+          'tipo de identificación del representante legal',
+        legalRepEmail: 'correo electrónico del representante legal',
+        legalRepPhone: 'teléfono del representante legal',
+        address: 'dirección',
+      };
 
-    if (missing.length > 0) {
-      const missingLabels = missing
-        .map((key) => customerFieldLabels[key])
-        .join(', ');
-      throw new BadRequestException(
-        `Al cliente le faltan los siguientes datos obligatorios para generar el pagaré: ${missingLabels}.`,
-      );
+      const missing: string[] = [];
+      if (!customer.legalRepName) missing.push('legalRepName');
+      if (!customer.legalRepId) missing.push('legalRepId');
+      if (!customer.legalRepIdentificationTypeId)
+        missing.push('legalRepIdentificationType');
+      if (!customer.legalRepEmail) missing.push('legalRepEmail');
+      if (!customer.legalRepPhone) missing.push('legalRepPhone');
+      if (!customer.address) missing.push('address');
+
+      if (missing.length > 0) {
+        const missingLabels = missing
+          .map((key) => fieldLabels[key])
+          .join(', ');
+        throw new BadRequestException(
+          `Al cliente (persona jurídica) le faltan los siguientes datos obligatorios para generar el pagaré: ${missingLabels}.`,
+        );
+      }
+    } else {
+      const fieldLabels: Record<string, string> = {
+        email: 'correo electrónico',
+        identificationType: 'tipo de identificación',
+        address: 'dirección',
+        phone: 'teléfono',
+      };
+
+      const missing: string[] = [];
+      if (!customer.email) missing.push('email');
+      if (!customer.identificationTypeId) missing.push('identificationType');
+      if (!customer.address) missing.push('address');
+      if (!customer.phone) missing.push('phone');
+
+      if (missing.length > 0) {
+        const missingLabels = missing
+          .map((key) => fieldLabels[key])
+          .join(', ');
+        throw new BadRequestException(
+          `Al cliente le faltan los siguientes datos obligatorios para generar el pagaré: ${missingLabels}.`,
+        );
+      }
     }
   }
 
@@ -706,6 +774,12 @@ export class PromissoryNotesService {
       email: string | null;
       identificationNumber: string;
       identificationType: { label: string } | null;
+      personType: { code: string } | null;
+      legalRepName: string | null;
+      legalRepId: string | null;
+      legalRepIdentificationType: { label: string } | null;
+      legalRepEmail: string | null;
+      legalRepPhone: string | null;
       address: string | null;
       phone: string | null;
     };
@@ -725,11 +799,28 @@ export class PromissoryNotesService {
     const currentMonth = SPANISH_MONTHS[now.getMonth()];
     const currentDay = now.getDate().toString();
 
+    const isLegalEntity =
+      params.customer.personType?.code === 'personaJuridica';
+
+    // For persona jurídica, use legal representative data for identification,
+    // phone and email; for persona natural, use the customer's own data.
+    const customerIdentificationType = isLegalEntity
+      ? (params.customer.legalRepIdentificationType?.label ?? '')
+      : (params.customer.identificationType?.label ?? '');
+    const customerIdentification = isLegalEntity
+      ? (params.customer.legalRepId ?? '')
+      : params.customer.identificationNumber;
+    const customerPhoneNumber = isLegalEntity
+      ? (params.customer.legalRepPhone ?? '')
+      : (params.customer.phone ?? '');
+    const customerEmail = isLegalEntity
+      ? (params.customer.legalRepEmail ?? '')
+      : (params.customer.email ?? '');
+
     return {
       customerName: params.customer.businessName,
       promissoryId: params.promissoryNoteId.toString(),
-      customerIdentificationType:
-        params.customer.identificationType?.label ?? '',
+      customerIdentificationType,
       priceDescription: params.amountInWords,
       price: this.formatCOP(params.amount),
       paymentMethod: HARDCODED_PAYMENT_METHOD,
@@ -745,10 +836,10 @@ export class PromissoryNotesService {
       currentYear,
       currentMonth,
       currentDay,
-      customerIdentification: params.customer.identificationNumber,
+      customerIdentification,
       customerAddress: params.customer.address ?? '',
-      customerPhoneNumber: params.customer.phone ?? '',
-      customerEmail: params.customer.email ?? '',
+      customerPhoneNumber,
+      customerEmail,
       companyLogoUrl: params.companyLogoSignedUrl ?? '',
     };
   }
@@ -805,12 +896,11 @@ export class PromissoryNotesService {
       '<span style="display:inline-block;width:200px;height:80px;border-bottom:2px solid #1a1a1a;text-align:center;line-height:80px;color:#6b7280;font-style:italic;">[Firma]</span>',
     );
 
-    // Replace text-field tags with their default-value content for preview
+    // Replace text-field tags with their default value for preview
     html = html.replace(
       /<text-field[^>]*>.*?<\/text-field>/gs,
       (match) => {
-        const defaultValue =
-          match.match(/default-value="([^"]*)"/)?.[1] ?? '';
+        const defaultValue = match.match(/default="([^"]*)"/)?.[1] ?? '';
         return `<span class="field" style="font-weight:bold;">${defaultValue}</span>`;
       },
     );
