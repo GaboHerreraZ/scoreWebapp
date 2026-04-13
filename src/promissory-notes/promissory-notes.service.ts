@@ -805,8 +805,15 @@ export class PromissoryNotesService {
       '<span style="display:inline-block;width:200px;height:80px;border-bottom:2px solid #1a1a1a;text-align:center;line-height:80px;color:#6b7280;font-style:italic;">[Firma]</span>',
     );
 
-    // The template already uses plain <span class="field"> tags,
-    // so no DocuSeal tags to strip for readonly values.
+    // Replace text-field tags with their default-value content for preview
+    html = html.replace(
+      /<text-field[^>]*>.*?<\/text-field>/gs,
+      (match) => {
+        const defaultValue =
+          match.match(/default-value="([^"]*)"/)?.[1] ?? '';
+        return `<span class="field" style="font-weight:bold;">${defaultValue}</span>`;
+      },
+    );
 
     return html;
   }

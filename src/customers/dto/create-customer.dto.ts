@@ -46,6 +46,27 @@ export class CreateCustomerDto {
   legalRepId?: string;
 
   @ApiPropertyOptional({
+    example: 5,
+    description: 'Legal representative identification type parameter ID (CC, CE, NIT, PA)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  legalRepIdentificationTypeId?: number;
+
+  @ApiPropertyOptional({ example: 'rep.legal@empresa.com', maxLength: 255 })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(255)
+  legalRepEmail?: string;
+
+  @ApiPropertyOptional({ example: '3001234567', maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepPhone?: string;
+
+  @ApiPropertyOptional({
     example: 1,
     description: 'Economic activity parameter ID',
   })
