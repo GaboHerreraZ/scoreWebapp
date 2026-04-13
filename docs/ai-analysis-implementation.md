@@ -149,7 +149,7 @@ export function buildCreditStudyUserMessage(study: {
   customerCity: string;
   seniority: number;
   requestedTerm: number;
-  requestedMonthlyCreditLine: number;
+  requestedCreditLine: number;
   viabilityScore: number;
   viabilityStatus: string;
   recommendedTerm: number;
@@ -182,7 +182,7 @@ Cliente: ${study.customerName}
 Ciudad: ${study.customerCity}
 Antiguedad: ${study.seniority} anos
 
-Cupo mensual solicitado: $${study.requestedMonthlyCreditLine.toLocaleString('es-CO')}
+Cupo mensual solicitado: $${study.requestedCreditLine.toLocaleString('es-CO')}
 Plazo solicitado: ${study.requestedTerm} dias
 Cupo recomendado: $${study.recommendedCreditLine.toLocaleString('es-CO')}
 Plazo recomendado: ${study.recommendedTerm} dias
@@ -272,7 +272,7 @@ async performCreditStudy(id: string): Promise<CreditStudy> {
       customerCity: customer.city,
       seniority: customer.seniority,
       requestedTerm: study.requestedTerm,
-      requestedMonthlyCreditLine: study.requestedMonthlyCreditLine,
+      requestedCreditLine: study.requestedCreditLine,
       viabilityScore: study.viabilityScore,
       viabilityStatus: study.viabilityStatus,
       recommendedTerm: study.recommendedTerm,

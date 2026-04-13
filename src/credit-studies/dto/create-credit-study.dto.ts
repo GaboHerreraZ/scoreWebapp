@@ -50,7 +50,7 @@ export class CreateCreditStudyDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  requestedMonthlyCreditLine?: number;
+  requestedCreditLine?: number;
 
   // ── Balance General ────────────────────────────────────
 

@@ -98,7 +98,7 @@ export class AiAnalysesService {
       customerCity: customer.city ?? 'No especificada',
       seniority: customer.seniority ?? 0,
       requestedTerm: study.requestedTerm ?? 0,
-      requestedMonthlyCreditLine: study.requestedMonthlyCreditLine ?? 0,
+      requestedCreditLine: study.requestedCreditLine ?? 0,
       viabilityScore: study.viabilityScore,
       viabilityStatus: study.viabilityStatus,
       recommendedTerm: study.recommendedTerm ?? 0,
@@ -113,6 +113,8 @@ export class AiAnalysesService {
       ordinaryActivityRevenue: study.ordinaryActivityRevenue ?? 0,
       grossProfit: study.grossProfit ?? 0,
       netIncome: study.netIncome ?? 0,
+      accountsReceivableTurnover: study.accountsReceivableTurnover ?? 0,
+      paymentTimeSuppliers: study.paymentTimeSuppliers ?? 0,
       viabilityConditions,
     });
 

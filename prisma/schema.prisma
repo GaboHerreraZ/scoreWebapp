@@ -262,7 +262,7 @@ model CreditStudy {
 
   // ── Solicitud ──────────────────────────────────────────
   requestedTerm              Int?      @map("requested_term")                    // Plazo solicitado
-  requestedMonthlyCreditLine Float?    @map("requested_monthly_credit_line")     // Cupo solicitado mensual
+  requestedCreditLine        Float?    @map("requested_credit_line")             // Cupo total solicitado
 
   // ── Balance General ────────────────────────────────────
   balanceSheetDate            DateTime? @map("balance_sheet_date")                // Balance sheet date
@@ -308,8 +308,8 @@ model CreditStudy {
   accountsReceivableTurnover Float?    @map("accounts_receivable_turnover")      // Rotación de cartera
   inventoryTurnover          Float?    @map("inventory_turnover")                // Rotación de inventarios
   suppliersTurnover          Float?    @map("suppliers_turnover")                // Rotación de proveedores
-  maximumPaymentTime         Float?    @map("maximum_payment_time")              // Tiempo máximo en pagar
-  averagePaymentTime         Float?    @map("average_payment_time")              // Tiempo promedio en pagar
+  paymentTimeSuppliers       Float?    @map("payment_time_suppliers")            // Tiempo de pago a proveedores (dias)
+  accountsPayableTurnover    Float?    @map("accounts_payable_turnover")         // Rotacion de cuentas por pagar
 
   // ── Viabilidad ────────────────────────────────────────
   recommendedTerm            Int?      @map("recommended_term")                  // Plazo recomendado (días)

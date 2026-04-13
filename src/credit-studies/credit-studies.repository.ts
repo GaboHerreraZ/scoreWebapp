@@ -33,7 +33,7 @@ export class CreditStudiesRepository {
           createdBy: true,
           requestedTerm: true,
           studyDate: true,
-          requestedMonthlyCreditLine: true,
+          requestedCreditLine: true,
           customer: {
             select: {
               id: true,

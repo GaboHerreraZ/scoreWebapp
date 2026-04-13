@@ -45,8 +45,8 @@ export class DashboardRepository {
         companyId,
         createdAt: { gte: startOfMonth, lt: startOfNextMonth },
       },
-      _sum: { requestedMonthlyCreditLine: true },
-      _avg: { requestedMonthlyCreditLine: true, requestedTerm: true },
+      _sum: { requestedCreditLine: true },
+      _avg: { requestedCreditLine: true, requestedTerm: true },
     });
   }
 
@@ -96,7 +96,7 @@ export class DashboardRepository {
       select: {
         id: true,
         studyDate: true,
-        requestedMonthlyCreditLine: true,
+        requestedCreditLine: true,
         customer: { select: { businessName: true } },
         status: { select: { id: true, label: true } },
       },
@@ -126,7 +126,7 @@ export class DashboardRepository {
         ebitda: true,
         monthlyPaymentCapacity: true,
         stabilityFactor: true,
-        maximumPaymentTime: true,
+        paymentTimeSuppliers: true,
       },
     });
   }
@@ -217,7 +217,7 @@ export class DashboardRepository {
         accountsReceivableTurnover: true,
         inventoryTurnover: true,
         suppliersTurnover: true,
-        maximumPaymentTime: true,
+        paymentTimeSuppliers: true,
       },
     });
   }
@@ -242,7 +242,7 @@ export class DashboardRepository {
       SELECT
         c.id AS customer_id,
         c.business_name,
-        COALESCE(SUM(cs.requested_monthly_credit_line), 0) AS total_credit,
+        COALESCE(SUM(cs.requested_credit_line), 0) AS total_credit,
         COUNT(cs.id)::bigint AS studies_count
       FROM credit_studies cs
       JOIN customers c ON c.id = cs.customer_id

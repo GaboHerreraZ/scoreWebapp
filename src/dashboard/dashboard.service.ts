@@ -59,7 +59,7 @@ export class DashboardService {
       customerName: s.customer.businessName,
       studyDate: s.studyDate,
       statusLabel: s.status.label,
-      requestedMonthlyCreditLine: s.requestedMonthlyCreditLine,
+      requestedCreditLine: s.requestedCreditLine,
     }));
 
     return {
@@ -70,8 +70,8 @@ export class DashboardService {
         activeUsers,
       },
       creditSummary: {
-        totalRequestedThisMonth: creditAgg._sum.requestedMonthlyCreditLine ?? 0,
-        avgRequestedThisMonth: creditAgg._avg.requestedMonthlyCreditLine ?? 0,
+        totalRequestedThisMonth: creditAgg._sum.requestedCreditLine ?? 0,
+        avgRequestedThisMonth: creditAgg._avg.requestedCreditLine ?? 0,
         avgRequestedTerm: creditAgg._avg.requestedTerm ?? 0,
       },
       studiesByStatus,
@@ -127,7 +127,7 @@ export class DashboardService {
       avgMonthlyPaymentCapacity:
         financialIndicatorsRaw._avg.monthlyPaymentCapacity ?? 0,
       avgStabilityFactor: financialIndicatorsRaw._avg.stabilityFactor ?? 0,
-      avgMaxPaymentTime: financialIndicatorsRaw._avg.maximumPaymentTime ?? 0,
+      avgPaymentTimeSuppliers: financialIndicatorsRaw._avg.paymentTimeSuppliers ?? 0,
     };
 
     const paymentCapacityTrend = this.fillMonthsWithValue(
@@ -141,7 +141,7 @@ export class DashboardService {
         avgTurnoverRaw._avg.accountsReceivableTurnover ?? 0,
       inventoryTurnover: avgTurnoverRaw._avg.inventoryTurnover ?? 0,
       suppliersTurnover: avgTurnoverRaw._avg.suppliersTurnover ?? 0,
-      maximumPaymentTime: avgTurnoverRaw._avg.maximumPaymentTime ?? 0,
+      paymentTimeSuppliers: avgTurnoverRaw._avg.paymentTimeSuppliers ?? 0,
     };
 
     const revenueVsNetIncome = this.fillMonthsWithDualValues(

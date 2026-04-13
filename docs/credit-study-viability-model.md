@@ -17,7 +17,7 @@ El backend ya calcula y persiste estos campos en `CreditStudy`:
 | Campo                                         | Descripcion                             |
 | --------------------------------------------- | --------------------------------------- |
 | `requestedTerm`                               | Plazo solicitado en dias (ej: 60 dias)  |
-| `requestedMonthlyCreditLine`                  | Cupo de credito mensual solicitado ($)  |
+| `requestedCreditLine`                  | Cupo de credito total solicitado ($)  |
 | `cashAndEquivalents`                          | Efectivo y equivalentes                 |
 | `accountsReceivable1` / `accountsReceivable2` | Cuentas por cobrar ano 1 y 2            |
 | `inventories1` / `inventories2`               | Inventarios ano 1 y 2                   |
@@ -56,7 +56,7 @@ El backend ya calcula y persiste estos campos en `CreditStudy`:
 | `accountsReceivableTurnover` | Rotacion de cartera (dias)                                                                  |
 | `inventoryTurnover`          | Rotacion de inventarios (dias)                                                              |
 | `suppliersTurnover`          | Rotacion de proveedores (dias)                                                              |
-| `maximumPaymentTime`         | Tiempo maximo en pagar (dias) = rotacionCartera + rotacionInventarios + rotacionProveedores |
+| `paymentTimeSuppliers`         | Tiempo maximo en pagar (dias) = rotacionCartera + rotacionInventarios + rotacionProveedores |
 | `averagePaymentTime`         | Tiempo promedio en pagar (dias)                                                             |
 
 ### Puntaje Z de Altman (referencia interna, NO exponer al cliente)
@@ -105,7 +105,7 @@ viabilityConditions?: string;       // JSON con alertas/condiciones (ver estruct
 ### Dimension 2: Capacidad de pago
 
 ```
-ratio = monthlyPaymentCapacity / requestedMonthlyCreditLine
+ratio = monthlyPaymentCapacity / requestedCreditLine
 ```
 
 | Condicion                  | Resultado                       | Puntaje parcial |
@@ -124,17 +124,17 @@ El plazo solicitado debe ser coherente con los tiempos reales de cobro del clien
 
 | Condicion                                   | Resultado   | Puntaje parcial |
 | ------------------------------------------- | ----------- | --------------- |
-| `requestedTerm >= maximumPaymentTime`       | Coherente   | 25/25           |
-| `requestedTerm >= maximumPaymentTime * 0.7` | Riesgoso    | 12/25           |
-| `requestedTerm < maximumPaymentTime * 0.5`  | Incoherente | 0/25            |
+| `requestedTerm >= paymentTimeSuppliers`       | Coherente   | 25/25           |
+| `requestedTerm >= paymentTimeSuppliers * 0.7` | Riesgoso    | 12/25           |
+| `requestedTerm < paymentTimeSuppliers * 0.5`  | Incoherente | 0/25            |
 
-**Caso especial:** Si `maximumPaymentTime` es negativo o cero (dato anomalo), usar `accountsReceivableTurnover` como referencia alternativa.
+**Caso especial:** Si `paymentTimeSuppliers` es negativo o cero (dato anomalo), usar `accountsReceivableTurnover` como referencia alternativa.
 
 ### Dimension 4: Cupo recomendado vs. solicitado
 
 ```
 recommendedCreditLine = monthlyPaymentCapacity * (recommendedTerm / 30)
-ratio = requestedMonthlyCreditLine / recommendedCreditLine
+ratio = requestedCreditLine / recommendedCreditLine
 ```
 
 | Condicion                         | Resultado            | Puntaje parcial |
@@ -165,9 +165,9 @@ viabilityScore = sumaDePuntajesParciales (maximo 100)
 ### recommendedTerm (plazo recomendado)
 
 ```
-Si maximumPaymentTime > 0:
-    recommendedTerm = maximumPaymentTime
-Si maximumPaymentTime <= 0 (anomalo):
+Si paymentTimeSuppliers > 0:
+    recommendedTerm = paymentTimeSuppliers
+Si paymentTimeSuppliers <= 0 (anomalo):
     recommendedTerm = accountsReceivableTurnover
 Si ambos son anomalos:
     recommendedTerm = requestedTerm (usar lo solicitado como fallback)
@@ -208,9 +208,9 @@ recommendedCreditLine = monthlyPaymentCapacity * (recommendedTerm / 30)
 
 | Condicion                   | type      | Mensaje                                                                                                                                                                                         |
 | --------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ratio >= 1.2                | `success` | "La capacidad de pago mensual (${monthlyPaymentCapacity}) supera ampliamente el cupo solicitado (${requestedMonthlyCreditLine}) con un margen del {margen}%."                                   |
-| ratio >= 1.0 y < 1.2        | `warning` | "La capacidad de pago mensual (${monthlyPaymentCapacity}) cubre el cupo solicitado (${requestedMonthlyCreditLine}) con un margen ajustado del {margen}%. Se recomienda no incrementar el cupo." |
-| ratio < 1.0                 | `danger`  | "La capacidad de pago mensual (${monthlyPaymentCapacity}) es insuficiente para cubrir el cupo solicitado (${requestedMonthlyCreditLine}). Deficit del {deficit}%."                              |
+| ratio >= 1.2                | `success` | "La capacidad de pago mensual (${monthlyPaymentCapacity}) supera ampliamente el cupo solicitado (${requestedCreditLine}) con un margen del {margen}%."                                   |
+| ratio >= 1.0 y < 1.2        | `warning` | "La capacidad de pago mensual (${monthlyPaymentCapacity}) cubre el cupo solicitado (${requestedCreditLine}) con un margen ajustado del {margen}%. Se recomienda no incrementar el cupo." |
+| ratio < 1.0                 | `danger`  | "La capacidad de pago mensual (${monthlyPaymentCapacity}) es insuficiente para cubrir el cupo solicitado (${requestedCreditLine}). Deficit del {deficit}%."                              |
 | monthlyPaymentCapacity <= 0 | `danger`  | "El cliente no cuenta con capacidad de pago. El servicio de deuda actual (${currentDebtService}) supera el EBITDA ajustado."                                                                    |
 
 #### Dimension 3: Coherencia de plazos (`termCoherence`)
@@ -220,9 +220,9 @@ recommendedCreditLine = monthlyPaymentCapacity * (recommendedTerm / 30)
 | requestedTerm >= realTerm        | `success` | "El plazo solicitado ({requestedTerm} dias) es coherente con los tiempos de operacion del cliente."                                                                       |
 | requestedTerm >= realTerm \* 0.7 | `warning` | "El plazo solicitado ({requestedTerm} dias) es inferior a los tiempos reales de operacion ({realTerm} dias). Se recomienda un plazo de al menos {realTerm} dias."         |
 | requestedTerm < realTerm \* 0.5  | `danger`  | "El plazo solicitado ({requestedTerm} dias) es significativamente inferior a los tiempos reales de operacion ({realTerm} dias). Alto riesgo de incumplimiento en plazos." |
-| maximumPaymentTime <= 0          | `info`    | "Los tiempos de rotacion presentan valores atipicos. El analisis de plazos se basa en la rotacion de cartera ({accountsReceivableTurnover} dias) como referencia."        |
+| paymentTimeSuppliers <= 0          | `info`    | "Los tiempos de rotacion presentan valores atipicos. El analisis de plazos se basa en la rotacion de cartera ({accountsReceivableTurnover} dias) como referencia."        |
 
-**Nota:** Cuando `maximumPaymentTime <= 0`, se usa `accountsReceivableTurnover` como `realTerm`. Una dimension puede generar multiples alertas (ej: una `danger` por incoherencia + una `info` por dato atipico).
+**Nota:** Cuando `paymentTimeSuppliers <= 0`, se usa `accountsReceivableTurnover` como `realTerm`. Una dimension puede generar multiples alertas (ej: una `danger` por incoherencia + una `info` por dato atipico).
 
 #### Dimension 4: Cupo (`creditLineAdequacy`)
 
@@ -238,7 +238,7 @@ recommendedCreditLine = monthlyPaymentCapacity * (recommendedTerm / 30)
 | -------------------------------------------------------- | --------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | viabilityStatus === 'conditional'                        | `info`    | `general` | "El estudio es aprobable sujeto a las condiciones indicadas. Revise las recomendaciones de plazo y cupo."                                     |
 | viabilityStatus === 'rejected' y solo falla por plazos   | `info`    | `general` | "El cliente podria ser viable con un plazo de {recommendedTerm} dias en lugar de {requestedTerm} dias."                                       |
-| annualPaymentCapacity < requestedMonthlyCreditLine \* 12 | `warning` | `general` | "La capacidad de pago anual (${annualPaymentCapacity}) no cubre 12 meses del cupo solicitado. Considerar un cupo menor o un plazo mas corto." |
+| annualPaymentCapacity < requestedCreditLine \* 12 | `warning` | `general` | "La capacidad de pago anual (${annualPaymentCapacity}) no cubre 12 meses del cupo solicitado. Considerar un cupo menor o un plazo mas corto." |
 | inventoryTurnover === 0                                  | `info`    | `general` | "No se registra rotacion de inventarios. Verifique si el tipo de negocio del cliente aplica para este indicador."                             |
 
 ### JSON completo de ejemplo (caso real)
@@ -341,12 +341,12 @@ function buildViabilityConditions(study: CreditStudy): ViabilityConditions {
   }
 
   // 2. Capacidad de pago
-  const paymentRatio = study.monthlyPaymentCapacity / study.requestedMonthlyCreditLine;
+  const paymentRatio = study.monthlyPaymentCapacity / study.requestedCreditLine;
   const marginPercent = round((paymentRatio - 1) * 100, 1);
   // ... evaluar y generar alertas
 
   // 3. Coherencia de plazos
-  let realTerm = study.maximumPaymentTime;
+  let realTerm = study.paymentTimeSuppliers;
   if (realTerm <= 0) {
     realTerm = study.accountsReceivableTurnover;
     alerts.push({ type: "info", dimension: "termCoherence", message: "datos atipicos..." });
@@ -356,7 +356,7 @@ function buildViabilityConditions(study: CreditStudy): ViabilityConditions {
   // 4. Cupo recomendado
   const recommendedTerm = realTerm > 0 ? realTerm : study.requestedTerm;
   const recommendedCreditLine = study.monthlyPaymentCapacity * (recommendedTerm / 30);
-  const creditRatio = study.requestedMonthlyCreditLine / recommendedCreditLine;
+  const creditRatio = study.requestedCreditLine / recommendedCreditLine;
   // ... evaluar y generar alertas
 
   // 5. Alertas cross-dimension
@@ -433,7 +433,7 @@ Tiempo maximo en pagar: -1 (anomalo)
 ```
 viabilityScore: 65/100
 viabilityStatus: "conditional"
-recommendedTerm: 104 dias (basado en rotacion de cartera, porque maximumPaymentTime es anomalo)
+recommendedTerm: 104 dias (basado en rotacion de cartera, porque paymentTimeSuppliers es anomalo)
 recommendedCreditLine: $17,951,266 * (104/30) = $62,230,388
 ```
 

@@ -94,16 +94,16 @@ export class PromissoryNotesService {
 
     // 2. Derive the amount from the credit study's requested monthly credit line
     if (
-      creditStudy.requestedMonthlyCreditLine === null ||
-      creditStudy.requestedMonthlyCreditLine === undefined ||
-      creditStudy.requestedMonthlyCreditLine <= 0
+      creditStudy.requestedCreditLine === null ||
+      creditStudy.requestedCreditLine === undefined ||
+      creditStudy.requestedCreditLine <= 0
     ) {
       throw new BadRequestException(
-        'El estudio de crédito no tiene un cupo mensual solicitado válido. No se puede generar el pagaré.',
+        'El estudio de crédito no tiene un cupo solicitado válido. No se puede generar el pagaré.',
       );
     }
 
-    const amount = Math.trunc(creditStudy.requestedMonthlyCreditLine);
+    const amount = Math.trunc(creditStudy.requestedCreditLine);
     const amountInWords = numberToSpanishWords(amount);
 
     // 3. Enforce: only one active promissory note per credit study (for now)
@@ -146,12 +146,21 @@ export class PromissoryNotesService {
 
     // 8. Build DocuSeal submission payload and send
     try {
+      let companyLogoSignedUrl: string | null = null;
+      if (company.logoUrl) {
+        companyLogoSignedUrl = await this.supabaseService.createSignedUrl(
+          'company-logos',
+          company.logoUrl,
+        );
+      }
+
       const values = this.buildDocuSealValues({
         promissoryNoteId: promissoryNote.id,
         amount,
         amountInWords,
         customer,
         company,
+        companyLogoSignedUrl,
       });
 
       const submitter = await this.docusealService.createSubmission({
@@ -218,16 +227,16 @@ export class PromissoryNotesService {
 
     // 2. Derive the amount
     if (
-      creditStudy.requestedMonthlyCreditLine === null ||
-      creditStudy.requestedMonthlyCreditLine === undefined ||
-      creditStudy.requestedMonthlyCreditLine <= 0
+      creditStudy.requestedCreditLine === null ||
+      creditStudy.requestedCreditLine === undefined ||
+      creditStudy.requestedCreditLine <= 0
     ) {
       throw new BadRequestException(
-        'El estudio de crédito no tiene un cupo mensual solicitado válido. No se puede generar el pagaré.',
+        'El estudio de crédito no tiene un cupo solicitado válido. No se puede generar el pagaré.',
       );
     }
 
-    const amount = Math.trunc(creditStudy.requestedMonthlyCreditLine);
+    const amount = Math.trunc(creditStudy.requestedCreditLine);
     const amountInWords = numberToSpanishWords(amount);
 
     // 3. Enforce one active promissory note per credit study
@@ -268,12 +277,21 @@ export class PromissoryNotesService {
 
     // 7. Build HTML from template and send to DocuSeal
     try {
+      let companyLogoSignedUrl: string | null = null;
+      if (company.logoUrl) {
+        companyLogoSignedUrl = await this.supabaseService.createSignedUrl(
+          'company-logos',
+          company.logoUrl,
+        );
+      }
+
       const values = this.buildDocuSealValues({
         promissoryNoteId: promissoryNote.id,
         amount,
         amountInWords,
         customer,
         company,
+        companyLogoSignedUrl,
       });
 
       const html = this.renderHtmlTemplate(values);
@@ -337,32 +355,42 @@ export class PromissoryNotesService {
 
     // 2. Derive the amount
     if (
-      creditStudy.requestedMonthlyCreditLine === null ||
-      creditStudy.requestedMonthlyCreditLine === undefined ||
-      creditStudy.requestedMonthlyCreditLine <= 0
+      creditStudy.requestedCreditLine === null ||
+      creditStudy.requestedCreditLine === undefined ||
+      creditStudy.requestedCreditLine <= 0
     ) {
       throw new BadRequestException(
-        'El estudio de crédito no tiene un cupo mensual solicitado válido.',
+        'El estudio de crédito no tiene un cupo solicitado válido.',
       );
     }
 
-    const amount = Math.trunc(creditStudy.requestedMonthlyCreditLine);
+    const amount = Math.trunc(creditStudy.requestedCreditLine);
     const amountInWords = numberToSpanishWords(amount);
 
     // 3. Validate customer and company
     this.validateCustomer(customer);
     this.validateCompany(company);
 
-    // 4. Build values (use a placeholder ID since no record is created yet)
+    // 4. Generate signed URL for the company logo if available
+    let companyLogoSignedUrl: string | null = null;
+    if (company.logoUrl) {
+      companyLogoSignedUrl = await this.supabaseService.createSignedUrl(
+        'company-logos',
+        company.logoUrl,
+      );
+    }
+
+    // 5. Build values (use a placeholder ID since no record is created yet)
     const values = this.buildDocuSealValues({
       promissoryNoteId: 0,
       amount,
       amountInWords,
       customer,
       company,
+      companyLogoSignedUrl,
     });
 
-    // 5. Render the preview HTML
+    // 6. Render the preview HTML
     return { html: this.renderPreviewHtml(values) };
   }
 
@@ -688,7 +716,9 @@ export class PromissoryNotesService {
       accountNumber: string | null;
       accountType: { label: string } | null;
       accountBank: { label: string } | null;
+      logoUrl?: string | null;
     };
+    companyLogoSignedUrl?: string | null;
   }): Record<string, string> {
     const now = new Date();
     const currentYear = now.getFullYear().toString();
@@ -719,6 +749,7 @@ export class PromissoryNotesService {
       customerAddress: params.customer.address ?? '',
       customerPhoneNumber: params.customer.phone ?? '',
       customerEmail: params.customer.email ?? '',
+      companyLogoUrl: params.companyLogoSignedUrl ?? '',
     };
   }
 
@@ -751,12 +782,21 @@ export class PromissoryNotesService {
     const templatePath = join(__dirname, 'templates', 'promissory-note.html');
     let html = readFileSync(templatePath, 'utf-8');
 
-    // Replace {{key}} placeholders with bold values
-    for (const [key, value] of Object.entries(values)) {
-      html = html.replaceAll(
-        `{{${key}}}`,
-        `<strong>${value}</strong>`,
+    // If no logo URL, remove the logo container entirely
+    if (!values.companyLogoUrl) {
+      html = html.replace(
+        /<div style="text-align: center; margin-bottom: 20px;">\s*<img[^>]*{{companyLogoUrl}}[^>]*>\s*<\/div>/g,
+        '',
       );
+    }
+
+    // Replace {{key}} placeholders with bold values (except URLs used in attributes)
+    for (const [key, value] of Object.entries(values)) {
+      if (key === 'companyLogoUrl') {
+        html = html.replaceAll(`{{${key}}}`, value);
+      } else {
+        html = html.replaceAll(`{{${key}}}`, `<strong>${value}</strong>`);
+      }
     }
 
     // Replace signature-field tags with a visible placeholder
@@ -780,6 +820,14 @@ export class PromissoryNotesService {
   private renderHtmlTemplate(values: Record<string, string>): string {
     const templatePath = join(__dirname, 'templates', 'promissory-note.html');
     let html = readFileSync(templatePath, 'utf-8');
+
+    // If no logo URL, remove the logo container entirely
+    if (!values.companyLogoUrl) {
+      html = html.replace(
+        /<div style="text-align: center; margin-bottom: 20px;">\s*<img[^>]*{{companyLogoUrl}}[^>]*>\s*<\/div>/g,
+        '',
+      );
+    }
 
     for (const [key, value] of Object.entries(values)) {
       html = html.replaceAll(`{{${key}}}`, value);

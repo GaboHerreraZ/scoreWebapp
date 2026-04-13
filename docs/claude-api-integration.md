@@ -240,7 +240,7 @@ Cliente: ${data.customerName}
 Ciudad: ${data.city}
 Antiguedad: ${data.yearsInBusiness} anos
 
-Cupo mensual solicitado: $${formatCOP(data.requestedMonthlyCreditLine)}
+Cupo mensual solicitado: $${formatCOP(data.requestedCreditLine)}
 Plazo solicitado: ${data.requestedTerm} dias
 Cupo recomendado: $${formatCOP(data.recommendedCreditLine)}
 Plazo recomendado: ${data.recommendedTerm} dias
