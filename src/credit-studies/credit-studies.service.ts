@@ -10,12 +10,14 @@ import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { getMonthsFromPeriod } from '../common/enums/income-statement-period.enum.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class CreditStudiesService {
   constructor(
     private readonly repository: CreditStudiesRepository,
     private readonly parametersRepository: ParametersRepository,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(companyId: string, userId: string, dto: CreateCreditStudyDto) {
@@ -697,7 +699,7 @@ export class CreditStudiesService {
     const newStatus =
       await this.parametersRepository.findByCode('estudioRealizado');
 
-    return this.repository.update(id, {
+    const updated = await this.repository.update(id, {
       ebitda,
       adjustedEbitda,
       currentDebtService: currentDebtSevice,
@@ -718,5 +720,30 @@ export class CreditStudiesService {
       statusId: newStatus?.id,
       resolutionDate: new Date(),
     });
+
+    const notificationType =
+      await this.parametersRepository.findByTypeAndCode('notification_type', 'credit_study');
+
+    if (notificationType) {
+      const customerName = study.customer?.businessName ?? 'Cliente';
+      const statusLabel =
+        viabilityStatus === 'approved'
+          ? 'Aprobado'
+          : viabilityStatus === 'conditional'
+            ? 'Condicionado'
+            : 'Rechazado';
+
+      this.notificationsService
+        .create(userId, {
+          companyId,
+          typeId: notificationType.id,
+          title: `Estudio de crédito ${statusLabel.toLowerCase()}`,
+          message: `El estudio de crédito de ${customerName} fue analizado. Resultado: ${statusLabel} (${viabilityScore}/100).`,
+          route: `/app/credit-study/detail/${id}`,
+        })
+        .catch(() => {});
+    }
+
+    return updated;
   }
 }

@@ -41,6 +41,7 @@ model Parameter {
   companiesByAccountType         Company[]      @relation("CompanyAccountType")
   companiesByAccountBank         Company[]      @relation("CompanyAccountBank")
   promissoryNotesByStatus        PromissoryNote[] @relation("PromissoryNoteStatus")
+  notificationsByType            Notification[]   @relation("NotificationType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -70,6 +71,8 @@ model Profile {
   updatedStudies   CreditStudy[]  @relation("CreditStudyUpdatedBy")
   aiAnalyses       AiAnalysis[]   @relation("AiAnalysisPerformedBy")
   createdPromissoryNotes PromissoryNote[] @relation("PromissoryNoteCreatedBy")
+  createdNotifications   Notification[]   @relation("NotificationCreatedBy")
+  notificationReads      NotificationRead[] @relation("NotificationReadUser")
 
   @@map("profiles")
 }
@@ -132,6 +135,7 @@ model Company {
   creditStudies CreditStudy[]
   aiAnalyses    AiAnalysis[]
   promissoryNotes PromissoryNote[]
+  notifications   Notification[]
 
   @@map("companies")
 }
@@ -434,4 +438,38 @@ model PromissoryNote {
   @@index([customerId])
   @@index([docusealSubmissionId])
   @@map("promissory_notes")
+}
+
+// ─── Notificaciones in-app ──────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  createdBy String   @map("created_by") @db.Uuid
+  typeId    Int      @map("type_id")
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  route     String   @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company       Company            @relation(fields: [companyId], references: [id])
+  createdByUser Profile            @relation("NotificationCreatedBy", fields: [createdBy], references: [id])
+  type          Parameter          @relation("NotificationType", fields: [typeId], references: [id])
+  reads         NotificationRead[]
+
+  @@index([companyId])
+  @@map("notifications")
+}
+
+model NotificationRead {
+  id             String   @id @default(uuid()) @db.Uuid
+  notificationId String   @map("notification_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  readAt         DateTime @default(now()) @map("read_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id])
+  user         Profile      @relation("NotificationReadUser", fields: [userId], references: [id])
+
+  @@unique([notificationId, userId])
+  @@map("notification_reads")
 }

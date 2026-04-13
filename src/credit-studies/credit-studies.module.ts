@@ -3,9 +3,10 @@ import { CreditStudiesController } from './credit-studies.controller.js';
 import { CreditStudiesService } from './credit-studies.service.js';
 import { CreditStudiesRepository } from './credit-studies.repository.js';
 import { ParametersModule } from '../parameters/parameters.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 @Module({
-  imports: [ParametersModule],
+  imports: [ParametersModule, NotificationsModule],
   controllers: [CreditStudiesController],
   providers: [CreditStudiesService, CreditStudiesRepository],
   exports: [CreditStudiesService],
