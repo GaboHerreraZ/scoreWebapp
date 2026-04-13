@@ -17,6 +17,7 @@ import { SupabaseService } from '../auth/supabase.service.js';
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
 import { numberToSpanishWords } from './utils/number-to-words.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -55,6 +56,7 @@ export class PromissoryNotesService {
     private readonly docusealService: DocuSealService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.templateId = Number(
       this.configService.get<string>('DOCUSEAL_PROMISSORY_TEMPLATE_ID') ?? 0,
@@ -341,6 +343,15 @@ export class PromissoryNotesService {
       // 9. Update credit study status to pendienteFirma
       await this.updateCreditStudyToPendingSignature(dto.creditStudyId);
 
+      // 10. Emit notification
+      this.emitNotification(
+        userId,
+        companyId,
+        `Pagaré enviado a firma`,
+        `Se envió el pagaré #${updated.id} de ${customer.businessName} para firma electrónica.`,
+        `/app/credit-study/detail/${dto.creditStudyId}`,
+      );
+
       return updated;
     } catch (err) {
       this.logger.error(
@@ -492,6 +503,15 @@ export class PromissoryNotesService {
       });
     }
 
+    // 4. Emit notification
+    this.emitNotification(
+      note.createdBy,
+      companyId,
+      `Pagaré declinado`,
+      `El pagaré #${id} fue declinado.`,
+      `/app/credit-study/detail/${note.creditStudyId}`,
+    );
+
     return updated;
   }
 
@@ -596,7 +616,12 @@ export class PromissoryNotesService {
     // 1. Load minimal note context (companyId + creditStudyId) in a single query
     const note = await this.prisma.promissoryNote.findUnique({
       where: { id: promissoryNoteId },
-      select: { companyId: true, creditStudyId: true },
+      select: {
+        companyId: true,
+        creditStudyId: true,
+        createdBy: true,
+        customer: { select: { businessName: true } },
+      },
     });
 
     if (!note) {
@@ -662,6 +687,38 @@ export class PromissoryNotesService {
       where: { id: note.creditStudyId },
       data: { statusId: completedStudyStatus.id },
     });
+
+    // 6. Emit notification — document signed
+    const customerName = note.customer?.businessName ?? 'Cliente';
+    this.emitNotification(
+      note.createdBy,
+      note.companyId,
+      `Pagaré firmado`,
+      `${customerName} firmó el pagaré #${promissoryNoteId}.`,
+      `/app/credit-study/detail/${note.creditStudyId}`,
+    );
+  }
+
+  private emitNotification(
+    userId: string,
+    companyId: string,
+    title: string,
+    message: string,
+    route: string,
+  ): void {
+    this.parametersRepository
+      .findByTypeAndCode('notification_type', 'promissory_note')
+      .then((type) => {
+        if (!type) return;
+        return this.notificationsService.create(userId, {
+          companyId,
+          typeId: type.id,
+          title,
+          message,
+          route,
+        });
+      })
+      .catch(() => {});
   }
 
   private validateCustomer(customer: {
