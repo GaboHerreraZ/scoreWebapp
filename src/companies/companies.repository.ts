@@ -210,9 +210,9 @@ export class CompaniesRepository {
 
     // Get parameter IDs for AI analysis types
     const [estudioCreditoParam, cargaPdfParam] = await Promise.all([
-      this.prisma.parameter.findFirst({ where: { code: 'estudioCredito' } }),
+      this.prisma.parameter.findFirst({ where: { code: 'creditReview' } }),
       this.prisma.parameter.findFirst({
-        where: { code: 'cargaPdfEstadosFinancieros' },
+        where: { code: 'financialStatementsPdfUpload' },
       }),
     ]);
 

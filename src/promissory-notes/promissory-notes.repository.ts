@@ -80,13 +80,13 @@ export class PromissoryNotesRepository {
       where: {
         type_code: {
           type: 'promissory_note_status',
-          code: 'PENDING_SIGNATURE',
+          code: 'pendingSignature',
         },
       },
     });
     const signedStatus = await this.prisma.parameter.findUnique({
       where: {
-        type_code: { type: 'promissory_note_status', code: 'SIGNED' },
+        type_code: { type: 'promissory_note_status', code: 'signed' },
       },
     });
 

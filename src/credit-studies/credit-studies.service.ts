@@ -31,7 +31,7 @@ export class CreditStudiesService {
 
     const { customerId, studyDate, resolutionDate, ...rest } = dto;
 
-    const newStatus = await this.parametersRepository.findByCode('enRevision');
+    const newStatus = await this.parametersRepository.findByCode('inReview');
 
     return this.repository.create({
       ...rest,
@@ -125,7 +125,7 @@ export class CreditStudiesService {
       );
     }
 
-    if (current.status?.code === 'estudioCompletado') {
+    if (current.status?.code === 'studyClosed') {
       throw new BadRequestException(
         'No se puede modificar un estudio de crédito que ya fue completado.',
       );
@@ -161,7 +161,7 @@ export class CreditStudiesService {
       );
     }
 
-    if (study.status?.code === 'estudioCompletado') {
+    if (study.status?.code === 'studyClosed') {
       throw new BadRequestException(
         'No se puede eliminar un estudio de crédito que ya fue completado.',
       );
@@ -178,7 +178,7 @@ export class CreditStudiesService {
       );
     }
 
-    if (study.status?.code === 'estudioCompletado') {
+    if (study.status?.code === 'studyClosed') {
       throw new BadRequestException(
         'No se puede recalcular un estudio de crédito que ya fue completado.',
       );
@@ -697,7 +697,7 @@ export class CreditStudiesService {
     };
 
     const newStatus =
-      await this.parametersRepository.findByCode('estudioRealizado');
+      await this.parametersRepository.findByCode('studyCompleted');
 
     const updated = await this.repository.update(id, {
       ebitda,

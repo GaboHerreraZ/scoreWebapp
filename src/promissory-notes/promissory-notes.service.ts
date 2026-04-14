@@ -133,7 +133,7 @@ export class PromissoryNotesService {
     // 6. Resolve pending status parameter
     const pendingStatus = await this.parametersRepository.findByTypeAndCode(
       'promissory_note_status',
-      'PENDING_SIGNATURE',
+      'pendingSignature',
     );
     if (!pendingStatus) {
       throw new BadRequestException(
@@ -172,7 +172,7 @@ export class PromissoryNotesService {
       });
 
       const isLegalEntity =
-        customer.personType?.code === 'personaJuridica';
+        customer.personType?.code === 'legalEntity';
       const signerEmail = isLegalEntity
         ? customer.legalRepEmail!
         : customer.email!;
@@ -276,7 +276,7 @@ export class PromissoryNotesService {
     // 5. Resolve pending status
     const pendingStatus = await this.parametersRepository.findByTypeAndCode(
       'promissory_note_status',
-      'PENDING_SIGNATURE',
+      'pendingSignature',
     );
     if (!pendingStatus) {
       throw new BadRequestException(
@@ -317,7 +317,7 @@ export class PromissoryNotesService {
       const html = this.renderHtmlTemplate(values);
 
       const isLegalEntity =
-        customer.personType?.code === 'personaJuridica';
+        customer.personType?.code === 'legalEntity';
       const signerEmail = isLegalEntity
         ? customer.legalRepEmail!
         : customer.email!;
@@ -462,7 +462,7 @@ export class PromissoryNotesService {
     // Only pending notes can be declined
     const pendingStatus = await this.parametersRepository.findByTypeAndCode(
       'promissory_note_status',
-      'PENDING_SIGNATURE',
+      'pendingSignature',
     );
     if (note.statusId !== pendingStatus?.id) {
       throw new BadRequestException(
@@ -486,7 +486,7 @@ export class PromissoryNotesService {
     // 2. Mark promissory note as DECLINED
     const declinedStatus = await this.parametersRepository.findByTypeAndCode(
       'promissory_note_status',
-      'DECLINED',
+      'declined',
     );
     const updated = await this.repository.update(id, {
       statusId: declinedStatus?.id,
@@ -495,7 +495,7 @@ export class PromissoryNotesService {
 
     // 3. Revert credit study status to estudioRealizado
     const estudioRealizadoStatus =
-      await this.parametersRepository.findByCode('estudioRealizado');
+      await this.parametersRepository.findByCode('studyCompleted');
     if (estudioRealizadoStatus) {
       await this.prisma.creditStudy.update({
         where: { id: note.creditStudyId },
@@ -580,7 +580,7 @@ export class PromissoryNotesService {
     if (state.status === 'declined') {
       const declinedStatus = await this.parametersRepository.findByTypeAndCode(
         'promissory_note_status',
-        'DECLINED',
+        'declined',
       );
       await this.repository.update(note.id, {
         statusId: declinedStatus?.id,
@@ -592,7 +592,7 @@ export class PromissoryNotesService {
     if (state.status === 'expired') {
       const expiredStatus = await this.parametersRepository.findByTypeAndCode(
         'promissory_note_status',
-        'EXPIRED',
+        'expired',
       );
       await this.repository.update(note.id, {
         statusId: expiredStatus?.id,
@@ -663,7 +663,7 @@ export class PromissoryNotesService {
     // 4. Mark the promissory note as SIGNED
     const signedStatus = await this.parametersRepository.findByTypeAndCode(
       'promissory_note_status',
-      'SIGNED',
+      'signed',
     );
     await this.repository.update(promissoryNoteId, {
       statusId: signedStatus?.id,
@@ -674,7 +674,7 @@ export class PromissoryNotesService {
 
     // 5. Close the credit study by moving it to `estudioCompletado`
     const completedStudyStatus = await this.parametersRepository.findByCode(
-      'estudioCompletado',
+      'studyClosed',
     );
     if (!completedStudyStatus) {
       this.logger.warn(
@@ -736,7 +736,7 @@ export class PromissoryNotesService {
     address: string | null;
     phone: string | null;
   }): void {
-    const isLegalEntity = customer.personType?.code === 'personaJuridica';
+    const isLegalEntity = customer.personType?.code === 'legalEntity';
 
     if (isLegalEntity) {
       const fieldLabels: Record<string, string> = {
@@ -857,7 +857,7 @@ export class PromissoryNotesService {
     const currentDay = now.getDate().toString();
 
     const isLegalEntity =
-      params.customer.personType?.code === 'personaJuridica';
+      params.customer.personType?.code === 'legalEntity';
 
     // For persona jurídica, use legal representative data for identification,
     // phone and email; for persona natural, use the customer's own data.
@@ -905,7 +905,7 @@ export class PromissoryNotesService {
     creditStudyId: string,
   ): Promise<void> {
     const pendingSignatureStatus =
-      await this.parametersRepository.findByCode('pendienteFirma');
+      await this.parametersRepository.findByCode('pendingSignature');
     if (!pendingSignatureStatus) {
       this.logger.warn(
         'Parameter with code "pendienteFirma" not found — credit study status was not updated',

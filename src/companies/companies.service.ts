@@ -29,7 +29,7 @@ export class CompaniesService {
       );
     }
 
-    const adminRoleId = await this.repository.getRoleId('administrador');
+    const adminRoleId = await this.repository.getRoleId('administrator');
     if (!adminRoleId) {
       throw new BadRequestException(
         'Role parameter "administrador" not found. Please create a parameter with type=user_company_role, code=administrador',

@@ -55,31 +55,31 @@ ALTER TABLE "promissory_notes" ADD CONSTRAINT "promissory_notes_created_by_fkey"
 -- Identification types
 INSERT INTO "parameters" ("type", "code", "label", "description", "is_active", "sort_order", "created_at", "updated_at")
 VALUES
-  ('identification_type', 'CC', 'Cédula de Ciudadanía', NULL, true, 1, NOW(), NOW()),
-  ('identification_type', 'CE', 'Cédula de Extranjería', NULL, true, 2, NOW(), NOW()),
-  ('identification_type', 'NIT', 'NIT', NULL, true, 3, NOW(), NOW()),
-  ('identification_type', 'PA', 'Pasaporte', NULL, true, 4, NOW(), NOW())
+  ('identification_type', 'cc', 'Cédula de Ciudadanía', NULL, true, 1, NOW(), NOW()),
+  ('identification_type', 'ce', 'Cédula de Extranjería', NULL, true, 2, NOW(), NOW()),
+  ('identification_type', 'nit', 'NIT', NULL, true, 3, NOW(), NOW()),
+  ('identification_type', 'pa', 'Pasaporte', NULL, true, 4, NOW(), NOW())
 ON CONFLICT ("type", "code") DO NOTHING;
 
 -- Account types
 INSERT INTO "parameters" ("type", "code", "label", "description", "is_active", "sort_order", "created_at", "updated_at")
 VALUES
-  ('account_type', 'SAVINGS', 'Ahorros', NULL, true, 1, NOW(), NOW()),
-  ('account_type', 'CHECKING', 'Corriente', NULL, true, 2, NOW(), NOW())
+  ('account_type', 'savings', 'Ahorros', NULL, true, 1, NOW(), NOW()),
+  ('account_type', 'checking', 'Corriente', NULL, true, 2, NOW(), NOW())
 ON CONFLICT ("type", "code") DO NOTHING;
 
 -- Banks
 INSERT INTO "parameters" ("type", "code", "label", "description", "is_active", "sort_order", "created_at", "updated_at")
 VALUES
-  ('bank', 'BANCOLOMBIA', 'Bancolombia', NULL, true, 1, NOW(), NOW()),
-  ('bank', 'BANCO_BOGOTA', 'Banco de Bogotá', NULL, true, 2, NOW(), NOW())
+  ('bank', 'bancolombia', 'Bancolombia', NULL, true, 1, NOW(), NOW()),
+  ('bank', 'bancoBogota', 'Banco de Bogotá', NULL, true, 2, NOW(), NOW())
 ON CONFLICT ("type", "code") DO NOTHING;
 
 -- Promissory note statuses
 INSERT INTO "parameters" ("type", "code", "label", "description", "is_active", "sort_order", "created_at", "updated_at")
 VALUES
-  ('promissory_note_status', 'PENDING_SIGNATURE', 'Pendiente de firma', NULL, true, 1, NOW(), NOW()),
-  ('promissory_note_status', 'SIGNED', 'Firmado', NULL, true, 2, NOW(), NOW()),
-  ('promissory_note_status', 'DECLINED', 'Rechazado', NULL, true, 3, NOW(), NOW()),
-  ('promissory_note_status', 'EXPIRED', 'Expirado', NULL, true, 4, NOW(), NOW())
+  ('promissory_note_status', 'pendingSignature', 'Pendiente de firma', NULL, true, 1, NOW(), NOW()),
+  ('promissory_note_status', 'signed', 'Firmado', NULL, true, 2, NOW(), NOW()),
+  ('promissory_note_status', 'declined', 'Rechazado', NULL, true, 3, NOW(), NOW()),
+  ('promissory_note_status', 'expired', 'Expirado', NULL, true, 4, NOW(), NOW())
 ON CONFLICT ("type", "code") DO NOTHING;

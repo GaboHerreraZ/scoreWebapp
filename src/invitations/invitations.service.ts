@@ -47,7 +47,7 @@ export class InvitationsService {
 
     // Obtener el ID del estado "pending"
     const pendingStatusId =
-      await this.repository.getInvitationStatusId('pendiente');
+      await this.repository.getInvitationStatusId('pending');
     if (!pendingStatusId) {
       throw new BadRequestException(
         'No se encontró el parámetro de estado "pendiente". Cree parámetros con type=invitation_status',
@@ -234,7 +234,7 @@ export class InvitationsService {
 
   async findPendingByEmail(email: string) {
     const pendingStatusId =
-      await this.repository.getInvitationStatusId('pendiente');
+      await this.repository.getInvitationStatusId('pending');
     if (!pendingStatusId) {
       throw new BadRequestException(
         'No se encontró el parámetro de estado "pending"',
@@ -323,7 +323,7 @@ export class InvitationsService {
 
     // Verificar que la invitación esté pendiente
     const pendingStatusId =
-      await this.repository.getInvitationStatusId('pendiente');
+      await this.repository.getInvitationStatusId('pending');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
@@ -345,7 +345,7 @@ export class InvitationsService {
     }
 
     const acceptedStatusId =
-      await this.repository.getInvitationStatusId('aceptada');
+      await this.repository.getInvitationStatusId('accepted');
     if (!acceptedStatusId) {
       throw new BadRequestException(
         'No se encontró el parámetro de estado "aceptada"',
@@ -353,7 +353,7 @@ export class InvitationsService {
     }
 
     // Obtener el rol "auxiliar" para asignar al usuario aceptado
-    const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
+    const auxiliarRoleId = await this.repository.getRoleId('assistant');
     if (!auxiliarRoleId) {
       throw new BadRequestException(
         'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
@@ -397,7 +397,7 @@ export class InvitationsService {
     }
 
     const pendingStatusId =
-      await this.repository.getInvitationStatusId('pendiente');
+      await this.repository.getInvitationStatusId('pending');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
@@ -429,9 +429,9 @@ export class InvitationsService {
 
     // Solo se puede activar/desactivar invitaciones aceptadas o canceladas
     const acceptedStatusId =
-      await this.repository.getInvitationStatusId('aceptada');
+      await this.repository.getInvitationStatusId('accepted');
     const cancelledStatusId =
-      await this.repository.getInvitationStatusId('cancelado');
+      await this.repository.getInvitationStatusId('canceled');
     const allowedStatuses = [acceptedStatusId, cancelledStatusId].filter(
       (id): id is number => id !== null,
     );
@@ -461,7 +461,7 @@ export class InvitationsService {
     // Si se desactiva, cambiar invitación a cancelled y enviar correo
     if (!isActive) {
       const cancelledStatusId =
-        await this.repository.getInvitationStatusId('cancelado');
+        await this.repository.getInvitationStatusId('canceled');
       if (cancelledStatusId) {
         await this.repository.update(id, { statusId: cancelledStatusId });
       }
@@ -498,7 +498,7 @@ export class InvitationsService {
 
     // Verificar que aún esté pendiente
     const pendingStatusId =
-      await this.repository.getInvitationStatusId('pendiente');
+      await this.repository.getInvitationStatusId('pending');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
     }
@@ -513,7 +513,7 @@ export class InvitationsService {
       }
 
       // Obtener el rol "auxiliar" para asignar al usuario aceptado
-      const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
+      const auxiliarRoleId = await this.repository.getRoleId('assistant');
       if (!auxiliarRoleId) {
         throw new BadRequestException(
           'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
@@ -545,7 +545,7 @@ export class InvitationsService {
       );
     } else {
       const rejectedStatusId =
-        await this.repository.getInvitationStatusId('rechazada');
+        await this.repository.getInvitationStatusId('rejected');
       if (!rejectedStatusId) {
         throw new BadRequestException(
           'No se encontró el parámetro de estado "rejected"',

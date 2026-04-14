@@ -39,7 +39,7 @@ export class AiAnalysesService {
 
   async analyze(creditStudyId: string, companyId: string, userId: string) {
     // 1. Get analysis type parameter
-    const typeId = await this.getTypeId('estudioCredito');
+    const typeId = await this.getTypeId('creditReview');
 
     // 2. Validate credit study exists and belongs to company
     const study = await this.repository.findCreditStudyWithCustomer(
@@ -192,7 +192,7 @@ export class AiAnalysesService {
 
   async extractPdf(pdfBuffer: Buffer, companyId: string, userId: string) {
     // 1. Get extraction type parameter
-    const typeId = await this.getTypeId('cargaPdfEstadosFinancieros');
+    const typeId = await this.getTypeId('financialStatementsPdfUpload');
 
     // 2. Check subscription PDF extraction limits
     const companySub = await this.repository.findCurrentSubscription(companyId);
@@ -411,8 +411,8 @@ export class AiAnalysesService {
 
     // Get type IDs for counting per type
     const [analysisType, extractionType] = await Promise.all([
-      this.parametersRepository.findByCode('estudioCredito'),
-      this.parametersRepository.findByCode('cargaPdfEstadosFinancieros'),
+      this.parametersRepository.findByCode('creditReview'),
+      this.parametersRepository.findByCode('financialStatementsPdfUpload'),
     ]);
 
     const [analysisUsage, extractionUsage] = await Promise.all([

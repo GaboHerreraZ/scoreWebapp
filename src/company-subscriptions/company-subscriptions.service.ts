@@ -43,8 +43,8 @@ export class CompanySubscriptionsService {
 
     // Find the "activa" status parameter
     const activeStatus = await this.repository.findParameterByTypeAndCode(
-      'subscriptionStatus',
-      'activa',
+      'subscription_status',
+      'active',
     );
     if (!activeStatus) {
       throw new NotFoundException(
@@ -56,7 +56,7 @@ export class CompanySubscriptionsService {
     const currentSub = await this.repository.findCurrentByCompanyId(companyId);
     if (currentSub) {
       const upgradedStatus = await this.repository.findParameterByTypeAndCode(
-        'subscriptionStatus',
+        'subscription_status',
         'UPGRADED',
       );
       if (upgradedStatus) {
@@ -272,8 +272,8 @@ export class CompanySubscriptionsService {
 
     // Find the "activa" status parameter
     const activeStatus = await this.repository.findParameterByTypeAndCode(
-      'subscriptionStatus',
-      'activa',
+      'subscription_status',
+      'active',
     );
     if (!activeStatus) {
       throw new NotFoundException(
@@ -299,8 +299,8 @@ export class CompanySubscriptionsService {
       statusId = activeStatus.id;
     } else {
       const pendingStatus = await this.repository.findParameterByTypeAndCode(
-        'subscriptionStatus',
-        'pendiente',
+        'subscription_status',
+        'pending',
       );
       if (!pendingStatus) {
         throw new NotFoundException(
@@ -400,8 +400,8 @@ export class CompanySubscriptionsService {
 
     if (transactionStatus === 'APPROVED') {
       const activeStatus = await this.repository.findParameterByTypeAndCode(
-        'subscriptionStatus',
-        'activa',
+        'subscription_status',
+        'active',
       );
       if (!activeStatus) {
         throw new NotFoundException(
@@ -422,8 +422,8 @@ export class CompanySubscriptionsService {
       transactionStatus === 'ERROR'
     ) {
       const rejectedStatus = await this.repository.findParameterByTypeAndCode(
-        'subscriptionStatus',
-        'rechazada',
+        'subscription_status',
+        'rejected',
       );
       if (rejectedStatus) {
         await this.repository.update(companySubscription.id, {

@@ -13,7 +13,7 @@ SELECT 'SUPPORT_LEVEL', 'email', 'Email', true, 1, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "parameters" WHERE "type" = 'SUPPORT_LEVEL' AND "code" = 'email');
 
 INSERT INTO "parameters" ("type", "code", "label", "is_active", "sort_order", "created_at", "updated_at")
-SELECT 'SUPPORT_LEVEL', 'priority_email', 'Email prioritario', true, 2, NOW(), NOW()
+SELECT 'SUPPORT_LEVEL', 'priorityEmail', 'Email prioritario', true, 2, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "parameters" WHERE "type" = 'SUPPORT_LEVEL' AND "code" = 'priority_email');
 
 -- 3. Add new columns as nullable (IF NOT EXISTS for idempotency)
