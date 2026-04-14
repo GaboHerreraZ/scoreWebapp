@@ -9,6 +9,7 @@ generated/
 
 # Environment variables
 .env
+.env.*
 
 # IDE
 .vscode/

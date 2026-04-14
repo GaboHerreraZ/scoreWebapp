@@ -11,13 +11,24 @@ REST API for a credit study management system built with NestJS, Prisma, and Sup
 - **Authentication**: Supabase Auth
 - **Documentation**: Swagger/OpenAPI
 
+## Environments
+
+The project uses two environments managed via separate `.env` files:
+
+| Environment | Env file | Purpose |
+|-------------|----------|---------|
+| **Staging** | `.env.staging` | Development and testing — default for all dev commands |
+| **Production** | `.env` | Production Supabase project — only used with `:pro` commands |
+
+Environment switching is handled by `dotenv-cli`. All commands **default to staging** to prevent accidental changes in production.
+
 ## Local Development
 
 ### Prerequisites
 
 - Node.js 18+
 - npm
-- PostgreSQL database (via Supabase)
+- PostgreSQL database (via Supabase — one project per environment)
 
 ### Setup
 
@@ -25,17 +36,17 @@ REST API for a credit study management system built with NestJS, Prisma, and Sup
 # Install dependencies
 npm install
 
-# Copy environment variables
-cp .env.example .env
-# Fill in the values in .env
+# Configure environment files
+# .env           → Production Supabase credentials
+# .env.staging   → Staging Supabase credentials
 
 # Generate Prisma client
 npm run prisma:generate
 
-# Run migrations
-npm run prisma:migrate:dev
+# Run migrations (applies to staging by default)
+npm run prisma:migrate:deploy
 
-# Start development server
+# Start development server (staging)
 npm run start:dev
 ```
 
@@ -43,32 +54,60 @@ The API will be available at `http://localhost:3000/api` and Swagger docs at `ht
 
 ### Scripts
 
+#### Application
+
+| Script | Environment | Description |
+|--------|-------------|-------------|
+| `npm run start:dev` | Staging | Development server with watch mode |
+| `npm run start:debug` | Staging | Debug server with watch mode |
+| `npm run start:pro` | Production | Development server pointing to production |
+| `npm run start:prod` | — | Start built production server (`node dist/`) |
+| `npm run build` | — | Build the project |
+| `npm run build:prod` | — | Full production build (prisma generate + build + migrate) |
+| `npm run lint` | — | ESLint + fix |
+| `npm run test` | — | Run unit tests |
+| `npm run test:e2e` | — | Run e2e tests |
+
+#### Prisma (Staging — default)
+
 | Script | Description |
 |--------|-------------|
-| `npm run start:dev` | Development with watch mode |
-| `npm run build` | Build the project |
-| `npm run start:prod` | Start production server |
-| `npm run build:prod` | Full production build (prisma generate + build + migrate) |
-| `npm run lint` | ESLint + fix |
-| `npm run test` | Run unit tests |
-| `npm run test:e2e` | Run e2e tests |
 | `npm run prisma:generate` | Regenerate Prisma client |
-| `npm run prisma:migrate:dev` | Run migrations in dev |
+| `npm run prisma:migrate:dev` | Run migrations interactively |
 | `npm run prisma:migrate:create` | Create migration without applying |
-| `npm run prisma:migrate:deploy` | Apply pending migrations (production) |
+| `npm run prisma:migrate:deploy` | Apply pending migrations |
+| `npm run prisma:migrate:status` | Check migration status |
 | `npm run prisma:studio` | Open Prisma Studio |
+
+#### Prisma (Production)
+
+| Script | Description |
+|--------|-------------|
+| `npm run prisma:migrate:pro` | Apply pending migrations to production |
+| `npm run prisma:studio:pro` | Open Prisma Studio for production |
 
 ## Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
+Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` differ between environments — the rest (API keys, config) are shared.
+
+| Variable | Description | Differs per env |
+|----------|-------------|-----------------|
 | `DATABASE_URL` | Pooled Supabase PostgreSQL connection (port 6543) | Yes |
-| `DIRECT_URL` | Direct PostgreSQL connection (port 5432, used for migrations) | Yes |
+| `DIRECT_URL` | Direct PostgreSQL connection (port 5432, for migrations) | Yes |
 | `SUPABASE_URL` | Supabase project URL | Yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Yes |
-| `WOMPI_INTEGRITY_KEY` | Wompi payment integrity key | Yes |
-| `WOMPI_EVENTS_KEY` | Wompi webhook events key | Yes |
-| `CORS_ORIGINS` | Allowed origins separated by comma (default: `http://localhost:4200`) | No |
+| `ANTHROPIC_API_KEY` | Anthropic API key for AI analysis | No |
+| `ANTHROPIC_MODEL` | Claude model to use | No |
+| `ANTHROPIC_MAX_TOKENS` | Max tokens for AI responses | No |
+| `RESEND_API_KEY` | Resend email API key | No |
+| `DOCUSEAL_API_URL` | DocuSeal API URL | No |
+| `DOCUSEAL_API_KEY` | DocuSeal API key | No |
+| `DOCUSEAL_PROMISSORY_TEMPLATE_ID` | DocuSeal template ID for promissory notes | No |
+| `DOCUSEAL_WEBHOOK_SECRET` | DocuSeal webhook secret | No |
+| `SUPABASE_STORAGE_BUCKET_PROMISSORY` | Storage bucket name for promissory notes | No |
+| `WOMPI_INTEGRITY_KEY` | Wompi payment integrity key | No |
+| `WOMPI_EVENTS_KEY` | Wompi webhook events key | No |
+| `FRONTEND_URL` | Frontend URL for CORS and emails | No |
 | `PORT` | Server port (default: `3000`) | No |
 
 ## Database - Prisma Migrations
