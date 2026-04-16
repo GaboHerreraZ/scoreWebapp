@@ -1,116 +1,53 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import { AiProvider, AiCompletionResult } from './providers/ai-provider.interface.js';
+import { AnthropicProvider } from './providers/anthropic.provider.js';
+import { GeminiProvider } from './providers/gemini.provider.js';
 
-export interface AiCompletionResult {
-  content: string | null;
-  promptTokens: number | null;
-  completionTokens: number | null;
-  totalTokens: number | null;
-  model: string;
-  durationMs: number;
-}
-
-// Pricing per 1M tokens for Claude Haiku 4.5
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'claude-haiku-4-5-20251001': { input: 0.8, output: 4.0 },
-};
+export type { AiCompletionResult };
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private readonly client: Anthropic;
-  private readonly model: string;
+  private readonly provider: AiProvider;
   private readonly maxTokens: number;
 
   constructor(private configService: ConfigService) {
-    this.client = new Anthropic({
-      apiKey: this.configService.get<string>(
-        'ANTHROPIC_API_KEY',
-        'sk-ant-placeholder',
-      ),
-    });
-    this.model = this.configService.get<string>(
-      'ANTHROPIC_MODEL',
-      'claude-haiku-4-5-20251001',
-    );
-    this.maxTokens = Number(
-      this.configService.get('ANTHROPIC_MAX_TOKENS', '1024'),
-    );
+    const aiProvider = this.configService.get<string>('AI_PROVIDER', 'anthropic');
+    this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '1024'));
+
+    this.provider = this.createProvider(aiProvider);
+    this.logger.log(`AI provider initialized: ${this.provider.providerName}`);
+  }
+
+  private createProvider(provider: string): AiProvider {
+    switch (provider) {
+      case 'gemini':
+        return new GeminiProvider(
+          this.configService.get<string>('GEMINI_API_KEY', ''),
+          this.configService.get<string>('GEMINI_MODEL', 'gemini-2.5-flash'),
+        );
+      case 'anthropic':
+      default:
+        return new AnthropicProvider(
+          this.configService.get<string>('ANTHROPIC_API_KEY', 'sk-ant-placeholder'),
+          this.configService.get<string>('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+        );
+    }
   }
 
   async generateCompletion(
     systemPrompt: string,
     userMessage: string,
   ): Promise<AiCompletionResult> {
-    const startTime = Date.now();
-
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const durationMs = Date.now() - startTime;
-    const textContent = response.content.find((block) => block.type === 'text');
-
-    return {
-      content: textContent?.text ?? null,
-      promptTokens: response.usage?.input_tokens ?? null,
-      completionTokens: response.usage?.output_tokens ?? null,
-      totalTokens: response.usage
-        ? response.usage.input_tokens + response.usage.output_tokens
-        : null,
-      model: response.model,
-      durationMs,
-    };
+    return this.provider.generateCompletion(systemPrompt, userMessage, this.maxTokens);
   }
 
   async extractFromPdf(
     pdfBuffer: Buffer,
     extractionPrompt: string,
   ): Promise<AiCompletionResult> {
-    const startTime = Date.now();
-    const pdfBase64 = pdfBuffer.toString('base64');
-
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 2048,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdfBase64,
-              },
-            },
-            {
-              type: 'text',
-              text: extractionPrompt,
-            },
-          ],
-        },
-      ],
-    });
-
-    const durationMs = Date.now() - startTime;
-    const textContent = response.content.find((block) => block.type === 'text');
-
-    return {
-      content: textContent?.text ?? null,
-      promptTokens: response.usage?.input_tokens ?? null,
-      completionTokens: response.usage?.output_tokens ?? null,
-      totalTokens: response.usage
-        ? response.usage.input_tokens + response.usage.output_tokens
-        : null,
-      model: response.model,
-      durationMs,
-    };
+    return this.provider.extractFromPdf(pdfBuffer, extractionPrompt, this.maxTokens);
   }
 
   estimateCostUsd(
@@ -118,13 +55,6 @@ export class AiService {
     promptTokens: number | null,
     completionTokens: number | null,
   ): number | null {
-    if (promptTokens == null || completionTokens == null) return null;
-
-    const pricing = MODEL_PRICING[model];
-    if (!pricing) return null;
-
-    const inputCost = (promptTokens / 1_000_000) * pricing.input;
-    const outputCost = (completionTokens / 1_000_000) * pricing.output;
-    return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000;
+    return this.provider.estimateCostUsd(model, promptTokens, completionTokens);
   }
 }
