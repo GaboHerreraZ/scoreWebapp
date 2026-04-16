@@ -28,7 +28,9 @@
     "prisma:migrate:status": "dotenv -e .env.staging -- npx prisma migrate status",
     "prisma:studio": "dotenv -e .env.staging -- npx prisma studio",
     "prisma:migrate:pro": "dotenv -e .env -- npx prisma migrate deploy",
-    "prisma:studio:pro": "dotenv -e .env -- npx prisma studio"
+    "prisma:studio:pro": "dotenv -e .env -- npx prisma studio",
+    "data:apply": "dotenv -e .env.staging -- node scripts/apply-data-migrations.js",
+    "data:apply:pro": "dotenv -e .env -- node scripts/apply-data-migrations.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

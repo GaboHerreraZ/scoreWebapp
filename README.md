@@ -86,6 +86,43 @@ The API will be available at `http://localhost:3000/api` and Swagger docs at `ht
 | `npm run prisma:migrate:pro` | Apply pending migrations to production |
 | `npm run prisma:studio:pro` | Open Prisma Studio for production |
 
+#### Data Migrations
+
+Versioned SQL scripts for data changes (inserts, updates, resets) that should
+run on both staging and production. Tracked in the `_data_migrations` table so
+each script runs only once per environment.
+
+| Script | Description |
+|--------|-------------|
+| `npm run data:apply` | Apply data migrations to staging (uses `.env.staging`) |
+| `npm run data:apply:pro` | Apply data migrations to production (uses `.env`) |
+
+Scripts live in [prisma/data/](prisma/data/) grouped by version folder
+(`vNNN/`). Inside each folder, files are prefixed with an execution order
+number (`01_`, `02_`, ...) so they run in the intended sequence. Example:
+
+```
+prisma/data/
+└── v001/
+    ├── 01_reset_parameters.sql
+    └── 02_reset_subscriptions.sql
+```
+
+**The version to apply is read from the `DATA_MIGRATION_VERSION` env var**
+(defined in `.env` and `.env.staging`). The runner only applies pending
+scripts from that single version folder — already-applied scripts are skipped.
+This means you control which version to deploy by editing the env var.
+
+When releasing a new version:
+1. Create folder `prisma/data/v002/` with the new SQL scripts
+2. Update `DATA_MIGRATION_VERSION="v002"` in `.env.staging` (and later in `.env`)
+3. Run `npm run data:apply` (staging) → validate → `npm run data:apply:pro` (production)
+
+**When to use data-migrations vs. Prisma migrations**
+- **Prisma migrations** → structural changes (tables, columns, indexes, FKs)
+- **data-migrations** → data-only changes (seeds, resets, catalog updates,
+  backfills) that need to run across environments
+
 ## Environment Variables
 
 Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` differ between environments — the rest (API keys, config) are shared.
