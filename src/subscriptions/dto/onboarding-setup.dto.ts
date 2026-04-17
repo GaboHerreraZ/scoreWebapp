@@ -48,6 +48,14 @@ class OnboardingProfileDto {
   @IsString()
   @MaxLength(50)
   identificationNumber: string;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Role ID',
+  })
+  @Type(() => Number)
+  @IsInt()
+  roleId: number;
 }
 
 class OnboardingCompanyDto {
