@@ -86,6 +86,8 @@ export class ProfilesService {
       phone: dto.phone,
       roleId: dto.roleId,
       position: dto.position,
+      identificationTypeId: dto.identificationTypeId,
+      identificationNumber: dto.identificationNumber,
       metadata: dto.metadata as Prisma.InputJsonValue,
     });
   }
