@@ -21,6 +21,7 @@ import { ParametersService } from './parameters.service.js';
 import { CreateParameterDto } from './dto/create-parameter.dto.js';
 import { UpdateParameterDto } from './dto/update-parameter.dto.js';
 import { FilterParameterDto } from './dto/filter-parameter.dto.js';
+import { Public } from '../common/decorators/public.decorator.js';
 
 @ApiTags('Parameters')
 @ApiBearerAuth()
@@ -39,6 +40,7 @@ export class ParametersController {
     return this.parametersService.create(dto);
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List parameters' })
   @ApiResponse({ status: 200, description: 'list of parameters' })

@@ -1,13 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CompanySubscriptionsController } from './company-subscriptions.controller.js';
-import { WompiWebhookController } from './wompi-webhook.controller.js';
 import { CompanySubscriptionsService } from './company-subscriptions.service.js';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
-import { CampaignsModule } from '../campaigns/campaigns.module.js';
+import { EpaycoModule } from '../epayco/epayco.module.js';
 
 @Module({
-  imports: [CampaignsModule],
-  controllers: [CompanySubscriptionsController, WompiWebhookController],
+  imports: [forwardRef(() => EpaycoModule)],
+  controllers: [CompanySubscriptionsController],
   providers: [CompanySubscriptionsService, CompanySubscriptionsRepository],
   exports: [CompanySubscriptionsService],
 })

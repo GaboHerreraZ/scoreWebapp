@@ -1,19 +1,22 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
   ConflictException,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID, createHash } from 'crypto';
+import { createHash } from 'crypto';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { EpaycoService } from '../epayco/epayco.service.js';
 import { CreateCompanySubscriptionDto } from './dto/create-company-subscription.dto.js';
 import { UpdateCompanySubscriptionDto } from './dto/update-company-subscription.dto.js';
 import { FilterCompanySubscriptionDto } from './dto/filter-company-subscription.dto.js';
-import { CreateTransactionDto } from './dto/create-transaction.dto.js';
-import { WompiEventDto } from './dto/wompi-event.dto.js';
+import { SubscribeDto } from './dto/subscribe.dto.js';
+import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
+import { EpaycoConfirmationDto } from './dto/epayco-confirmation.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
 @Injectable()
@@ -23,8 +26,11 @@ export class CompanySubscriptionsService {
   constructor(
     private readonly repository: CompanySubscriptionsRepository,
     private readonly configService: ConfigService,
-    private readonly campaignsService: CampaignsService,
+    @Inject(forwardRef(() => EpaycoService))
+    private readonly epaycoService: EpaycoService,
   ) {}
+
+  // ─── CRUD ─────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateCompanySubscriptionDto) {
     const companyExists = await this.repository.companyExists(companyId);
@@ -41,14 +47,13 @@ export class CompanySubscriptionsService {
       );
     }
 
-    // Find the "activa" status parameter
     const activeStatus = await this.repository.findParameterByTypeAndCode(
       'subscription_status',
       'active',
     );
     if (!activeStatus) {
       throw new NotFoundException(
-        `Parameter with type=subscriptionStatus and code=activa not found`,
+        `Parameter with type=subscription_status and code=active not found`,
       );
     }
 
@@ -67,7 +72,6 @@ export class CompanySubscriptionsService {
       }
     }
 
-    // Calculate dates based on subscription type
     const startDate = new Date();
     const endDate = new Date(startDate);
     if (subscription.isMonthly) {
@@ -198,22 +202,23 @@ export class CompanySubscriptionsService {
     return this.repository.delete(id);
   }
 
-  private generateWompiIntegrity(paymentId: string, price: number) {
-    const amountInCents = Math.round(price * 100);
-    const currency = 'COP';
-    const integrityKey = this.configService.get<string>('WOMPI_INTEGRITY_KEY');
-    const concatenated = `${paymentId}${amountInCents}${currency}${integrityKey}`;
-    const integrityHash = createHash('sha256')
-      .update(concatenated)
-      .digest('hex');
-
-    return { integrityHash, amountInCents };
+  async checkTransaction(companySubscriptionId: string) {
+    const companySubscription =
+      await this.repository.findByIdGlobal(companySubscriptionId);
+    if (!companySubscription) {
+      throw new NotFoundException(
+        `Company subscription with id=${companySubscriptionId} not found`,
+      );
+    }
+    return companySubscription;
   }
 
-  async createTransaction(companyId: string, dto: CreateTransactionDto) {
+  // ─── Free Subscription Flow ───────────────────────────────
+
+  async subscribeFree(companyId: string, dto: SubscribeFreeDto) {
     const companyExists = await this.repository.companyExists(companyId);
     if (!companyExists) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
     const subscription = await this.repository.findSubscriptionById(
@@ -221,67 +226,24 @@ export class CompanySubscriptionsService {
     );
     if (!subscription) {
       throw new NotFoundException(
-        `Subscription with id=${dto.subscriptionId} not found`,
+        `Plan de suscripción con id=${dto.subscriptionId} no encontrado`,
       );
     }
 
-    // Validate campaign if provided
-    let discount = 0;
-    if (dto.campaignId) {
-      const campaign = await this.campaignsService.findById(dto.campaignId);
-      const today = new Date();
-      const isActive =
-        campaign.isActive &&
-        new Date(campaign.startDate) <= today &&
-        new Date(campaign.endDate) >= today;
-
-      if (!isActive) {
-        throw new BadRequestException('The campaign is not currently active');
-      }
-      discount = campaign.discount;
+    if (subscription.price && subscription.price > 0) {
+      throw new BadRequestException(
+        'Este endpoint es solo para planes gratuitos',
+      );
     }
 
-    // Calculate price with discount
-    const basePrice = subscription.price ?? 0;
-    const finalPrice =
-      discount > 0 ? Math.round(basePrice * (1 - discount / 100)) : basePrice;
-
-    // Check if a record already exists for this company + subscription
-    const existing = await this.repository.findByCompanyAndSubscription(
-      companyId,
-      dto.subscriptionId,
-    );
-    if (existing) {
-      const newPaymentId = randomUUID();
-      const updated = await this.repository.update(existing.id, {
-        paymentId: newPaymentId,
-        campaignId: dto.campaignId ?? null,
-        pricePaid: finalPrice,
-      });
-
-      const isFreeExisting = !finalPrice || finalPrice === 0;
-      if (!isFreeExisting) {
-        const { integrityHash, amountInCents } = this.generateWompiIntegrity(
-          newPaymentId,
-          finalPrice,
-        );
-        return { ...updated, integrityHash, amountInCents };
-      }
-      return updated;
-    }
-
-    // Find the "activa" status parameter
     const activeStatus = await this.repository.findParameterByTypeAndCode(
       'subscription_status',
       'active',
     );
     if (!activeStatus) {
-      throw new NotFoundException(
-        `Parameter with type=subscriptionStatus and code=activa not found`,
-      );
+      throw new NotFoundException('Parámetro de estado "active" no encontrado');
     }
 
-    // Check if company already has an active subscription
     const existingActive =
       await this.repository.findActiveSubscriptionByCompanyId(
         companyId,
@@ -291,27 +253,6 @@ export class CompanySubscriptionsService {
       throw new ConflictException('La empresa ya tiene una suscripción activa');
     }
 
-    const isFree = !finalPrice || finalPrice === 0;
-
-    // Determine status: free plans are activated immediately, paid plans stay pending
-    let statusId: number;
-    if (isFree) {
-      statusId = activeStatus.id;
-    } else {
-      const pendingStatus = await this.repository.findParameterByTypeAndCode(
-        'subscription_status',
-        'pending',
-      );
-      if (!pendingStatus) {
-        throw new NotFoundException(
-          `Parameter with type=subscriptionStatus and code=pendiente not found`,
-        );
-      }
-      statusId = pendingStatus.id;
-    }
-
-    // Calculate dates based on subscription type
-    const paymentId = randomUUID();
     const startDate = new Date();
     const endDate = new Date(startDate);
     if (subscription.isMonthly) {
@@ -323,104 +264,336 @@ export class CompanySubscriptionsService {
     const companySubscription = await this.repository.create({
       companyId,
       subscriptionId: dto.subscriptionId,
-      statusId,
+      statusId: activeStatus.id,
       startDate,
       endDate,
       isCurrent: true,
       paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
-      pricePaid: finalPrice,
-      paymentId,
-      campaignId: dto.campaignId,
+      pricePaid: 0,
+      autoRenew: false,
     });
 
-    // Generate Wompi integrity hash only for paid plans
-    const isFreeAfterDiscount = !finalPrice || finalPrice === 0;
-    if (!isFreeAfterDiscount) {
-      const { integrityHash, amountInCents } = this.generateWompiIntegrity(
-        paymentId,
-        finalPrice,
-      );
-      return { ...companySubscription, integrityHash, amountInCents };
-    }
+    this.logger.log(
+      `Empresa ${companyId} suscrita al plan gratuito "${subscription.name}"`,
+    );
 
     return companySubscription;
   }
 
-  async checkTransaction(paymentId: string) {
-    const companySubscription =
-      await this.repository.findByPaymentId(paymentId);
-    if (!companySubscription) {
+  // ─── ePayco Subscription Flow ────────────────────────────
+
+  async subscribe(companyId: string, dto: SubscribeDto) {
+    // 1. Validar que la empresa existe
+    const company = await this.repository.findCompanyById(companyId);
+    if (!company) {
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
+    }
+
+    // 2. Validar que el plan existe y tiene epaycoPlanId
+    const subscription = await this.repository.findSubscriptionById(
+      dto.subscriptionId,
+    );
+
+    if (!subscription) {
       throw new NotFoundException(
-        `Company subscription with paymentId=${paymentId} not found`,
+        `Plan de suscripción con id=${dto.subscriptionId} no encontrado`,
       );
     }
+    if (!subscription.epaycoPlanId) {
+      throw new BadRequestException(
+        `El plan "${subscription.name}" no tiene configurado un plan en ePayco`,
+      );
+    }
+
+    // 3. Verificar que no tenga suscripción activa
+    const activeStatus = await this.repository.findParameterByTypeAndCode(
+      'subscription_status',
+      'active',
+    );
+    if (!activeStatus) {
+      throw new NotFoundException(
+        'Parámetro de estado "active" no encontrado',
+      );
+    }
+
+    const existingActive =
+      await this.repository.findActiveSubscriptionByCompanyId(
+        companyId,
+        activeStatus.id,
+      );
+    if (existingActive) {
+      throw new ConflictException('La empresa ya tiene una suscripción activa');
+    }
+
+    // 4. Guardar datos de facturación en la empresa
+    const { billing } = dto;
+    await this.repository.updateCompanyBilling(companyId, {
+      billingName: billing.name,
+      billingLastName: billing.lastName,
+      billingDocNumber: billing.docNumber,
+      billingEmail: billing.email,
+      billingAddress: billing.address,
+      billingState: billing.state,
+      billingCity: billing.city,
+      billingPhone: billing.phone,
+    });
+
+    // 5. Buscar intento pendiente previo (reintento de pago)
+    const pendingStatus = await this.repository.findParameterByTypeAndCode(
+      'subscription_status',
+      'pending',
+    );
+    const existingPending = pendingStatus
+      ? await this.repository.findPendingByCompanyId(companyId, pendingStatus.id)
+      : null;
+
+    // 6. Tokenizar tarjeta con ePayco
+    const { card } = dto;
+    const tokenCard = await this.epaycoService.createToken(card);
+
+    // 7. Obtener o crear cliente en ePayco
+    let epaycoCustomerId = existingPending?.epaycoCustomerId;
+
+    if (!epaycoCustomerId) {
+      // Primera vez: crear cliente
+      epaycoCustomerId = await this.epaycoService.createCustomer({
+        tokenCard,
+        name: billing.name,
+        lastName: billing.lastName,
+        email: billing.email,
+        city: billing.city,
+        address: billing.address,
+        phone: billing.phone,
+      });
+
+      // Guardar customerId en registro pending para reintentos
+      if (!existingPending && pendingStatus) {
+        await this.repository.create({
+          companyId,
+          subscriptionId: dto.subscriptionId,
+          statusId: pendingStatus.id,
+          startDate: new Date(),
+          endDate: new Date(),
+          isCurrent: false,
+          pricePaid: subscription.price,
+          epaycoCustomerId,
+          campaignId: dto.campaignId,
+        });
+      }
+    } else {
+      // Reintento: actualizar token en el cliente existente
+      await this.epaycoService.addNewToken(tokenCard, epaycoCustomerId);
+    }
+
+    // 8. Crear suscripción recurrente en ePayco
+    const epaycoSubscriptionId = await this.epaycoService.createSubscription({
+      idPlan: subscription.epaycoPlanId,
+      customer: epaycoCustomerId,
+      tokenCard,
+      docType: billing.docType,
+      docNumber: billing.docNumber,
+      urlConfirmation: `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
+    });
+
+    // 9. Calcular fechas
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    if (subscription.isMonthly) {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    }
+
+    // 10. Actualizar registro pending existente o crear uno nuevo como activo
+    let companySubscription;
+    if (existingPending) {
+      companySubscription = await this.repository.update(existingPending.id, {
+        statusId: activeStatus.id,
+        startDate,
+        endDate,
+        isCurrent: true,
+        paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
+        pricePaid: subscription.price,
+        autoRenew: true,
+        epaycoCustomerId,
+        epaycoSubscriptionId,
+        campaignId: dto.campaignId,
+      });
+    } else {
+      // Buscar el pending que creamos en el paso 7 (si existe)
+      const justCreatedPending = pendingStatus
+        ? await this.repository.findPendingByCompanyId(companyId, pendingStatus.id)
+        : null;
+
+      if (justCreatedPending) {
+        companySubscription = await this.repository.update(justCreatedPending.id, {
+          statusId: activeStatus.id,
+          startDate,
+          endDate,
+          isCurrent: true,
+          paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
+          autoRenew: true,
+          epaycoSubscriptionId,
+        });
+      } else {
+        companySubscription = await this.repository.create({
+          companyId,
+          subscriptionId: dto.subscriptionId,
+          statusId: activeStatus.id,
+          startDate,
+          endDate,
+          isCurrent: true,
+          paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
+          pricePaid: subscription.price,
+          autoRenew: true,
+          epaycoCustomerId,
+          epaycoSubscriptionId,
+          campaignId: dto.campaignId,
+        });
+      }
+    }
+
+    // 11. Registrar primer pago en historial
+    await this.repository.createPaymentHistory({
+      companySubscriptionId: companySubscription.id,
+      periodStart: startDate,
+      periodEnd: endDate,
+      amount: subscription.price ?? 0,
+      currencyCode: 'COP',
+      responseCode: 200,
+      responseMessage: 'Suscripción inicial creada exitosamente',
+    });
+
+    this.logger.log(
+      `Empresa ${companyId} suscrita al plan "${subscription.name}" (ePayco subscription=${epaycoSubscriptionId})`,
+    );
+
     return companySubscription;
   }
 
-  async handleWompiEvent(event: WompiEventDto) {
-    const eventsKey = this.configService.get<string>('WOMPI_EVENTS_KEY');
-    const { properties, checksum } = event.signature;
+  async findPaymentHistory(
+    companyId: string,
+    companySubscriptionId: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const sub = await this.repository.findById(companySubscriptionId, companyId);
+    if (!sub) {
+      throw new NotFoundException(
+        `Suscripción con id=${companySubscriptionId} no encontrada en esta empresa`,
+      );
+    }
 
-    const values = properties.map((prop) => {
-      let value;
-      const property = prop.split('.');
-      value = event.data.transaction[`${property[1]}`];
-      return value;
-    });
+    const skip = (page - 1) * limit;
+    const { data, total } = await this.repository.findPaymentsBySubscriptionId(
+      companySubscriptionId,
+      skip,
+      limit,
+    );
 
-    const concatenated = `${values.join('')}${event.timestamp}${eventsKey}`;
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
 
-    const computedChecksum = createHash('sha256')
+  // ─── ePayco Webhook ──────────────────────────────────────
+
+  private validateEpaycoSignature(dto: EpaycoConfirmationDto): boolean {
+    const pCustId = this.configService.get<string>('EPAYCO_P_CUST_ID');
+    const pKey = this.configService.get<string>('EPAYCO_P_KEY');
+
+    const concatenated = `${pCustId}^${pKey}^${dto.x_ref_payco}^${dto.x_transaction_id}^${dto.x_amount}^${dto.x_currency_code}`;
+    const computedSignature = createHash('sha256')
       .update(concatenated)
       .digest('hex');
 
-    if (computedChecksum !== checksum) {
+    return computedSignature === dto.x_signature;
+  }
+
+  async handleEpaycoConfirmation(dto: EpaycoConfirmationDto) {
+    this.logger.log(
+      `Webhook ePayco recibido: ref=${dto.x_ref_payco}, cod_response=${dto.x_cod_response}, customer_doc=${dto.x_customer_document}`,
+    );
+
+    // 1. Validar firma
+    const isValid = this.validateEpaycoSignature(dto);
+    if (!isValid) {
       this.logger.warn(
-        `Invalid Wompi checksum for reference=${event.data.transaction.reference}`,
+        `Firma ePayco inválida para ref=${dto.x_ref_payco}`,
       );
-      throw new BadRequestException('Invalid event checksum');
+      throw new BadRequestException('Firma inválida');
     }
 
-    // 2. Find the company subscription by paymentId (reference)
-    const reference = event.data.transaction.reference;
-    const companySubscription =
-      await this.repository.findByPaymentId(reference);
+    // 2. Buscar la suscripción activa por el documento de facturación
+    const customerDoc = dto.x_customer_document;
+    if (!customerDoc) {
+      this.logger.warn(
+        `Webhook sin x_customer_document, ref=${dto.x_ref_payco}`,
+      );
+      throw new BadRequestException('Documento del cliente no encontrado en la confirmación');
+    }
 
+    const companySubscription =
+      await this.repository.findActiveByBillingDoc(customerDoc);
     if (!companySubscription) {
       this.logger.warn(
-        `No company subscription found for paymentId=${reference}`,
+        `No se encontró suscripción activa para documento=${customerDoc}`,
       );
       throw new NotFoundException(
-        `Company subscription with paymentId=${reference} not found`,
+        `Suscripción no encontrada para el documento ${customerDoc}`,
       );
     }
 
-    // 3. Handle based on transaction status
-    const transactionStatus = event.data.transaction.status;
-
-    if (transactionStatus === 'APPROVED') {
-      const activeStatus = await this.repository.findParameterByTypeAndCode(
-        'subscription_status',
-        'active',
+    // 3. Idempotencia: verificar si ya procesamos esta transacción
+    if (dto.x_transaction_id) {
+      const alreadyProcessed = await this.repository.paymentExistsByTransactionId(
+        dto.x_transaction_id,
       );
-      if (!activeStatus) {
-        throw new NotFoundException(
-          'Parameter with type=subscriptionStatus and code=activa not found',
+      if (alreadyProcessed) {
+        this.logger.log(
+          `Webhook duplicado ignorado: transacción=${dto.x_transaction_id}`,
         );
+        return { received: true };
+      }
+    }
+
+    const responseCode = parseInt(dto.x_cod_response ?? '0', 10);
+    const currentEndDate = new Date(companySubscription.endDate);
+
+    if (responseCode === 1) {
+      // Cobro exitoso → renovar período
+      const subscription = companySubscription.subscription;
+      const newEndDate = new Date(currentEndDate);
+      if (subscription.isMonthly) {
+        newEndDate.setMonth(newEndDate.getMonth() + 1);
+      } else {
+        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
       }
 
       await this.repository.update(companySubscription.id, {
-        statusId: activeStatus.id,
+        endDate: newEndDate,
+      });
+
+      await this.repository.createPaymentHistory({
+        companySubscriptionId: companySubscription.id,
+        periodStart: currentEndDate,
+        periodEnd: newEndDate,
+        amount: parseFloat(dto.x_amount ?? '0'),
+        currencyCode: dto.x_currency_code ?? 'COP',
+        epaycoRef: dto.x_ref_payco,
+        epaycoTransactionId: dto.x_transaction_id,
+        responseCode: 200,
+        responseMessage: dto.x_response,
+        franchise: dto.x_franchise,
+        approvalCode: dto.x_approval_code,
       });
 
       this.logger.log(
-        `Subscription ${companySubscription.id} activated for company ${companySubscription.companyId}`,
+        `Suscripción ${companySubscription.id} renovada hasta ${newEndDate.toISOString()} (empresa=${companySubscription.companyId})`,
       );
-    } else if (
-      transactionStatus === 'DECLINED' ||
-      transactionStatus === 'VOIDED' ||
-      transactionStatus === 'ERROR'
-    ) {
+    } else if (responseCode === 2 || responseCode === 4) {
+      // Cobro rechazado o fallido
       const rejectedStatus = await this.repository.findParameterByTypeAndCode(
         'subscription_status',
         'rejected',
@@ -429,11 +602,30 @@ export class CompanySubscriptionsService {
         await this.repository.update(companySubscription.id, {
           statusId: rejectedStatus.id,
           isCurrent: false,
+          autoRenew: false,
         });
       }
 
+      await this.repository.createPaymentHistory({
+        companySubscriptionId: companySubscription.id,
+        periodStart: currentEndDate,
+        periodEnd: currentEndDate,
+        amount: parseFloat(dto.x_amount ?? '0'),
+        currencyCode: dto.x_currency_code ?? 'COP',
+        epaycoRef: dto.x_ref_payco,
+        epaycoTransactionId: dto.x_transaction_id,
+        responseCode,
+        responseMessage: dto.x_response,
+        franchise: dto.x_franchise,
+        approvalCode: dto.x_approval_code,
+      });
+
+      this.logger.warn(
+        `Suscripción ${companySubscription.id} rechazada (código=${responseCode}) empresa=${companySubscription.companyId}`,
+      );
+    } else if (responseCode === 3) {
       this.logger.log(
-        `Subscription ${companySubscription.id} rejected (${transactionStatus}) for company ${companySubscription.companyId}`,
+        `Suscripción ${companySubscription.id} pendiente de confirmación (ref=${dto.x_ref_payco})`,
       );
     }
 

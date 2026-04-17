@@ -28,6 +28,7 @@ model Parameter {
   customersByType                Customer[]    @relation("CustomerPersonType")
   customersByEconomicActivity    Customer[]    @relation("CustomerEconomicActivity")
   profilesByRole                 Profile[]     @relation("ProfileRole")
+  profilesByIdentificationType   Profile[]     @relation("ProfileIdentificationType")
   userCompaniesByRole            UserCompany[] @relation("UserCompanyRole")
   creditStudiesByStatus          CreditStudy[] @relation("CreditStudyStatus")
   creditStudiesByIncomeStatement CreditStudy[] @relation("CreditStudyIncomeStatement")
@@ -40,6 +41,7 @@ model Parameter {
   customersByLegalRepIdentificationType  Customer[]     @relation("CustomerLegalRepIdentificationType")
   companiesByAccountType         Company[]      @relation("CompanyAccountType")
   companiesByAccountBank         Company[]      @relation("CompanyAccountBank")
+  companiesByBillingDocType      Company[]      @relation("CompanyBillingDocType")
   promissoryNotesByStatus        PromissoryNote[] @relation("PromissoryNoteStatus")
   notificationsByType            Notification[]   @relation("NotificationType")
 
@@ -50,18 +52,21 @@ model Parameter {
 // ─── Profile (extiende auth.users de Supabase) ─────────────
 
 model Profile {
-  id        String   @id @db.Uuid
-  email     String   @unique @db.VarChar(255)
-  name      String?  @db.VarChar(150)
-  lastName  String?  @map("last_name") @db.VarChar(150)
-  phone     String?  @db.VarChar(50)
-  roleId    Int?     @map("role_id")
-  position  String?  @db.VarChar(150)
-  metadata  Json?    @default("{}")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                    String   @id @db.Uuid
+  email                 String   @unique @db.VarChar(255)
+  name                  String?  @db.VarChar(150)
+  lastName              String?  @map("last_name") @db.VarChar(150)
+  phone                 String?  @db.VarChar(50)
+  roleId                Int?     @map("role_id")
+  position              String?  @db.VarChar(150)
+  identificationTypeId  Int?     @map("identification_type_id")
+  identificationNumber  String?  @map("identification_number") @db.VarChar(50)
+  metadata              Json?    @default("{}")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
-  role            Parameter?      @relation("ProfileRole", fields: [roleId], references: [id])
+  role               Parameter?      @relation("ProfileRole", fields: [roleId], references: [id])
+  identificationType Parameter?      @relation("ProfileIdentificationType", fields: [identificationTypeId], references: [id])
   userCompanies   UserCompany[]   @relation("UserCompanyUser")
   invitedUsers    UserCompany[]   @relation("UserCompanyInvitedBy")
   sentInvitations Invitation[]    @relation("InvitationInvitedBy")
@@ -96,6 +101,7 @@ model Subscription {
   supportLevelId          Int      @map("support_level_id")
   maxAiAnalysisPerMonth      Int?     @map("max_ai_analysis_per_month")
   maxPdfExtractionsPerMonth  Int?     @map("max_pdf_extractions_per_month")
+  epaycoPlanId               String?  @map("epayco_plan_id") @db.VarChar(100)
   isActive                Boolean  @default(true) @map("is_active")
   createdAt               DateTime @default(now()) @map("created_at")
   updatedAt               DateTime @updatedAt @map("updated_at")
@@ -120,14 +126,24 @@ model Company {
   accountTypeId  Int?     @map("account_type_id")
   accountBankId  Int?     @map("account_bank_id")
   accountNumber  String?  @map("account_number") @db.VarChar(50)
-  logoUrl        String?  @map("logo_url") @db.VarChar(500)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  logoUrl             String?  @map("logo_url") @db.VarChar(500)
+  billingName         String?  @map("billing_name") @db.VarChar(150)
+  billingLastName     String?  @map("billing_last_name") @db.VarChar(150)
+  billingDocTypeId    Int?     @map("billing_doc_type_id")
+  billingDocNumber    String?  @map("billing_doc_number") @db.VarChar(50)
+  billingEmail        String?  @map("billing_email") @db.VarChar(255)
+  billingAddress      String?  @map("billing_address") @db.VarChar(255)
+  billingState        String?  @map("billing_state") @db.VarChar(150)
+  billingCity         String?  @map("billing_city") @db.VarChar(150)
+  billingPhone        String?  @map("billing_phone") @db.VarChar(50)
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
-  sector       Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
-  accountType  Parameter?    @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
-  accountBank  Parameter?    @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
+  sector         Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
+  accountType    Parameter?    @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
+  accountBank    Parameter?    @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
+  billingDocType Parameter?    @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
   companySubscriptions CompanySubscription[]
   userCompanies UserCompany[]
   invitations   Invitation[]
@@ -170,18 +186,44 @@ model CompanySubscription {
   isCurrent         Boolean   @default(true) @map("is_current")
   paymentFrequency  String?   @map("payment_frequency") @db.VarChar(20)
   pricePaid         Float?    @map("price_paid")
-  cancelledAt       DateTime? @map("cancelled_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  paymentId         String?   @map("payment_id") @db.VarChar(50)
-  campaignId        String?   @map("campaign_id") @db.Uuid
+  cancelledAt              DateTime? @map("cancelled_at")
+  autoRenew                Boolean   @default(false) @map("auto_renew")
+  epaycoCustomerId         String?   @map("epayco_customer_id") @db.VarChar(100)
+  epaycoSubscriptionId     String?   @map("epayco_subscription_id") @db.VarChar(100)
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+  campaignId               String?   @map("campaign_id") @db.Uuid
 
-  company      Company      @relation(fields: [companyId], references: [id])
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  status       Parameter    @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
-  campaign     Campaign?    @relation(fields: [campaignId], references: [id])
+  company        Company      @relation(fields: [companyId], references: [id])
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  status         Parameter    @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id])
+  paymentHistory PaymentHistory[]
 
   @@map("company_subscriptions")
+}
+
+// ─── Historial de pagos ─────────────────────────────────────
+
+model PaymentHistory {
+  id                      String   @id @default(uuid()) @db.Uuid
+  companySubscriptionId   String   @map("company_subscription_id") @db.Uuid
+  periodStart             DateTime @map("period_start") @db.Date
+  periodEnd               DateTime @map("period_end") @db.Date
+  amount                  Float
+  currencyCode            String   @default("COP") @map("currency_code") @db.VarChar(10)
+  epaycoRef               String?  @map("epayco_ref") @db.VarChar(100)
+  epaycoTransactionId     String?  @map("epayco_transaction_id") @db.VarChar(100)
+  responseCode            Int?     @map("response_code")
+  responseMessage         String?  @map("response_message") @db.VarChar(255)
+  franchise               String?  @db.VarChar(50)
+  approvalCode            String?  @map("approval_code") @db.VarChar(100)
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  companySubscription CompanySubscription @relation(fields: [companySubscriptionId], references: [id])
+
+  @@index([companySubscriptionId])
+  @@map("payment_history")
 }
 
 // ─── Permisos usuario ↔ empresa ─────────────────────────────

@@ -142,8 +142,11 @@ Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `D
 | `DOCUSEAL_PROMISSORY_TEMPLATE_ID` | DocuSeal template ID for promissory notes | No |
 | `DOCUSEAL_WEBHOOK_SECRET` | DocuSeal webhook secret | No |
 | `SUPABASE_STORAGE_BUCKET_PROMISSORY` | Storage bucket name for promissory notes | No |
-| `WOMPI_INTEGRITY_KEY` | Wompi payment integrity key | No |
-| `WOMPI_EVENTS_KEY` | Wompi webhook events key | No |
+| `EPAYCO_PUBLIC_KEY` | ePayco public key | No |
+| `EPAYCO_PRIVATE_KEY` | ePayco private key | No |
+| `EPAYCO_P_CUST_ID` | ePayco customer ID (for signature validation) | No |
+| `EPAYCO_P_KEY` | ePayco P_KEY (for signature validation) | No |
+| `EPAYCO_TEST` | ePayco test mode (`true`/`false`) | No |
 | `FRONTEND_URL` | Frontend URL for CORS and emails | No |
 | `PORT` | Server port (default: `3000`) | No |
 
@@ -181,8 +184,11 @@ Configure these in **Railway > Service > Variables**:
 | `DIRECT_URL` | Supabase direct connection string (port 5432) |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key from Supabase dashboard |
-| `WOMPI_INTEGRITY_KEY` | Wompi integrity key |
-| `WOMPI_EVENTS_KEY` | Wompi events key |
+| `EPAYCO_PUBLIC_KEY` | ePayco public key |
+| `EPAYCO_PRIVATE_KEY` | ePayco private key |
+| `EPAYCO_P_CUST_ID` | ePayco customer ID |
+| `EPAYCO_P_KEY` | ePayco P_KEY |
+| `EPAYCO_TEST` | ePayco test mode |
 | `CORS_ORIGINS` | Frontend URL(s) separated by comma, e.g. `https://myapp.com,http://localhost:4200` |
 
 ### Deploy Steps

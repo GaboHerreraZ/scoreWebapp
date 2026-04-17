@@ -125,6 +125,16 @@ export class CreateSubscriptionDto {
   @Min(1)
   supportLevelId: number;
 
+  @ApiPropertyOptional({
+    example: 'plan_abc123',
+    description: 'ID of the plan created in ePayco for recurring billing',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  epaycoPlanId?: string;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()

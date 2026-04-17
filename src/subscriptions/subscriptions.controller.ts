@@ -6,10 +6,12 @@ import {
   Delete,
   Body,
   Param,
+  Req,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -20,6 +22,7 @@ import { SubscriptionsService } from './subscriptions.service.js';
 import { CompanySubscriptionsService } from '../company-subscriptions/company-subscriptions.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
+import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 
 @ApiTags('Subscriptions')
@@ -41,6 +44,16 @@ export class SubscriptionsController {
     return this.subscriptionsService.create(dto);
   }
 
+  @ApiBearerAuth()
+  @Post('onboarding-setup')
+  @ApiOperation({ summary: 'Create profile and company in a single transaction (onboarding)' })
+  @ApiResponse({ status: 201, description: 'Profile and company created successfully' })
+  @ApiResponse({ status: 409, description: 'Company NIT already exists' })
+  onboardingSetup(@Body() dto: OnboardingSetupDto, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.subscriptionsService.onboardingSetup(userId, dto);
+  }
+
   @Public()
   @Get()
   @ApiOperation({ summary: 'List all active subscriptions' })
@@ -50,15 +63,17 @@ export class SubscriptionsController {
   }
 
   @ApiBearerAuth()
-  @Get('check-transaction/:paymentId')
-  @ApiOperation({ summary: 'Check transaction status by paymentId' })
+  @Get('check-transaction/:companySubscriptionId')
+  @ApiOperation({ summary: 'Check subscription status by companySubscriptionId' })
   @ApiResponse({ status: 200, description: 'Company subscription found' })
   @ApiResponse({
     status: 404,
-    description: 'Company subscription not found for the given paymentId',
+    description: 'Company subscription not found for the given ID',
   })
-  checkTransaction(@Param('paymentId') paymentId: string) {
-    return this.companySubscriptionsService.checkTransaction(paymentId);
+  checkTransaction(
+    @Param('companySubscriptionId', ParseUUIDPipe) companySubscriptionId: string,
+  ) {
+    return this.companySubscriptionsService.checkTransaction(companySubscriptionId);
   }
 
   @Public()
