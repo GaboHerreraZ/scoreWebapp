@@ -18,6 +18,7 @@ import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { PromissoryNotesModule } from './promissory-notes/promissory-notes.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { EpaycoModule } from './epayco/epayco.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     InvitationsModule,
     PromissoryNotesModule,
     NotificationsModule,
+    EpaycoModule,
   ],
   providers: [
     {

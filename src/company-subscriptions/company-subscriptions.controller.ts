@@ -21,7 +21,8 @@ import { CompanySubscriptionsService } from './company-subscriptions.service.js'
 import { CreateCompanySubscriptionDto } from './dto/create-company-subscription.dto.js';
 import { UpdateCompanySubscriptionDto } from './dto/update-company-subscription.dto.js';
 import { FilterCompanySubscriptionDto } from './dto/filter-company-subscription.dto.js';
-import { CreateTransactionDto } from './dto/create-transaction.dto.js';
+import { SubscribeDto } from './dto/subscribe.dto.js';
+import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
 
 @ApiTags('Company Subscriptions')
 @ApiBearerAuth()
@@ -61,22 +62,38 @@ export class CompanySubscriptionsController {
     return this.companySubscriptionsService.findAll(companyId, filters);
   }
 
-  @Post('create-transaction')
-  @ApiOperation({ summary: 'Create a subscription transaction for a company' })
-  @ApiResponse({ status: 201, description: 'Transaction created successfully' })
+  @Post('subscribe-free')
+  @ApiOperation({ summary: 'Subscribe a company to a free plan (no payment required)' })
+  @ApiResponse({ status: 201, description: 'Free subscription created successfully' })
+  @ApiResponse({ status: 400, description: 'Plan is not free' })
+  @ApiResponse({ status: 409, description: 'Company already has an active subscription' })
+  subscribeFree(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Body() dto: SubscribeFreeDto,
+  ) {
+    return this.companySubscriptionsService.subscribeFree(companyId, dto);
+  }
+
+  @Post('subscribe')
+  @ApiOperation({ summary: 'Subscribe a company to a plan via ePayco recurring billing' })
+  @ApiResponse({ status: 201, description: 'Subscription created successfully' })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing billing data or ePayco plan not configured',
+  })
   @ApiResponse({
     status: 404,
-    description: 'Company, subscription, or status parameter not found',
+    description: 'Company or subscription plan not found',
   })
   @ApiResponse({
     status: 409,
     description: 'Company already has an active subscription',
   })
-  createTransaction(
+  subscribe(
     @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Body() dto: CreateTransactionDto,
+    @Body() dto: SubscribeDto,
   ) {
-    return this.companySubscriptionsService.createTransaction(companyId, dto);
+    return this.companySubscriptionsService.subscribe(companyId, dto);
   }
 
   @Get('current')
@@ -85,6 +102,23 @@ export class CompanySubscriptionsController {
   @ApiResponse({ status: 404, description: 'No active subscription found' })
   findCurrent(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.companySubscriptionsService.findCurrent(companyId);
+  }
+
+  @Get(':id/payments')
+  @ApiOperation({ summary: 'List payment history for a company subscription' })
+  @ApiResponse({ status: 200, description: 'Paginated payment history' })
+  @ApiResponse({ status: 404, description: 'Subscription not found' })
+  findPaymentHistory(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() filters: FilterCompanySubscriptionDto,
+  ) {
+    return this.companySubscriptionsService.findPaymentHistory(
+      companyId,
+      id,
+      filters.page,
+      filters.limit,
+    );
   }
 
   @Get(':id')

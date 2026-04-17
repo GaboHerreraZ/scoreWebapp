@@ -86,6 +86,43 @@ The API will be available at `http://localhost:3000/api` and Swagger docs at `ht
 | `npm run prisma:migrate:pro` | Apply pending migrations to production |
 | `npm run prisma:studio:pro` | Open Prisma Studio for production |
 
+#### Data Migrations
+
+Versioned SQL scripts for data changes (inserts, updates, resets) that should
+run on both staging and production. Tracked in the `_data_migrations` table so
+each script runs only once per environment.
+
+| Script | Description |
+|--------|-------------|
+| `npm run data:apply` | Apply data migrations to staging (uses `.env.staging`) |
+| `npm run data:apply:pro` | Apply data migrations to production (uses `.env`) |
+
+Scripts live in [prisma/data/](prisma/data/) grouped by version folder
+(`vNNN/`). Inside each folder, files are prefixed with an execution order
+number (`01_`, `02_`, ...) so they run in the intended sequence. Example:
+
+```
+prisma/data/
+└── v001/
+    ├── 01_reset_parameters.sql
+    └── 02_reset_subscriptions.sql
+```
+
+**The version to apply is read from the `DATA_MIGRATION_VERSION` env var**
+(defined in `.env` and `.env.staging`). The runner only applies pending
+scripts from that single version folder — already-applied scripts are skipped.
+This means you control which version to deploy by editing the env var.
+
+When releasing a new version:
+1. Create folder `prisma/data/v002/` with the new SQL scripts
+2. Update `DATA_MIGRATION_VERSION="v002"` in `.env.staging` (and later in `.env`)
+3. Run `npm run data:apply` (staging) → validate → `npm run data:apply:pro` (production)
+
+**When to use data-migrations vs. Prisma migrations**
+- **Prisma migrations** → structural changes (tables, columns, indexes, FKs)
+- **data-migrations** → data-only changes (seeds, resets, catalog updates,
+  backfills) that need to run across environments
+
 ## Environment Variables
 
 Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` differ between environments — the rest (API keys, config) are shared.
@@ -105,8 +142,11 @@ Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `D
 | `DOCUSEAL_PROMISSORY_TEMPLATE_ID` | DocuSeal template ID for promissory notes | No |
 | `DOCUSEAL_WEBHOOK_SECRET` | DocuSeal webhook secret | No |
 | `SUPABASE_STORAGE_BUCKET_PROMISSORY` | Storage bucket name for promissory notes | No |
-| `WOMPI_INTEGRITY_KEY` | Wompi payment integrity key | No |
-| `WOMPI_EVENTS_KEY` | Wompi webhook events key | No |
+| `EPAYCO_PUBLIC_KEY` | ePayco public key | No |
+| `EPAYCO_PRIVATE_KEY` | ePayco private key | No |
+| `EPAYCO_P_CUST_ID` | ePayco customer ID (for signature validation) | No |
+| `EPAYCO_P_KEY` | ePayco P_KEY (for signature validation) | No |
+| `EPAYCO_TEST` | ePayco test mode (`true`/`false`) | No |
 | `FRONTEND_URL` | Frontend URL for CORS and emails | No |
 | `PORT` | Server port (default: `3000`) | No |
 
@@ -144,8 +184,11 @@ Configure these in **Railway > Service > Variables**:
 | `DIRECT_URL` | Supabase direct connection string (port 5432) |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key from Supabase dashboard |
-| `WOMPI_INTEGRITY_KEY` | Wompi integrity key |
-| `WOMPI_EVENTS_KEY` | Wompi events key |
+| `EPAYCO_PUBLIC_KEY` | ePayco public key |
+| `EPAYCO_PRIVATE_KEY` | ePayco private key |
+| `EPAYCO_P_CUST_ID` | ePayco customer ID |
+| `EPAYCO_P_KEY` | ePayco P_KEY |
+| `EPAYCO_TEST` | ePayco test mode |
 | `CORS_ORIGINS` | Frontend URL(s) separated by comma, e.g. `https://myapp.com,http://localhost:4200` |
 
 ### Deploy Steps

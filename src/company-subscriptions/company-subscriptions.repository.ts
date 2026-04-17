@@ -122,6 +122,14 @@ export class CompanySubscriptionsRepository {
     });
   }
 
+  async findPendingByCompanyId(companyId: string, pendingStatusId: number) {
+    return this.prisma.companySubscription.findFirst({
+      where: { companyId, statusId: pendingStatusId },
+      orderBy: { createdAt: 'desc' },
+      include: this.defaultInclude,
+    });
+  }
+
   async findByCompanyAndSubscription(
     companyId: string,
     subscriptionId: string,
@@ -132,10 +140,77 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async findByPaymentId(paymentId: string) {
-    return this.prisma.companySubscription.findFirst({
-      where: { paymentId },
+  async findByIdGlobal(id: string) {
+    return this.prisma.companySubscription.findUnique({
+      where: { id },
       include: this.defaultInclude,
     });
+  }
+
+  async findCompanyById(companyId: string) {
+    return this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { billingDocType: true },
+    });
+  }
+
+  async updateCompanyBilling(
+    companyId: string,
+    data: {
+      billingName: string;
+      billingLastName: string;
+      billingDocNumber: string;
+      billingEmail: string;
+      billingAddress: string;
+      billingState: string;
+      billingCity: string;
+      billingPhone: string;
+    },
+  ) {
+    return this.prisma.company.update({
+      where: { id: companyId },
+      data,
+    });
+  }
+
+  async findActiveByBillingDoc(billingDocNumber: string) {
+    return this.prisma.companySubscription.findFirst({
+      where: {
+        isCurrent: true,
+        autoRenew: true,
+        company: { billingDocNumber },
+      },
+      include: this.defaultInclude,
+    });
+  }
+
+  // ─── PaymentHistory ─────────────────────────────────────────
+
+  async createPaymentHistory(data: Prisma.PaymentHistoryUncheckedCreateInput) {
+    return this.prisma.paymentHistory.create({ data });
+  }
+
+  async paymentExistsByTransactionId(epaycoTransactionId: string) {
+    const count = await this.prisma.paymentHistory.count({
+      where: { epaycoTransactionId },
+    });
+    return count > 0;
+  }
+
+  async findPaymentsBySubscriptionId(
+    companySubscriptionId: string,
+    skip: number,
+    take: number,
+  ) {
+    const [data, total] = await Promise.all([
+      this.prisma.paymentHistory.findMany({
+        where: { companySubscriptionId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.paymentHistory.count({ where: { companySubscriptionId } }),
+    ]);
+    return { data, total };
   }
 }

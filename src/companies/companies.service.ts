@@ -25,14 +25,14 @@ export class CompaniesService {
     const existing = await this.repository.findByNit(dto.nit);
     if (existing) {
       throw new ConflictException(
-        `Company with NIT "${dto.nit}" already exists`,
+        `Ya existe una empresa con NIT "${dto.nit}"`,
       );
     }
 
     const adminRoleId = await this.repository.getRoleId('administrator');
     if (!adminRoleId) {
       throw new BadRequestException(
-        'Role parameter "administrador" not found. Please create a parameter with type=user_company_role, code=administrador',
+        'Parámetro de rol "administrador" no encontrado',
       );
     }
 
@@ -89,7 +89,7 @@ export class CompaniesService {
   async findById(id: string) {
     const company = await this.repository.findByIdWithDetails(id);
     if (!company) {
-      throw new NotFoundException(`Company with id=${id} not found`);
+      throw new NotFoundException(`Empresa con id=${id} no encontrada`);
     }
 
     let logoSignedUrl: string | null = null;
@@ -123,14 +123,14 @@ export class CompaniesService {
   async update(id: string, dto: UpdateCompanyDto) {
     const current = await this.repository.findById(id);
     if (!current) {
-      throw new NotFoundException(`Company with id=${id} not found`);
+      throw new NotFoundException(`Empresa con id=${id} no encontrada`);
     }
 
     if (dto.nit && dto.nit !== current.nit) {
       const duplicate = await this.repository.findByNit(dto.nit);
       if (duplicate) {
         throw new ConflictException(
-          `Company with NIT "${dto.nit}" already exists`,
+          `Ya existe una empresa con NIT "${dto.nit}"`,
         );
       }
     }
@@ -145,6 +145,15 @@ export class CompaniesService {
       accountTypeId: dto.accountTypeId,
       accountBankId: dto.accountBankId,
       accountNumber: dto.accountNumber,
+      billingName: dto.billingName,
+      billingLastName: dto.billingLastName,
+      billingDocTypeId: dto.billingDocTypeId,
+      billingDocNumber: dto.billingDocNumber,
+      billingEmail: dto.billingEmail,
+      billingAddress: dto.billingAddress,
+      billingState: dto.billingState,
+      billingCity: dto.billingCity,
+      billingPhone: dto.billingPhone,
       isActive: dto.isActive,
     });
   }
@@ -152,7 +161,7 @@ export class CompaniesService {
   async uploadLogo(id: string, file: Express.Multer.File) {
     const company = await this.repository.findById(id);
     if (!company) {
-      throw new NotFoundException(`Company with id=${id} not found`);
+      throw new NotFoundException(`Empresa con id=${id} no encontrada`);
     }
 
     const ext = file.originalname.split('.').pop() ?? 'png';
@@ -178,13 +187,13 @@ export class CompaniesService {
   async remove(id: string) {
     const company = await this.repository.findById(id);
     if (!company) {
-      throw new NotFoundException(`Company with id=${id} not found`);
+      throw new NotFoundException(`Empresa con id=${id} no encontrada`);
     }
 
     const hasRelated = await this.repository.hasRelatedRecords(id);
     if (hasRelated) {
       throw new ConflictException(
-        'Cannot delete: this company has associated records',
+        'No se puede eliminar: la empresa tiene registros asociados',
       );
     }
 
@@ -195,7 +204,7 @@ export class CompaniesService {
     const { company, plans } =
       await this.repository.getAvailablePlans(companyId);
     if (!company) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
     const currentSubscriptionId =
@@ -214,7 +223,7 @@ export class CompaniesService {
     const result = await this.repository.getSubscriptionWithUsage(companyId);
     if (!result) {
       throw new NotFoundException(
-        `Company with id=${companyId} not found or has no active subscription`,
+        `Empresa con id=${companyId} no encontrada o no tiene suscripción activa`,
       );
     }
 
@@ -281,7 +290,7 @@ export class CompaniesService {
   async findCustomers(companyId: string, filters: PaginationDto) {
     const company = await this.repository.findById(companyId);
     if (!company) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
     const page = filters.page ?? 1;
