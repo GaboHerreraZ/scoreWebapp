@@ -38,6 +38,20 @@ export class UpdateProfileDto {
   position?: string;
 
   @ApiPropertyOptional({
+    example: 1,
+    description: 'Parameter ID for identification type (CC, CE, NIT, etc.)',
+  })
+  @IsOptional()
+  @IsInt()
+  identificationTypeId?: number;
+
+  @ApiPropertyOptional({ example: '1035851234', maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  identificationNumber?: string;
+
+  @ApiPropertyOptional({
     example: { theme: 'dark', language: 'es' },
     description: 'Arbitrary JSON metadata',
   })
