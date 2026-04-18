@@ -26,6 +26,12 @@ export class ProfilesRepository {
     return { data, total };
   }
 
+  async findByIdSingle(id: string) {
+    return this.prisma.profile.findUnique({
+        where: { id },
+      });
+  }
+
   async findById(id: string) {
     return this.prisma.profile.findUnique({
       where: { id },
@@ -35,6 +41,13 @@ export class ProfilesRepository {
           select: {
             companyId: true,
             isActive: true,
+            role: {
+              select: {
+                id: true,
+                code: true,
+                label: true,
+              },
+            },
             company: {
               select: {
                 city: true,
@@ -65,22 +78,12 @@ export class ProfilesRepository {
                           },
                         },
                         isActive: true,
-                        emailNotifications: true,
-                        excelReports: true,
-                        isMonthly: true,
-                        maxCompanies: true,
-                        maxUsers: true,
-                        maxStudiesPerMonth: true,
-                        maxAiAnalysisPerMonth: true,
-                        maxPdfExtractionsPerMonth: true,
                         supportLevel: {
                           select: {
                             id: true,
                             code: true,
                           },
                         },
-                        maxCustomers: true,
-                        themeCustomization: true,
                       },
                     },
                   },
