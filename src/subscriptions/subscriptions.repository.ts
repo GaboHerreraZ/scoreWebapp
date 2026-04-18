@@ -27,6 +27,12 @@ export class SubscriptionsRepository {
     });
   }
 
+  async findByName(name: string) {
+    return this.prisma.subscription.findFirst({
+      where: { name, isActive: true },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.subscription.findUnique({
       where: { id },

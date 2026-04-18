@@ -19,7 +19,6 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service.js';
-import { CompanySubscriptionsService } from '../company-subscriptions/company-subscriptions.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
@@ -30,7 +29,6 @@ import { Public } from '../common/decorators/public.decorator.js';
 export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
-    private readonly companySubscriptionsService: CompanySubscriptionsService,
   ) {}
 
   @ApiBearerAuth()
@@ -60,20 +58,6 @@ export class SubscriptionsController {
   @ApiResponse({ status: 200, description: 'List of all active subscriptions' })
   findAll() {
     return this.subscriptionsService.findAll();
-  }
-
-  @ApiBearerAuth()
-  @Get('check-transaction/:companySubscriptionId')
-  @ApiOperation({ summary: 'Check subscription status by companySubscriptionId' })
-  @ApiResponse({ status: 200, description: 'Company subscription found' })
-  @ApiResponse({
-    status: 404,
-    description: 'Company subscription not found for the given ID',
-  })
-  checkTransaction(
-    @Param('companySubscriptionId', ParseUUIDPipe) companySubscriptionId: string,
-  ) {
-    return this.companySubscriptionsService.checkTransaction(companySubscriptionId);
   }
 
   @Public()

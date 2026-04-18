@@ -11,6 +11,8 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
 import { EpaycoService } from '../epayco/epayco.service.js';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
+import { MailService } from '../mail/mail.service.js';
 import { SubscribeDto } from './dto/subscribe.dto.js';
 import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
 import { EpaycoConfirmationDto } from './dto/epayco-confirmation.dto.js';
@@ -24,18 +26,9 @@ export class CompanySubscriptionsService {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => EpaycoService))
     private readonly epaycoService: EpaycoService,
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly mailService: MailService,
   ) {}
-
-  async checkTransaction(companySubscriptionId: string) {
-    const companySubscription =
-      await this.repository.findByIdGlobal(companySubscriptionId);
-    if (!companySubscription) {
-      throw new NotFoundException(
-        `Company subscription with id=${companySubscriptionId} not found`,
-      );
-    }
-    return companySubscription;
-  }
 
   // ─── Free Subscription Flow ───────────────────────────────
 
@@ -294,6 +287,131 @@ export class CompanySubscriptionsService {
     );
 
     return companySubscription;
+  }
+
+  // ─── Cancel Subscription ─────────────────────────────────
+
+  async cancel(companyId: string) {
+    // 1. Validar empresa
+    const company = await this.repository.findCompanyById(companyId);
+    if (!company) {
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
+    }
+
+    // 2. Buscar suscripción activa actual
+    const activeStatus = await this.repository.findParameterByTypeAndCode(
+      'subscription_status',
+      'active',
+    );
+    if (!activeStatus) {
+      throw new NotFoundException('Parámetro de estado "active" no encontrado');
+    }
+
+    const currentSubscription =
+      await this.repository.findActiveSubscriptionByCompanyId(
+        companyId,
+        activeStatus.id,
+      );
+    if (!currentSubscription) {
+      throw new NotFoundException(
+        'La empresa no tiene una suscripción activa',
+      );
+    }
+
+    // 3. Cancelar en ePayco si es una suscripción pagada
+    if (currentSubscription.epaycoSubscriptionId) {
+      try {
+        await this.epaycoService.cancelSubscription(
+          currentSubscription.epaycoSubscriptionId,
+        );
+      } catch (error: any) {
+        this.logger.warn(
+          `Error cancelando suscripción en ePayco (${currentSubscription.epaycoSubscriptionId}): ${error.message}`,
+        );
+      }
+    }
+
+    // 4. Marcar suscripción actual como cancelada
+    const cancelledStatus = await this.repository.findParameterByTypeAndCode(
+      'subscription_status',
+      'cancelled',
+    );
+    if (!cancelledStatus) {
+      throw new NotFoundException(
+        'Parámetro de estado "cancelled" no encontrado',
+      );
+    }
+
+    await this.repository.update(currentSubscription.id, {
+      statusId: cancelledStatus.id,
+      isCurrent: false,
+      autoRenew: false,
+      cancelledAt: new Date(),
+    });
+
+    // 5. Crear nueva suscripción gratuita
+    const freePlan = await this.subscriptionsService.findByName('Gratis');
+    if (!freePlan) {
+      throw new NotFoundException('Plan gratuito "Gratis" no encontrado');
+    }
+
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    if (freePlan.isMonthly) {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    }
+
+    const freeSubscription = await this.repository.create({
+      companyId,
+      subscriptionId: freePlan.id,
+      statusId: activeStatus.id,
+      startDate,
+      endDate,
+      isCurrent: true,
+      paymentFrequency: freePlan.isMonthly ? 'monthly' : 'annual',
+      pricePaid: 0,
+      autoRenew: false,
+    });
+
+    // 6. Enviar email al administrador
+    const adminRole = await this.repository.findParameterByTypeAndCode(
+      'user_company_role',
+      'administrator',
+    );
+    if (adminRole) {
+      const admin = await this.repository.findCompanyAdmin(
+        companyId,
+        adminRole.id,
+      );
+      const cancelledPlan = currentSubscription.subscription;
+      if (admin?.email) {
+        try {
+          await this.mailService.sendSubscriptionCancelledEmail({
+            to: admin.email,
+            userName: `${admin.name} ${admin.lastName ?? ''}`.trim(),
+            companyName: company.name,
+            planName: cancelledPlan.name,
+            maxUsers: cancelledPlan.maxUsers,
+            maxCustomers: cancelledPlan.maxCustomers,
+            maxStudiesPerMonth: cancelledPlan.maxStudiesPerMonth,
+            maxAiAnalysisPerMonth: cancelledPlan.maxAiAnalysisPerMonth,
+            maxPdfExtractionsPerMonth: cancelledPlan.maxPdfExtractionsPerMonth,
+          });
+        } catch (error: any) {
+          this.logger.warn(
+            `Error enviando correo de cancelación a ${admin.email}: ${error.message}`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `Suscripción ${currentSubscription.id} cancelada para empresa ${companyId}; nueva suscripción gratuita ${freeSubscription.id}`,
+    );
+
+    return freeSubscription;
   }
 
   // ─── ePayco Webhook ──────────────────────────────────────
