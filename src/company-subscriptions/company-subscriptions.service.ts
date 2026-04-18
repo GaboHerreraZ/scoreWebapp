@@ -330,6 +330,7 @@ export class CompanySubscriptionsService {
     await this.repository.updateCompanyBilling(companyId, {
       billingName: billing.name,
       billingLastName: billing.lastName,
+      billingDocTypeId: billing.docType,
       billingDocNumber: billing.docNumber,
       billingEmail: billing.email,
       billingAddress: billing.address,
@@ -390,7 +391,7 @@ export class CompanySubscriptionsService {
       idPlan: subscription.epaycoPlanId,
       customer: epaycoCustomerId,
       tokenCard,
-      docType: billing.docType,
+      docType: billing.docTypeCode,
       docNumber: billing.docNumber,
       urlConfirmation: `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
     });

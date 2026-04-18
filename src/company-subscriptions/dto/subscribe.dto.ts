@@ -49,7 +49,12 @@ class BillingDto {
   @ApiProperty({ example: 'CC', description: 'Document type code (CC, CE, NIT, etc.)' })
   @IsString()
   @MaxLength(10)
-  docType: string;
+  docTypeCode: string;
+
+  @ApiProperty({ example: 1, description: '1' })
+  @IsString()
+  @MaxLength(10)
+  docType: number;
 
   @ApiProperty({ example: '1035851234', maxLength: 50 })
   @IsString()

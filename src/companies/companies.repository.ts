@@ -256,6 +256,7 @@ export class CompaniesRepository {
     return {
       company,
       subscription,
+      companySubscription: currentCompanySubscription,
       usage: {
         usersCount,
         customersCount,
@@ -264,6 +265,15 @@ export class CompaniesRepository {
         pdfExtractionsThisMonth,
       },
     };
+  }
+
+  async findPaymentHistoryByCompanySubscriptionId(
+    companySubscriptionId: string,
+  ) {
+    return this.prisma.paymentHistory.findMany({
+      where: { companySubscriptionId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async getRoleId(code: string): Promise<number | null> {
