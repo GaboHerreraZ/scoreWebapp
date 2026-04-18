@@ -147,6 +147,7 @@ export class SubscriptionsService {
           position: dto.profile.position,
           identificationTypeId: dto.profile.identificationTypeId,
           identificationNumber: dto.profile.identificationNumber,
+          roleId: dto.profile.roleId
         },
       });
 

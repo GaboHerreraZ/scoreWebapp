@@ -20,42 +20,6 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async findAll(params: {
-    skip: number;
-    take: number;
-    where?: Prisma.CompanySubscriptionWhereInput;
-    orderBy?: Prisma.CompanySubscriptionOrderByWithRelationInput;
-  }) {
-    const { skip, take, where, orderBy } = params;
-
-    const [data, total] = await Promise.all([
-      this.prisma.companySubscription.findMany({
-        skip,
-        take,
-        where,
-        orderBy,
-        include: this.defaultInclude,
-      }),
-      this.prisma.companySubscription.count({ where }),
-    ]);
-
-    return { data, total };
-  }
-
-  async findById(id: string, companyId: string) {
-    return this.prisma.companySubscription.findFirst({
-      where: { id, companyId },
-      include: this.defaultInclude,
-    });
-  }
-
-  async findCurrentByCompanyId(companyId: string) {
-    return this.prisma.companySubscription.findFirst({
-      where: { companyId, isCurrent: true },
-      include: this.defaultInclude,
-    });
-  }
-
   async update(
     id: string,
     data: Prisma.CompanySubscriptionUncheckedUpdateInput,
@@ -67,29 +31,8 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async delete(id: string) {
-    return this.prisma.companySubscription.delete({ where: { id } });
-  }
-
-  async deactivateCurrentSubscription(
-    companyId: string,
-    upgradedStatusId: number,
-  ) {
-    return this.prisma.companySubscription.updateMany({
-      where: { companyId, isCurrent: true },
-      data: { isCurrent: false, statusId: upgradedStatusId },
-    });
-  }
-
   async companyExists(companyId: string): Promise<boolean> {
     const count = await this.prisma.company.count({ where: { id: companyId } });
-    return count > 0;
-  }
-
-  async subscriptionExists(subscriptionId: string): Promise<boolean> {
-    const count = await this.prisma.subscription.count({
-      where: { id: subscriptionId },
-    });
     return count > 0;
   }
 
@@ -97,13 +40,6 @@ export class CompanySubscriptionsRepository {
     return this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
     });
-  }
-
-  async parameterExists(parameterId: number): Promise<boolean> {
-    const count = await this.prisma.parameter.count({
-      where: { id: parameterId },
-    });
-    return count > 0;
   }
 
   async findParameterByTypeAndCode(type: string, code: string) {
@@ -126,16 +62,6 @@ export class CompanySubscriptionsRepository {
     return this.prisma.companySubscription.findFirst({
       where: { companyId, statusId: pendingStatusId },
       orderBy: { createdAt: 'desc' },
-      include: this.defaultInclude,
-    });
-  }
-
-  async findByCompanyAndSubscription(
-    companyId: string,
-    subscriptionId: string,
-  ) {
-    return this.prisma.companySubscription.findFirst({
-      where: { companyId, subscriptionId },
       include: this.defaultInclude,
     });
   }
@@ -196,22 +122,5 @@ export class CompanySubscriptionsRepository {
       where: { epaycoTransactionId },
     });
     return count > 0;
-  }
-
-  async findPaymentsBySubscriptionId(
-    companySubscriptionId: string,
-    skip: number,
-    take: number,
-  ) {
-    const [data, total] = await Promise.all([
-      this.prisma.paymentHistory.findMany({
-        where: { companySubscriptionId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take,
-      }),
-      this.prisma.paymentHistory.count({ where: { companySubscriptionId } }),
-    ]);
-    return { data, total };
   }
 }
