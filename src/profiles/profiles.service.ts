@@ -96,6 +96,8 @@ export class ProfilesService {
       canExtractPdf: false,
     };
 
+    let isFreeSubscription = true;
+
     if (userCompany) {
       const usageResult =
         await this.companiesRepository.getSubscriptionWithUsage(
@@ -103,10 +105,12 @@ export class ProfilesService {
         );
 
       const isAdmin = userCompany.role?.code === ADMIN_ROLE_CODE;
-      const susbcriptionStatusCode = userCompany.company.companySubscriptions[0]?.status?.code
+      const currentSubscription = userCompany.company.companySubscriptions.find(c => c.isCurrent);
+
+      isFreeSubscription = currentSubscription?.subscription.name === 'Gratis';
+
       const subscriptionActive =
-         susbcriptionStatusCode ===
-        ACTIVE_STATUS_CODE;
+         (currentSubscription && (currentSubscription.status.code === ACTIVE_STATUS_CODE)) ?? false;
 
       if (usageResult) {
         const { subscription, usage } = usageResult;
@@ -145,7 +149,7 @@ export class ProfilesService {
           dashboardLevel: subscription.dashboardLevel.code,
           supportLevel: subscription.supportLevel.code,
           emailNotification: subscription.emailNotifications,
-          subscriptionStatus: susbcriptionStatusCode,
+          subscriptionStatus: currentSubscription?.status.code ?? '',
           hasSubscription: true
         };
       } else {
@@ -167,6 +171,7 @@ export class ProfilesService {
       companyName: company.company.name,
       companyCity: company.company.city,
       companyNit: company.company.nit,
+      isFreeSubscription,
       permissions,
     };
   }

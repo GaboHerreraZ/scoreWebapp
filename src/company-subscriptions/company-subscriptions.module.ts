@@ -3,9 +3,11 @@ import { CompanySubscriptionsController } from './company-subscriptions.controll
 import { CompanySubscriptionsService } from './company-subscriptions.service.js';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
 import { EpaycoModule } from '../epayco/epayco.module.js';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module.js';
+import { MailModule } from '../mail/mail.module.js';
 
 @Module({
-  imports: [forwardRef(() => EpaycoModule)],
+  imports: [forwardRef(() => EpaycoModule), SubscriptionsModule, MailModule],
   controllers: [CompanySubscriptionsController],
   providers: [CompanySubscriptionsService, CompanySubscriptionsRepository],
   exports: [CompanySubscriptionsService],

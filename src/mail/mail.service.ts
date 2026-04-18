@@ -58,6 +58,52 @@ export class MailService {
     });
   }
 
+  async sendSubscriptionCancelledEmail(params: {
+    to: string;
+    userName: string;
+    companyName: string;
+    planName: string;
+    maxUsers: number;
+    maxCustomers: number | null;
+    maxStudiesPerMonth: number | null;
+    maxAiAnalysisPerMonth: number | null;
+    maxPdfExtractionsPerMonth: number | null;
+  }) {
+    const {
+      to,
+      userName,
+      companyName,
+      planName,
+      maxUsers,
+      maxCustomers,
+      maxStudiesPerMonth,
+      maxAiAnalysisPerMonth,
+      maxPdfExtractionsPerMonth,
+    } = params;
+
+    const formatLimit = (value: number | null) =>
+      value === null ? 'Ilimitados' : value.toString();
+
+    const html = this.loadTemplate('subscription-cancelled', {
+      userName,
+      companyName,
+      planName,
+      maxUsers: maxUsers.toString(),
+      maxCustomers: formatLimit(maxCustomers),
+      maxStudiesPerMonth: formatLimit(maxStudiesPerMonth),
+      maxAiAnalysisPerMonth: formatLimit(maxAiAnalysisPerMonth),
+      maxPdfExtractionsPerMonth: formatLimit(maxPdfExtractionsPerMonth),
+      frontendUrl: this.frontendUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Tu suscripción a ${planName} ha sido cancelada`,
+      html,
+    });
+  }
+
   async sendUserDeactivatedEmail(params: { to: string; companyName: string }) {
     const { to, companyName } = params;
 

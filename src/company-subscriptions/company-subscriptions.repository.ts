@@ -66,13 +66,6 @@ export class CompanySubscriptionsRepository {
     });
   }
 
-  async findByIdGlobal(id: string) {
-    return this.prisma.companySubscription.findUnique({
-      where: { id },
-      include: this.defaultInclude,
-    });
-  }
-
   async findCompanyById(companyId: string) {
     return this.prisma.company.findUnique({
       where: { id: companyId },
@@ -98,6 +91,15 @@ export class CompanySubscriptionsRepository {
       where: { id: companyId },
       data,
     });
+  }
+
+  async findCompanyAdmin(companyId: string, adminRoleId: number) {
+    const userCompany = await this.prisma.userCompany.findFirst({
+      where: { companyId, roleId: adminRoleId, isActive: true },
+      include: { user: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return userCompany?.user ?? null;
   }
 
   async findActiveByBillingDoc(billingDocNumber: string) {

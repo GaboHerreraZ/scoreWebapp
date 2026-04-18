@@ -52,6 +52,10 @@ export class SubscriptionsService {
     };
   }
 
+  async findByName(name: string) {
+    return this.repository.findByName(name);
+  }
+
   async findById(id: string) {
     const subscription = await this.repository.findById(id);
     if (!subscription) {

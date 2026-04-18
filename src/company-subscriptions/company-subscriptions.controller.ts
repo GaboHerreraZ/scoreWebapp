@@ -37,6 +37,16 @@ export class CompanySubscriptionsController {
     return this.companySubscriptionsService.subscribeFree(companyId, dto);
   }
 
+  @Post('cancel')
+  @ApiOperation({
+    summary: 'Cancel the current subscription and fall back to the free plan',
+  })
+  @ApiResponse({ status: 201, description: 'Subscription cancelled and free plan activated' })
+  @ApiResponse({ status: 404, description: 'Company or active subscription not found' })
+  cancel(@Param('companyId', ParseUUIDPipe) companyId: string) {
+    return this.companySubscriptionsService.cancel(companyId);
+  }
+
   @Post('subscribe')
   @ApiOperation({
     summary: 'Subscribe a company to a plan via ePayco recurring billing',
