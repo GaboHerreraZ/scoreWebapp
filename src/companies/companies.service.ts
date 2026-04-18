@@ -200,90 +200,103 @@ export class CompaniesService {
     return this.repository.delete(id);
   }
 
-  async getAvailablePlans(companyId: string) {
-    const { company, plans } =
-      await this.repository.getAvailablePlans(companyId);
-    if (!company) {
+  async getSubscriptionDetails(companyId: string) {
+    const [plansResult, usageResult] = await Promise.all([
+      this.repository.getAvailablePlans(companyId),
+      this.repository.getSubscriptionWithUsage(companyId),
+    ]);
+
+    if (!plansResult.company) {
       throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
+    // 1. Available plans
     const currentSubscriptionId =
-      company.companySubscriptions[0]?.subscriptionId ?? null;
+      plansResult.company.companySubscriptions[0]?.subscriptionId ?? null;
 
-    return {
+    const availablePlans = {
       currentSubscriptionId,
-      plans: plans.map((plan) => ({
+      plans: plansResult.plans.map((plan) => ({
         ...plan,
         isCurrent: plan.id === currentSubscriptionId,
       })),
     };
-  }
 
-  async getSubscriptionUsage(companyId: string) {
-    const result = await this.repository.getSubscriptionWithUsage(companyId);
-    if (!result) {
-      throw new NotFoundException(
-        `Empresa con id=${companyId} no encontrada o no tiene suscripción activa`,
-      );
+    // 2. Subscription usage (null if no active subscription)
+    let subscriptionUsage = null;
+    let paymentHistory: unknown[] = [];
+
+    if (usageResult) {
+      const { subscription, usage, companySubscription } = usageResult;
+
+      subscriptionUsage = {
+        subscription,
+        usage: {
+          users: {
+            used: usage.usersCount,
+            max: subscription.maxUsers,
+            remaining: subscription.maxUsers - usage.usersCount,
+          },
+          customers: {
+            used: usage.customersCount,
+            max: subscription.maxCustomers,
+            remaining:
+              subscription.maxCustomers !== null
+                ? subscription.maxCustomers - usage.customersCount
+                : null,
+            unlimited: subscription.maxCustomers === null,
+          },
+          studiesThisMonth: {
+            used: usage.studiesThisMonth,
+            max: subscription.maxStudiesPerMonth,
+            remaining:
+              subscription.maxStudiesPerMonth !== null
+                ? subscription.maxStudiesPerMonth - usage.studiesThisMonth
+                : null,
+            unlimited: subscription.maxStudiesPerMonth === null,
+          },
+          aiAnalysesThisMonth: {
+            used: usage.aiAnalysesThisMonth,
+            max: subscription.maxAiAnalysisPerMonth,
+            remaining:
+              subscription.maxAiAnalysisPerMonth !== null
+                ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
+                : null,
+            unlimited: subscription.maxAiAnalysisPerMonth === null,
+          },
+          pdfExtractionsThisMonth: {
+            used: usage.pdfExtractionsThisMonth,
+            max: subscription.maxPdfExtractionsPerMonth,
+            remaining:
+              subscription.maxPdfExtractionsPerMonth !== null
+                ? subscription.maxPdfExtractionsPerMonth -
+                  usage.pdfExtractionsThisMonth
+                : null,
+            unlimited: subscription.maxPdfExtractionsPerMonth === null,
+          },
+        },
+        features: {
+          dashboardLevel: subscription.dashboardLevel,
+          dashboardLevelId: subscription.dashboardLevelId,
+          excelReports: subscription.excelReports,
+          emailNotifications: subscription.emailNotifications,
+          themeCustomization: subscription.themeCustomization,
+          supportLevel: subscription.supportLevel,
+          supportLevelId: subscription.supportLevelId,
+        },
+      };
+
+      // 3. Payment history for the current company subscription
+      paymentHistory =
+        await this.repository.findPaymentHistoryByCompanySubscriptionId(
+          companySubscription.id,
+        );
     }
 
-    const { subscription, usage } = result;
-
     return {
-      subscription,
-      usage: {
-        users: {
-          used: usage.usersCount,
-          max: subscription.maxUsers,
-          remaining: subscription.maxUsers - usage.usersCount,
-        },
-        customers: {
-          used: usage.customersCount,
-          max: subscription.maxCustomers,
-          remaining:
-            subscription.maxCustomers !== null
-              ? subscription.maxCustomers - usage.customersCount
-              : null,
-          unlimited: subscription.maxCustomers === null,
-        },
-        studiesThisMonth: {
-          used: usage.studiesThisMonth,
-          max: subscription.maxStudiesPerMonth,
-          remaining:
-            subscription.maxStudiesPerMonth !== null
-              ? subscription.maxStudiesPerMonth - usage.studiesThisMonth
-              : null,
-          unlimited: subscription.maxStudiesPerMonth === null,
-        },
-        aiAnalysesThisMonth: {
-          used: usage.aiAnalysesThisMonth,
-          max: subscription.maxAiAnalysisPerMonth,
-          remaining:
-            subscription.maxAiAnalysisPerMonth !== null
-              ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
-              : null,
-          unlimited: subscription.maxAiAnalysisPerMonth === null,
-        },
-        pdfExtractionsThisMonth: {
-          used: usage.pdfExtractionsThisMonth,
-          max: subscription.maxPdfExtractionsPerMonth,
-          remaining:
-            subscription.maxPdfExtractionsPerMonth !== null
-              ? subscription.maxPdfExtractionsPerMonth -
-                usage.pdfExtractionsThisMonth
-              : null,
-          unlimited: subscription.maxPdfExtractionsPerMonth === null,
-        },
-      },
-      features: {
-        dashboardLevel: subscription.dashboardLevel,
-        dashboardLevelId: subscription.dashboardLevelId,
-        excelReports: subscription.excelReports,
-        emailNotifications: subscription.emailNotifications,
-        themeCustomization: subscription.themeCustomization,
-        supportLevel: subscription.supportLevel,
-        supportLevelId: subscription.supportLevelId,
-      },
+      availablePlans,
+      subscriptionUsage,
+      paymentHistory,
     };
   }
 

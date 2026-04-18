@@ -71,30 +71,19 @@ export class CompaniesController {
     return this.companiesService.findById(id);
   }
 
-  @Get(':id/available-plans')
+  @Get(':id/subscription-details')
   @ApiOperation({
-    summary: 'Get all available subscription plans with current plan indicated',
+    summary:
+      'Get available plans, subscription usage and payment history for a company',
   })
   @ApiResponse({
     status: 200,
-    description: 'List of active plans with current plan marked',
+    description:
+      'Returns availablePlans, subscriptionUsage and paymentHistory objects',
   })
   @ApiResponse({ status: 404, description: 'Company not found' })
-  getAvailablePlans(@Param('id', ParseUUIDPipe) id: string) {
-    return this.companiesService.getAvailablePlans(id);
-  }
-
-  @Get(':id/subscription-usage')
-  @ApiOperation({
-    summary: 'Get subscription details and remaining usage for a company',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Subscription data with usage and remaining limits',
-  })
-  @ApiResponse({ status: 404, description: 'Company not found' })
-  getSubscriptionUsage(@Param('id', ParseUUIDPipe) id: string) {
-    return this.companiesService.getSubscriptionUsage(id);
+  getSubscriptionDetails(@Param('id', ParseUUIDPipe) id: string) {
+    return this.companiesService.getSubscriptionDetails(id);
   }
 
   @Get(':id/customers')

@@ -165,6 +165,7 @@ export class CompanySubscriptionsRepository {
       billingState: string;
       billingCity: string;
       billingPhone: string;
+      billingDocTypeId: number;
     },
   ) {
     return this.prisma.company.update({
