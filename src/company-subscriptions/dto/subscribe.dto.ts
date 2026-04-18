@@ -5,6 +5,7 @@ import {
   IsEmail,
   MaxLength,
   ValidateNested,
+  IsNumber,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -52,8 +53,7 @@ class BillingDto {
   docTypeCode: string;
 
   @ApiProperty({ example: 1, description: '1' })
-  @IsString()
-  @MaxLength(10)
+  @IsNumber()
   docType: number;
 
   @ApiProperty({ example: '1035851234', maxLength: 50 })

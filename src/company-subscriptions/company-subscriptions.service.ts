@@ -11,13 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
 import { EpaycoService } from '../epayco/epayco.service.js';
-import { CreateCompanySubscriptionDto } from './dto/create-company-subscription.dto.js';
-import { UpdateCompanySubscriptionDto } from './dto/update-company-subscription.dto.js';
-import { FilterCompanySubscriptionDto } from './dto/filter-company-subscription.dto.js';
 import { SubscribeDto } from './dto/subscribe.dto.js';
 import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
 import { EpaycoConfirmationDto } from './dto/epayco-confirmation.dto.js';
-import { Prisma } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class CompanySubscriptionsService {
@@ -29,178 +25,6 @@ export class CompanySubscriptionsService {
     @Inject(forwardRef(() => EpaycoService))
     private readonly epaycoService: EpaycoService,
   ) {}
-
-  // ─── CRUD ─────────────────────────────────────────────────
-
-  async create(companyId: string, dto: CreateCompanySubscriptionDto) {
-    const companyExists = await this.repository.companyExists(companyId);
-    if (!companyExists) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
-    }
-
-    const subscription = await this.repository.findSubscriptionById(
-      dto.subscriptionId,
-    );
-    if (!subscription) {
-      throw new NotFoundException(
-        `Subscription with id=${dto.subscriptionId} not found`,
-      );
-    }
-
-    const activeStatus = await this.repository.findParameterByTypeAndCode(
-      'subscription_status',
-      'active',
-    );
-    if (!activeStatus) {
-      throw new NotFoundException(
-        `Parameter with type=subscription_status and code=active not found`,
-      );
-    }
-
-    // Auto-deactivate previous current subscription
-    const currentSub = await this.repository.findCurrentByCompanyId(companyId);
-    if (currentSub) {
-      const upgradedStatus = await this.repository.findParameterByTypeAndCode(
-        'subscription_status',
-        'UPGRADED',
-      );
-      if (upgradedStatus) {
-        await this.repository.deactivateCurrentSubscription(
-          companyId,
-          upgradedStatus.id,
-        );
-      }
-    }
-
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    if (subscription.isMonthly) {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    return this.repository.create({
-      companyId,
-      subscriptionId: dto.subscriptionId,
-      statusId: activeStatus.id,
-      startDate,
-      endDate,
-      isCurrent: true,
-      paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
-      pricePaid: subscription.price,
-    });
-  }
-
-  async findAll(companyId: string, filters: FilterCompanySubscriptionDto) {
-    const page = filters.page ?? 1;
-    const limit = filters.limit ?? 10;
-    const skip = (page - 1) * limit;
-
-    const where: Prisma.CompanySubscriptionWhereInput = { companyId };
-
-    if (filters.statusId !== undefined) {
-      where.statusId = filters.statusId;
-    }
-
-    if (filters.isCurrent !== undefined) {
-      where.isCurrent = filters.isCurrent;
-    }
-
-    if (filters.search) {
-      where.subscription = {
-        OR: [
-          { name: { contains: filters.search, mode: 'insensitive' } },
-          {
-            description: { contains: filters.search, mode: 'insensitive' },
-          },
-        ],
-      };
-    }
-
-    const { data, total } = await this.repository.findAll({
-      skip,
-      take: limit,
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async findCurrent(companyId: string) {
-    const companyExists = await this.repository.companyExists(companyId);
-    if (!companyExists) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
-    }
-
-    const current = await this.repository.findCurrentByCompanyId(companyId);
-    if (!current) {
-      throw new NotFoundException(
-        `No active subscription found for company id=${companyId}`,
-      );
-    }
-    return current;
-  }
-
-  async findById(id: string, companyId: string) {
-    const companySubscription = await this.repository.findById(id, companyId);
-    if (!companySubscription) {
-      throw new NotFoundException(
-        `Company subscription with id=${id} not found in this company`,
-      );
-    }
-    return companySubscription;
-  }
-
-  async update(
-    id: string,
-    companyId: string,
-    dto: UpdateCompanySubscriptionDto,
-  ) {
-    const current = await this.repository.findById(id, companyId);
-    if (!current) {
-      throw new NotFoundException(
-        `Company subscription with id=${id} not found in this company`,
-      );
-    }
-
-    if (dto.statusId !== undefined) {
-      const statusExists = await this.repository.parameterExists(dto.statusId);
-      if (!statusExists) {
-        throw new NotFoundException(
-          `Status parameter with id=${dto.statusId} not found`,
-        );
-      }
-    }
-
-    return this.repository.update(id, {
-      statusId: dto.statusId,
-      endDate: dto.endDate ? new Date(dto.endDate) : undefined,
-      paymentFrequency: dto.paymentFrequency,
-      pricePaid: dto.pricePaid,
-      isCurrent: dto.isCurrent,
-    });
-  }
-
-  async remove(id: string, companyId: string) {
-    const companySubscription = await this.repository.findById(id, companyId);
-    if (!companySubscription) {
-      throw new NotFoundException(
-        `Company subscription with id=${id} not found in this company`,
-      );
-    }
-
-    return this.repository.delete(id);
-  }
 
   async checkTransaction(companySubscriptionId: string) {
     const companySubscription =
@@ -470,32 +294,6 @@ export class CompanySubscriptionsService {
     );
 
     return companySubscription;
-  }
-
-  async findPaymentHistory(
-    companyId: string,
-    companySubscriptionId: string,
-    page: number = 1,
-    limit: number = 10,
-  ) {
-    const sub = await this.repository.findById(companySubscriptionId, companyId);
-    if (!sub) {
-      throw new NotFoundException(
-        `Suscripción con id=${companySubscriptionId} no encontrada en esta empresa`,
-      );
-    }
-
-    const skip = (page - 1) * limit;
-    const { data, total } = await this.repository.findPaymentsBySubscriptionId(
-      companySubscriptionId,
-      skip,
-      limit,
-    );
-
-    return {
-      data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
   }
 
   // ─── ePayco Webhook ──────────────────────────────────────
