@@ -74,7 +74,7 @@ export class CreditStudiesRepository {
           select: {
             id: true,
             label: true,
-            code: true
+            code: true,
           },
         },
         aiAnalyses: {
@@ -120,6 +120,20 @@ export class CreditStudiesRepository {
 
   async delete(id: string) {
     return this.prisma.creditStudy.delete({ where: { id } });
+  }
+
+  async findAllForExport(companyId: string) {
+    return this.prisma.creditStudy.findMany({
+      where: { companyId },
+      orderBy: { studyDate: 'desc' },
+      include: {
+        customer: {
+          select: { id: true, businessName: true, identificationNumber: true },
+        },
+        status: { select: { id: true, label: true, code: true } },
+        incomeStatement: { select: { id: true, label: true } },
+      },
+    });
   }
 
   async customerBelongsToCompany(

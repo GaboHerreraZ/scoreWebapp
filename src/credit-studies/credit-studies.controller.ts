@@ -8,9 +8,11 @@ import {
   Param,
   Query,
   Req,
+  Res,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +20,7 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { CreditStudiesService } from './credit-studies.service.js';
 import { CreateCreditStudyDto } from './dto/create-credit-study.dto.js';
 import { UpdateCreditStudyDto } from './dto/update-credit-study.dto.js';
@@ -57,6 +59,25 @@ export class CreditStudiesController {
     @Query() filters: FilterCreditStudyDto,
   ) {
     return this.creditStudiesService.findAll(companyId, filters);
+  }
+
+  @Get('export')
+  @ApiOperation({ summary: 'Export credit studies of a company to Excel' })
+  @ApiResponse({ status: 200, description: 'Excel file (.xlsx)' })
+  async export(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, fileName } =
+      await this.creditStudiesService.exportToExcel(companyId);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+
+    return new StreamableFile(buffer);
   }
 
   @Get(':id/perform')

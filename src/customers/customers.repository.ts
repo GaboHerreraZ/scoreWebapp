@@ -81,6 +81,19 @@ export class CustomersRepository {
     });
   }
 
+  async findAllForExport(companyId: string) {
+    return this.prisma.customer.findMany({
+      where: { companyId },
+      orderBy: { businessName: 'asc' },
+      include: {
+        personType: true,
+        identificationType: true,
+        legalRepIdentificationType: true,
+        economicActivity: true,
+      },
+    });
+  }
+
   async autocomplete(companyId: string, search?: string) {
     const where: Prisma.CustomerWhereInput = { companyId };
 

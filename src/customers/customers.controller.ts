@@ -8,9 +8,11 @@ import {
   Param,
   Query,
   Req,
+  Res,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +20,7 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { CustomersService } from './customers.service.js';
 import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
@@ -46,6 +48,25 @@ export class CustomersController {
   ) {
     const userId = (req as any).user.id as string;
     return this.customersService.create(companyId, userId, dto);
+  }
+
+  @Get('export')
+  @ApiOperation({ summary: 'Export customers of a company to Excel' })
+  @ApiResponse({ status: 200, description: 'Excel file (.xlsx)' })
+  async export(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, fileName } =
+      await this.customersService.exportToExcel(companyId);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    });
+
+    return new StreamableFile(buffer);
   }
 
   @Get('autocomplete')

@@ -11,6 +11,36 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { getMonthsFromPeriod } from '../common/enums/income-statement-period.enum.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { ExcelService } from '../common/excel/excel.service.js';
+import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
+
+interface ViabilityDimension {
+  score?: number;
+  maxScore?: number;
+  status?: string;
+  label?: string;
+  reason?: string;
+}
+
+interface ViabilityAlert {
+  type: string;
+  dimension: string;
+  message: string;
+}
+
+interface ViabilityConditionsShape {
+  dimensions?: Record<string, ViabilityDimension>;
+  alerts?: ViabilityAlert[];
+  summary?: {
+    totalScore?: number;
+    maxScore?: number;
+    status?: string;
+    recommendedTerm?: number;
+    recommendedCreditLine?: number;
+    monthlyPaymentCapacity?: number;
+    annualPaymentCapacity?: number;
+  };
+}
 
 @Injectable()
 export class CreditStudiesService {
@@ -18,6 +48,7 @@ export class CreditStudiesService {
     private readonly repository: CreditStudiesRepository,
     private readonly parametersRepository: ParametersRepository,
     private readonly notificationsService: NotificationsService,
+    private readonly excelService: ExcelService,
   ) {}
 
   async create(companyId: string, userId: string, dto: CreateCreditStudyDto) {
@@ -226,7 +257,6 @@ export class CreditStudiesService {
       annualPaymentCapacity / periodMonths,
     );
 
-
     const accountsReceivableTurnover = Math.round(
       (((study.accountsReceivable1 ?? 0) + (study.accountsReceivable2 ?? 0)) /
         2 /
@@ -241,17 +271,21 @@ export class CreditStudiesService {
         365,
     );
 
+    const accountsPayableTurnover1 =
+      ((study.suppliers1 ?? 0) + (study.suppliers2 ?? 0)) / 2;
+    const accountsPayableTurnover2 =
+      (study.costOfSales ?? 0) +
+      (study.inventories2 ?? 0) +
+      (study.administrativeExpenses ?? 0) +
+      (study.sellingExpenses ?? 0) -
+      (study.inventories1 ?? 0);
 
-    const accountsPayableTurnover1 = ((study.suppliers1 ?? 0) + (study.suppliers2 ?? 0)) / 2;
-    const accountsPayableTurnover2 = ((study.costOfSales ?? 0) + (study.inventories2 ?? 0) + (study.administrativeExpenses ?? 0) + (study.sellingExpenses ?? 0) - (study.inventories1 ?? 0));
-
-    const accountsPayableTurnover = accountsPayableTurnover1 / accountsPayableTurnover2;
+    const accountsPayableTurnover =
+      accountsPayableTurnover1 / accountsPayableTurnover2;
 
     const paymentTimeSuppliers = Math.round(accountsPayableTurnover * 365);
 
     const suppliersTurnover = -paymentTimeSuppliers;
-
-
 
     // ── Viabilidad ──────────────────────────────────────────
     const zScore = result;
@@ -266,7 +300,8 @@ export class CreditStudiesService {
         maxScore: 25,
         status: 'healthy',
         label: 'Salud Financiera',
-        reason: 'Los indicadores de liquidez, rentabilidad y apalancamiento situan a la empresa en zona segura.',
+        reason:
+          'Los indicadores de liquidez, rentabilidad y apalancamiento situan a la empresa en zona segura.',
       };
       alerts.push({
         type: 'success',
@@ -280,7 +315,8 @@ export class CreditStudiesService {
         maxScore: 25,
         status: 'gray_zone',
         label: 'Salud Financiera',
-        reason: 'Los indicadores financieros situan a la empresa en zona de observacion. Se penaliza parcialmente la capacidad proyectada.',
+        reason:
+          'Los indicadores financieros situan a la empresa en zona de observacion. Se penaliza parcialmente la capacidad proyectada.',
       };
       alerts.push({
         type: 'warning',
@@ -294,7 +330,8 @@ export class CreditStudiesService {
         maxScore: 25,
         status: 'critical',
         label: 'Salud Financiera',
-        reason: 'Los indicadores financieros muestran alta probabilidad de dificultades. Se reduce significativamente la capacidad proyectada.',
+        reason:
+          'Los indicadores financieros muestran alta probabilidad de dificultades. Se reduce significativamente la capacidad proyectada.',
       };
       alerts.push({
         type: 'danger',
@@ -325,7 +362,8 @@ export class CreditStudiesService {
         marginPercent: 0,
         monthlyObligation: Math.round(monthlyObligation),
         label: 'Capacidad de Pago',
-        reason: 'La empresa no genera flujo libre de efectivo despues de cubrir deudas actuales. El EBITDA ajustado no supera el servicio de deuda.',
+        reason:
+          'La empresa no genera flujo libre de efectivo despues de cubrir deudas actuales. El EBITDA ajustado no supera el servicio de deuda.',
       };
       alerts.push({
         type: 'danger',
@@ -386,9 +424,10 @@ export class CreditStudiesService {
     // ── Dimension 3: Coherencia de Plazos ──
     // La referencia principal es la rotación de cartera (días que tarda en cobrar)
     // El tiempo de pago a proveedores es informativo pero no define el plazo
-    const realTerm = accountsReceivableTurnover > 0
-      ? accountsReceivableTurnover
-      : requestedTerm;
+    const realTerm =
+      accountsReceivableTurnover > 0
+        ? accountsReceivableTurnover
+        : requestedTerm;
 
     if (accountsReceivableTurnover <= 0) {
       alerts.push({
@@ -398,7 +437,10 @@ export class CreditStudiesService {
       });
     }
 
-    if (paymentTimeSuppliers > 0 && paymentTimeSuppliers > accountsReceivableTurnover) {
+    if (
+      paymentTimeSuppliers > 0 &&
+      paymentTimeSuppliers > accountsReceivableTurnover
+    ) {
       alerts.push({
         type: 'info',
         dimension: 'termCoherence',
@@ -482,7 +524,8 @@ export class CreditStudiesService {
         status: 'not_applicable',
         ratio: 0,
         label: 'Adecuacion del Cupo',
-        reason: 'No evaluable: la capacidad de pago es negativa, no es posible determinar un cupo viable.',
+        reason:
+          'No evaluable: la capacidad de pago es negativa, no es posible determinar un cupo viable.',
       };
       alerts.push({
         type: 'danger',
@@ -599,7 +642,9 @@ export class CreditStudiesService {
       }
 
       // Sugerencia 2: Mismo plazo, cupo ajustado (solo si excede capacidad)
-      const maxCreditForTerm = Math.round(monthlyPaymentCapacity * termInMonths);
+      const maxCreditForTerm = Math.round(
+        monthlyPaymentCapacity * termInMonths,
+      );
       if (maxCreditForTerm < requestedCredit) {
         const payments = Math.ceil(requestedTerm / 30);
         const amount = Math.round(maxCreditForTerm / payments);
@@ -616,7 +661,10 @@ export class CreditStudiesService {
         const maxCreditWithRecommendedTerm = Math.round(
           monthlyPaymentCapacity * (recommendedTerm / 30),
         );
-        const suggestedCredit = Math.min(requestedCredit, maxCreditWithRecommendedTerm);
+        const suggestedCredit = Math.min(
+          requestedCredit,
+          maxCreditWithRecommendedTerm,
+        );
         const payments = Math.ceil(recommendedTerm / 30);
         const amount = Math.round(suggestedCredit / payments);
         buildSuggestion(
@@ -721,8 +769,10 @@ export class CreditStudiesService {
       resolutionDate: new Date(),
     });
 
-    const notificationType =
-      await this.parametersRepository.findByTypeAndCode('notification_type', 'credit_study');
+    const notificationType = await this.parametersRepository.findByTypeAndCode(
+      'notification_type',
+      'credit_study',
+    );
 
     if (notificationType) {
       const customerName = study.customer?.businessName ?? 'Cliente';
@@ -745,5 +795,390 @@ export class CreditStudiesService {
     }
 
     return updated;
+  }
+
+  async exportToExcel(companyId: string) {
+    const studies = await this.repository.findAllForExport(companyId);
+
+    const mainRows = studies.map((s) => ({
+      studyDate: s.studyDate,
+      resolutionDate: s.resolutionDate,
+      status: s.status?.label ?? null,
+      customerBusinessName: s.customer?.businessName ?? null,
+      customerIdentification: s.customer?.identificationNumber ?? null,
+      requestedTerm: s.requestedTerm,
+      requestedCreditLine: s.requestedCreditLine,
+      balanceSheetDate: s.balanceSheetDate,
+      cashAndEquivalents: s.cashAndEquivalents,
+      accountsReceivable1: s.accountsReceivable1,
+      accountsReceivable2: s.accountsReceivable2,
+      inventories1: s.inventories1,
+      inventories2: s.inventories2,
+      totalCurrentAssets: s.totalCurrentAssets,
+      fixedAssetsProperty: s.fixedAssetsProperty,
+      totalNonCurrentAssets: s.totalNonCurrentAssets,
+      totalAssets: s.totalAssets,
+      shortTermFinancialLiabilities: s.shortTermFinancialLiabilities,
+      suppliers1: s.suppliers1,
+      suppliers2: s.suppliers2,
+      totalCurrentLiabilities: s.totalCurrentLiabilities,
+      longTermFinancialLiabilities: s.longTermFinancialLiabilities,
+      totalNonCurrentLiabilities: s.totalNonCurrentLiabilities,
+      totalLiabilities: s.totalLiabilities,
+      retainedEarnings: s.retainedEarnings,
+      equity: s.equity,
+      incomeStatement: s.incomeStatement?.label ?? null,
+      ordinaryActivityRevenue: s.ordinaryActivityRevenue,
+      costOfSales: s.costOfSales,
+      grossProfit: s.grossProfit,
+      administrativeExpenses: s.administrativeExpenses,
+      sellingExpenses: s.sellingExpenses,
+      depreciation: s.depreciation,
+      amortization: s.amortization,
+      financialExpenses: s.financialExpenses,
+      taxes: s.taxes,
+      netIncome: s.netIncome,
+      recommendedTerm: s.recommendedTerm,
+      recommendedCreditLine: s.recommendedCreditLine,
+      viabilityScore: s.viabilityScore,
+      viabilityStatus: s.viabilityStatus,
+      notes: s.notes,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    }));
+
+    const mainColumns: ExcelColumn<(typeof mainRows)[number]>[] = [
+      { header: 'Fecha estudio', key: 'studyDate', type: 'date', width: 14 },
+      {
+        header: 'Fecha resolución',
+        key: 'resolutionDate',
+        type: 'date',
+        width: 16,
+      },
+      { header: 'Estado', key: 'status', type: 'string', width: 18 },
+      {
+        header: 'Cliente',
+        key: 'customerBusinessName',
+        type: 'string',
+        width: 30,
+      },
+      {
+        header: 'Identificación cliente',
+        key: 'customerIdentification',
+        type: 'string',
+        width: 22,
+      },
+      {
+        header: 'Plazo solicitado (días)',
+        key: 'requestedTerm',
+        type: 'number',
+        width: 18,
+      },
+      {
+        header: 'Cupo solicitado',
+        key: 'requestedCreditLine',
+        type: 'currency',
+        width: 20,
+      },
+      {
+        header: 'Fecha balance',
+        key: 'balanceSheetDate',
+        type: 'date',
+        width: 14,
+      },
+      {
+        header: 'Efectivo y equivalentes',
+        key: 'cashAndEquivalents',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Cuentas por cobrar 1',
+        key: 'accountsReceivable1',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Cuentas por cobrar 2',
+        key: 'accountsReceivable2',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Inventarios 1',
+        key: 'inventories1',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Inventarios 2',
+        key: 'inventories2',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Total activo corriente',
+        key: 'totalCurrentAssets',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Activos fijos / propiedad',
+        key: 'fixedAssetsProperty',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Total activo no corriente',
+        key: 'totalNonCurrentAssets',
+        type: 'currency',
+        width: 24,
+      },
+      {
+        header: 'Total activo',
+        key: 'totalAssets',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Oblig. financ. CP',
+        key: 'shortTermFinancialLiabilities',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Proveedores 1',
+        key: 'suppliers1',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Proveedores 2',
+        key: 'suppliers2',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Total pasivo corriente',
+        key: 'totalCurrentLiabilities',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Oblig. financ. LP',
+        key: 'longTermFinancialLiabilities',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Total pasivo no corriente',
+        key: 'totalNonCurrentLiabilities',
+        type: 'currency',
+        width: 24,
+      },
+      {
+        header: 'Total pasivo',
+        key: 'totalLiabilities',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Ganancias acumuladas',
+        key: 'retainedEarnings',
+        type: 'currency',
+        width: 22,
+      },
+      { header: 'Patrimonio', key: 'equity', type: 'currency', width: 18 },
+      {
+        header: 'Estado de resultados',
+        key: 'incomeStatement',
+        type: 'string',
+        width: 20,
+      },
+      {
+        header: 'Ingresos ordinarios',
+        key: 'ordinaryActivityRevenue',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Costo de ventas',
+        key: 'costOfSales',
+        type: 'currency',
+        width: 20,
+      },
+      {
+        header: 'Utilidad bruta',
+        key: 'grossProfit',
+        type: 'currency',
+        width: 20,
+      },
+      {
+        header: 'Gastos administración',
+        key: 'administrativeExpenses',
+        type: 'currency',
+        width: 22,
+      },
+      {
+        header: 'Gastos de ventas',
+        key: 'sellingExpenses',
+        type: 'currency',
+        width: 20,
+      },
+      {
+        header: 'Depreciación',
+        key: 'depreciation',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Amortización',
+        key: 'amortization',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Gastos financieros',
+        key: 'financialExpenses',
+        type: 'currency',
+        width: 20,
+      },
+      { header: 'Impuestos', key: 'taxes', type: 'currency', width: 16 },
+      {
+        header: 'Utilidad neta',
+        key: 'netIncome',
+        type: 'currency',
+        width: 18,
+      },
+      {
+        header: 'Plazo recomendado (días)',
+        key: 'recommendedTerm',
+        type: 'number',
+        width: 20,
+      },
+      {
+        header: 'Cupo recomendado',
+        key: 'recommendedCreditLine',
+        type: 'currency',
+        width: 20,
+      },
+      {
+        header: 'Score viabilidad',
+        key: 'viabilityScore',
+        type: 'number',
+        width: 16,
+      },
+      {
+        header: 'Estado viabilidad',
+        key: 'viabilityStatus',
+        type: 'string',
+        width: 18,
+      },
+      { header: 'Notas', key: 'notes', type: 'string', width: 40 },
+      { header: 'Creado', key: 'createdAt', type: 'datetime', width: 20 },
+      { header: 'Actualizado', key: 'updatedAt', type: 'datetime', width: 20 },
+    ];
+
+    const dimensionRows: Array<{
+      studyDate: Date;
+      customer: string | null;
+      dimension: string;
+      score: number | null;
+      maxScore: number | null;
+      status: string | null;
+      reason: string | null;
+    }> = [];
+
+    const alertRows: Array<{
+      studyDate: Date;
+      customer: string | null;
+      type: string;
+      dimension: string;
+      message: string;
+    }> = [];
+
+    for (const s of studies) {
+      const vc = (s.viabilityConditions ??
+        null) as ViabilityConditionsShape | null;
+      if (!vc) continue;
+
+      const customerName = s.customer?.businessName ?? null;
+
+      if (vc.dimensions) {
+        for (const [key, dim] of Object.entries(vc.dimensions)) {
+          if (key === 'paymentSuggestions') continue;
+          dimensionRows.push({
+            studyDate: s.studyDate,
+            customer: customerName,
+            dimension: dim.label ?? key,
+            score: dim.score ?? null,
+            maxScore: dim.maxScore ?? null,
+            status: dim.status ?? null,
+            reason: dim.reason ?? null,
+          });
+        }
+      }
+
+      if (vc.alerts) {
+        for (const alert of vc.alerts) {
+          alertRows.push({
+            studyDate: s.studyDate,
+            customer: customerName,
+            type: alert.type,
+            dimension: alert.dimension,
+            message: alert.message,
+          });
+        }
+      }
+    }
+
+    const sheets: ExcelSheet[] = [
+      {
+        name: 'Estudios',
+        columns: mainColumns,
+        data: mainRows,
+      },
+      {
+        name: 'Viabilidad - Dimensiones',
+        columns: [
+          {
+            header: 'Fecha estudio',
+            key: 'studyDate',
+            type: 'date',
+            width: 14,
+          },
+          { header: 'Cliente', key: 'customer', type: 'string', width: 30 },
+          { header: 'Dimensión', key: 'dimension', type: 'string', width: 24 },
+          { header: 'Score', key: 'score', type: 'number', width: 10 },
+          { header: 'Máximo', key: 'maxScore', type: 'number', width: 10 },
+          { header: 'Estado', key: 'status', type: 'string', width: 18 },
+          { header: 'Razón', key: 'reason', type: 'string', width: 80 },
+        ],
+        data: dimensionRows,
+      },
+      {
+        name: 'Viabilidad - Alertas',
+        columns: [
+          {
+            header: 'Fecha estudio',
+            key: 'studyDate',
+            type: 'date',
+            width: 14,
+          },
+          { header: 'Cliente', key: 'customer', type: 'string', width: 30 },
+          { header: 'Tipo', key: 'type', type: 'string', width: 14 },
+          { header: 'Dimensión', key: 'dimension', type: 'string', width: 22 },
+          { header: 'Mensaje', key: 'message', type: 'string', width: 80 },
+        ],
+        data: alertRows,
+      },
+    ];
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    return this.excelService.generate({
+      fileName: `estudios-credito-${timestamp}`,
+      sheets,
+    });
   }
 }

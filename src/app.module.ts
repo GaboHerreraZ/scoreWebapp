@@ -19,10 +19,12 @@ import { InvitationsModule } from './invitations/invitations.module.js';
 import { PromissoryNotesModule } from './promissory-notes/promissory-notes.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { EpaycoModule } from './epayco/epayco.module.js';
+import { ExcelModule } from './common/excel/excel.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ExcelModule,
     PrismaModule,
     AuthModule,
     ParametersModule,
