@@ -47,7 +47,8 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({
     example: 5,
-    description: 'Legal representative identification type parameter ID (CC, CE, NIT, PA)',
+    description:
+      'Legal representative identification type parameter ID (CC, CE, NIT, PA)',
   })
   @IsOptional()
   @Type(() => Number)
