@@ -47,7 +47,7 @@ El backend ya calcula y persiste estos campos en `CreditStudy`:
 | `equity`                     | Patrimonio = Activo - Pasivo                                                                |
 | `grossProfit`                | Utilidad bruta = Ingresos - Costo ventas                                                    |
 | `netIncome`                  | Utilidad neta                                                                               |
-| `stabilityFactor`            | Factor de estabilidad (0 o 1) derivado del Puntaje Z de Altman                              |
+| `stabilityFactor`            | Factor de estabilidad (1, 0.66 o 0.33) derivado del Puntaje Z de Altman                     |
 | `ebitda`                     | EBITDA                                                                                      |
 | `adjustedEbitda`             | EBITDA ajustado (EBITDA \* stabilityFactor)                                                 |
 | `currentDebtService`         | Servicio de deuda actual (Obligaciones CP + LP + Gastos financieros)                        |
@@ -65,14 +65,15 @@ El backend ya calcula y persiste estos campos en `CreditStudy`:
 X1 = (Activo Corriente - Pasivo Corriente) / Activo Total
 X2 = Ganancias Acumuladas / Activo Total
 X3 = Utilidad Operacional / Activo Total
+     donde Utilidad Operacional = Utilidad Bruta - Gastos Admin - Gastos Ventas
 X4 = Patrimonio / Pasivo Total
 X5 = Ingresos Actividades Ordinarias / Activo Total
 
-Z = X1 + X2 + X3 + X4 + X5
+Z = 1.2 * X1 + 1.4 * X2 + 3.3 * X3 + 0.6 * X4 + X5
 
-Si Z > 3.0  -> stabilityFactor = 1 (empresa saludable)
-Si Z entre 1.8 y 3.0 -> zona gris
-Si Z < 1.8  -> alta probabilidad de quiebra
+Si Z > 3.0           -> stabilityFactor = 1.0   (zona segura)
+Si 1.8 < Z <= 3.0    -> stabilityFactor = 0.66  (zona gris)
+Si Z <= 1.8          -> stabilityFactor = 0.33  (zona de riesgo)
 ```
 
 ---
@@ -164,19 +165,27 @@ viabilityScore = sumaDePuntajesParciales (maximo 100)
 
 ### recommendedTerm (plazo recomendado)
 
+El plazo recomendado se basa en la rotacion de cartera, pero con dos cotas:
+
+- **Piso minimo de 30 dias:** un credito comercial nunca debe tener plazo menor a un mes, aunque el cliente cobre casi de contado (ej: colegios, retail con cobro inmediato).
+- **Respeta el plazo solicitado:** si el cliente pide un plazo mayor y el cupo es viable en ese plazo, no se penaliza forzando uno mas corto. De lo contrario, una rotacion de cartera muy rapida reduciria artificialmente el cupo recomendado.
+
 ```
-Si paymentTimeSuppliers > 0:
-    recommendedTerm = paymentTimeSuppliers
-Si paymentTimeSuppliers <= 0 (anomalo):
-    recommendedTerm = accountsReceivableTurnover
-Si ambos son anomalos:
-    recommendedTerm = requestedTerm (usar lo solicitado como fallback)
+MIN_RECOMMENDED_TERM = 30
+
+Si accountsReceivableTurnover > 0:
+    recommendedTerm = max(accountsReceivableTurnover, requestedTerm, MIN_RECOMMENDED_TERM)
+Si accountsReceivableTurnover <= 0 (dato anomalo):
+    recommendedTerm = max(requestedTerm, MIN_RECOMMENDED_TERM)
 ```
 
 ### recommendedCreditLine (cupo recomendado)
 
+Nunca supera lo solicitado: si la empresa puede pagar mas, simplemente se aprueba el cupo solicitado.
+
 ```
-recommendedCreditLine = monthlyPaymentCapacity * (recommendedTerm / 30)
+maxAffordableCredit  = monthlyPaymentCapacity * (recommendedTerm / 30)
+recommendedCreditLine = min(requestedCreditLine, maxAffordableCredit)
 ```
 
 ---
@@ -441,6 +450,27 @@ recommendedCreditLine: $17,951,266 * (104/30) = $62,230,388
 
 - Sugerir plazo de al menos 104 dias
 - El cupo mensual solicitado es viable pero ajustado
+
+### Ejemplo: Cliente con rotacion de cartera muy baja
+
+Caso real: una empresa tipo colegio con cobro casi de contado (rotacion de cartera = 2 dias). Sin las cotas descritas en `recommendedTerm`, el plazo recomendado se forzaria a 2 dias y el cupo recomendado quedaria artificialmente reducido a `monthlyPaymentCapacity * (2/30)`, contradiciendo la dimension 4 que ya aprobo el plazo solicitado.
+
+```
+Cupo solicitado: $10,000,000
+Plazo solicitado: 60 dias
+Capacidad de pago mensual: $98,056,389
+Rotacion de cartera: 2 dias
+```
+
+Aplicando las cotas:
+
+```
+recommendedTerm = max(2, 60, 30) = 60 dias
+maxAffordableCredit = 98,056,389 * (60/30) = $196,112,778
+recommendedCreditLine = min(10,000,000, 196,112,778) = $10,000,000
+```
+
+El cupo recomendado coincide con lo solicitado, consistente con que las 4 dimensiones obtuvieron 25/25.
 
 ---
 

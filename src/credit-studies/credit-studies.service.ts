@@ -220,7 +220,7 @@ export class CreditStudiesService {
       study.incomeStatementId!,
     );
 
-    const periodMonths = getMonthsFromPeriod(period?.label ?? 'Anual');
+    const periodMonths = getMonthsFromPeriod(period?.label ?? '12');
 
     // calculos
     const totalAssets = study.totalAssets ?? 1;
@@ -228,9 +228,11 @@ export class CreditStudiesService {
       ((study.totalCurrentAssets ?? 0) - (study.totalCurrentLiabilities ?? 0)) /
       totalAssets;
     const x2 = (study.retainedEarnings ?? 0) / totalAssets;
+    // x3 = utilidad operacional / activo total
+    // Utilidad operacional = grossProfit - administrativeExpenses - sellingExpenses
     const x3 =
-      ((study.grossProfit ?? 0) +
-        (study.administrativeExpenses ?? 0) +
+      ((study.grossProfit ?? 0) -
+        (study.administrativeExpenses ?? 0) -
         (study.sellingExpenses ?? 0)) /
       totalAssets;
     const x4 = (study.equity ?? 0) / (study.totalLiabilities ?? 1);
@@ -238,8 +240,7 @@ export class CreditStudiesService {
 
     const result = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + x5;
 
-    const stabilityFactor =
-      result <= 1.8 ? 0.33 : result >= 1.8 && result <= 3 ? 0.66 : 1;
+    const stabilityFactor = result > 3 ? 1 : result > 1.8 ? 0.66 : 0.33;
     const ebitda =
       (study.ordinaryActivityRevenue ?? 0) -
       (study.costOfSales ?? 0) -
@@ -496,12 +497,21 @@ export class CreditStudiesService {
     }
 
     // ── Plazo recomendado ──
-    // Basado en la rotación de cartera como referencia principal
+    // Basado en rotación de cartera, pero con dos cotas:
+    //  - piso mínimo de 30 días: un crédito comercial nunca debería tener
+    //    plazo menor a un mes, aunque el cliente cobre casi de contado
+    //  - se respeta el plazo solicitado: si el cliente pide más plazo y el
+    //    cupo es viable en ese plazo, no se penaliza forzando uno más corto
+    const MIN_RECOMMENDED_TERM = 30;
     let recommendedTerm: number;
     if (accountsReceivableTurnover > 0) {
-      recommendedTerm = accountsReceivableTurnover;
+      recommendedTerm = Math.max(
+        accountsReceivableTurnover,
+        requestedTerm,
+        MIN_RECOMMENDED_TERM,
+      );
     } else {
-      recommendedTerm = requestedTerm;
+      recommendedTerm = Math.max(requestedTerm, MIN_RECOMMENDED_TERM);
     }
 
     // ── Cupo recomendado ──

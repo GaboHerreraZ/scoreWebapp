@@ -294,9 +294,10 @@ Ejemplo: "Plazo de 60 dias, cupo de $4.092.696: 2 cuotas de $2.046.348"
 
 **Sugerencia 3: Con plazo recomendado (`recommended_term`)**
 
-Usa el plazo basado en rotacion de cartera. El cupo nunca supera lo solicitado:
+Usa el plazo recomendado (rotacion de cartera ajustada por las cotas: piso de 30 dias y no menor al plazo solicitado). El cupo nunca supera lo solicitado:
 
 ```
+Plazo recomendado = max(rotacion de cartera, plazo solicitado, 30)
 Cupo maximo con plazo recomendado = Capacidad de Pago Mensual * (Plazo recomendado / 30)
 Cupo sugerido = MIN(Cupo Solicitado, Cupo maximo con plazo recomendado)
 Numero de cuotas = REDONDEAR_ARRIBA(Plazo recomendado / 30)
@@ -328,7 +329,12 @@ Puntaje = Salud Financiera + Capacidad de Pago + Coherencia de Plazos + Adecuaci
 
 El sistema genera recomendaciones especificas:
 
-- **Plazo recomendado:** Basado en la rotacion de cartera (dias que tarda en cobrar a clientes)
+- **Plazo recomendado:** Se basa en la rotacion de cartera (dias que tarda en cobrar a clientes), pero con dos cotas:
+  - **Piso minimo de 30 dias:** un credito comercial no debe tener plazo menor a un mes, aunque el cliente cobre casi de contado (ej: colegios, retail con cobro inmediato).
+  - **Respeta el plazo solicitado:** si el cliente pide un plazo mayor y el cupo es viable en ese plazo, no se reduce. Asi se evita que una rotacion de cartera muy rapida fuerce un plazo corto que reduzca artificialmente el cupo recomendado.
+
+  Formula: `recommendedTerm = max(accountsReceivableTurnover, requestedTerm, 30)`
+
 - **Cupo recomendado:** El menor entre lo solicitado y lo que puede pagar en el plazo recomendado. Nunca supera lo solicitado
 - **Cupo maximo para plazo solicitado:** Monto maximo pagable si se mantiene el plazo solicitado
 - **Sugerencias de pago:** Hasta 3 alternativas con cuotas y plazos explicitos
@@ -469,6 +475,13 @@ El tiempo de pago a proveedores es informativo pero no define el plazo porque:
 - Indica la politica de pago del cliente, no su capacidad de cobro
 - Puede estar distorsionado por acuerdos comerciales especificos
 - No refleja directamente cuando el cliente recibe efectivo
+
+**Cotas aplicadas al plazo recomendado:**
+
+La rotacion de cartera por si sola puede dar plazos no comerciales (ej: 2 dias en colegios, retail). Por eso el plazo recomendado se acota:
+
+- **Piso minimo de 30 dias:** un credito comercial debe ser al menos mensual.
+- **No menor al plazo solicitado:** si el cliente pide mas plazo y el cupo es viable, se respeta su solicitud. De lo contrario, una rotacion de cartera rapida (signo financiero positivo) acabaria reduciendo el cupo recomendado por debajo de lo solicitado, lo cual no tiene sentido.
 
 **Referencia:** Gitman, L.J. & Zutter, C.J. "Principles of Managerial Finance" (Pearson), capitulos sobre administracion del capital de trabajo y ciclo de conversion de efectivo.
 
