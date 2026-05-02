@@ -14,7 +14,7 @@ export class AiService {
 
   constructor(private configService: ConfigService) {
     const aiProvider = this.configService.get<string>('AI_PROVIDER', 'anthropic');
-    this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '1024'));
+    this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '4096'));
 
     this.provider = this.createProvider(aiProvider);
     this.logger.log(`AI provider initialized: ${this.provider.providerName}`);

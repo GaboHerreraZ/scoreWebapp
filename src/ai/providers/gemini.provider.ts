@@ -33,7 +33,7 @@ export class GeminiProvider implements AiProvider {
       generationConfig: {
         maxOutputTokens: maxTokens,
         // @ts-expect-error -- thinkingConfig not yet in SDK types
-        thinkingConfig: { thinkingBudget: 1024 },
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
