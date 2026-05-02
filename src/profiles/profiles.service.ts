@@ -82,6 +82,7 @@ export class ProfilesService {
     const userCompany = profile.userCompanies[0] ?? null;
 
     let permissions = {
+      canAddCreditStudy: false,
       canAddUser: false,
       canAddCustomer: false,
       canMakeAiAnalysis: false,
@@ -116,11 +117,17 @@ export class ProfilesService {
         const { subscription, usage } = usageResult;
 
         const usersRemaining = subscription.maxUsers - usage.usersCount;
+
+        const creditStudyRemaingin = (subscription.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
+
         const customersUnlimited = subscription.maxCustomers === null;
+
         const customersRemaining = customersUnlimited
           ? null
           : (subscription.maxCustomers ?? 0) - usage.customersCount;
+
         const aiUnlimited = subscription.maxAiAnalysisPerMonth === null;
+
         const aiRemaining = aiUnlimited
           ? null
           : (subscription.maxAiAnalysisPerMonth ?? 0) -
@@ -136,6 +143,7 @@ export class ProfilesService {
 
 
         permissions = {
+          canAddCreditStudy: subscriptionActive && creditStudyRemaingin > 0,
           canAddUser: subscriptionActive && isAdmin && usersRemaining > 0,
           canAddCustomer:
             subscriptionActive &&
