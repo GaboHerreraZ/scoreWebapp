@@ -6,7 +6,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+
+const emptyStringToUndefined = ({ value }: { value: unknown }) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
 
 export class CreateCustomerDto {
   @ApiProperty({ example: 1, description: 'Person type parameter ID' })
@@ -57,6 +60,7 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({ example: 'rep.legal@empresa.com', maxLength: 255 })
   @IsOptional()
+  @Transform(emptyStringToUndefined)
   @IsEmail()
   @MaxLength(255)
   legalRepEmail?: string;
@@ -78,6 +82,7 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({ example: 'contacto@xyz.com', maxLength: 255 })
   @IsOptional()
+  @Transform(emptyStringToUndefined)
   @IsEmail()
   @MaxLength(255)
   email?: string;
