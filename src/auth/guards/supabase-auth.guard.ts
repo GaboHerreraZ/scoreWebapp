@@ -30,7 +30,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
     if (!authHeader?.startsWith('Bearer ')) {
       throw new UnauthorizedException(
-        'Missing or invalid authorization header',
+        'Encabezado de autorización faltante o inválido',
       );
     }
 
@@ -41,7 +41,7 @@ export class SupabaseAuthGuard implements CanActivate {
       .auth.getUser(token);
 
     if (error || !data.user) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException('Token inválido o expirado');
     }
 
     request.user = {

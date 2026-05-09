@@ -196,7 +196,7 @@ export class DashboardService {
     const company = await this.repository.getCompanySubscription(companyId);
 
     if (!company) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
     const dashboardLevel =
@@ -207,7 +207,7 @@ export class DashboardService {
       dashboardLevel?.code !== 'premium'
     ) {
       throw new ForbiddenException(
-        'Your subscription does not include access to the advanced dashboard. Please upgrade to an advanced or premium plan.',
+        'Su suscripción no incluye acceso al dashboard avanzado. Actualice a un plan avanzado o premium.',
       );
     }
   }

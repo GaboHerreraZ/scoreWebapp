@@ -25,7 +25,7 @@ export class ProfilesService {
     const existing = await this.repository.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException(
-        `Profile with email "${dto.email}" already exists`,
+        `Ya existe un perfil con el correo "${dto.email}"`,
       );
     }
 
@@ -76,7 +76,7 @@ export class ProfilesService {
   async findById(id: string) {
     const profile = await this.repository.findById(id);
     if (!profile) {
-      throw new NotFoundException(`Profile with id=${id} not found`);
+      throw new NotFoundException(`Perfil con id=${id} no encontrado`);
     }
 
     const userCompany = profile.userCompanies[0] ?? null;
@@ -187,7 +187,7 @@ export class ProfilesService {
   async update(id: string, dto: UpdateProfileDto) {
     const profile = await this.repository.findByIdSingle(id);
     if (!profile) {
-      throw new NotFoundException(`Profile with id=${id} not found`);
+      throw new NotFoundException(`Perfil con id=${id} no encontrado`);
     }
 
     return this.repository.update(id, {
@@ -205,13 +205,13 @@ export class ProfilesService {
   async remove(id: string) {
     const profile = await this.repository.findByIdSingle(id);
     if (!profile) {
-      throw new NotFoundException(`Profile with id=${id} not found`);
+      throw new NotFoundException(`Perfil con id=${id} no encontrado`);
     }
 
     const hasRelated = await this.repository.hasRelatedRecords(id);
     if (hasRelated) {
       throw new ConflictException(
-        'Cannot delete: this profile has associated companies',
+        'No se puede eliminar: este perfil tiene empresas asociadas',
       );
     }
 
@@ -221,7 +221,7 @@ export class ProfilesService {
   async findCompanies(profileId: string, filters: PaginationDto) {
     const profile = await this.repository.findByIdSingle(profileId);
     if (!profile) {
-      throw new NotFoundException(`Profile with id=${profileId} not found`);
+      throw new NotFoundException(`Perfil con id=${profileId} no encontrado`);
     }
 
     const page = filters.page ?? 1;
@@ -248,7 +248,7 @@ export class ProfilesService {
   async findInvitedUsers(profileId: string, filters: PaginationDto) {
     const profile = await this.repository.findByIdSingle(profileId);
     if (!profile) {
-      throw new NotFoundException(`Profile with id=${profileId} not found`);
+      throw new NotFoundException(`Perfil con id=${profileId} no encontrado`);
     }
 
     const page = filters.page ?? 1;

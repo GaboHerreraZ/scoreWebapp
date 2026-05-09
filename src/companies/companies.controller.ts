@@ -137,19 +137,19 @@ export class CompaniesController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
-      throw new BadRequestException('Logo file is required');
+      throw new BadRequestException('El archivo de logo es requerido');
     }
 
     const allowedMimes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!allowedMimes.includes(file.mimetype)) {
       throw new BadRequestException(
-        'Invalid file type. Allowed: PNG, JPG, WEBP',
+        'Tipo de archivo inválido. Permitidos: PNG, JPG, WEBP',
       );
     }
 
     const maxSize = 2 * 1024 * 1024; // 2MB
     if (file.size > maxSize) {
-      throw new BadRequestException('File size must not exceed 2MB');
+      throw new BadRequestException('El tamaño del archivo no debe exceder 2MB');
     }
 
     return this.companiesService.uploadLogo(id, file);

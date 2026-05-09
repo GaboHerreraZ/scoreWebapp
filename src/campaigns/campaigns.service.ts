@@ -15,7 +15,7 @@ export class CampaignsService {
 
   async create(dto: CreateCampaignDto) {
     if (new Date(dto.endDate) <= new Date(dto.startDate)) {
-      throw new BadRequestException('endDate must be after startDate');
+      throw new BadRequestException('La fecha de fin debe ser posterior a la fecha de inicio');
     }
 
     return this.repository.create({
@@ -67,7 +67,7 @@ export class CampaignsService {
   async findById(id: string) {
     const campaign = await this.repository.findById(id);
     if (!campaign) {
-      throw new NotFoundException(`Campaign with id=${id} not found`);
+      throw new NotFoundException(`Campaña con id=${id} no encontrada`);
     }
     return campaign;
   }
@@ -75,7 +75,7 @@ export class CampaignsService {
   async update(id: string, dto: UpdateCampaignDto) {
     const current = await this.repository.findById(id);
     if (!current) {
-      throw new NotFoundException(`Campaign with id=${id} not found`);
+      throw new NotFoundException(`Campaña con id=${id} no encontrada`);
     }
 
     const startDate = dto.startDate
@@ -84,7 +84,7 @@ export class CampaignsService {
     const endDate = dto.endDate ? new Date(dto.endDate) : current.endDate;
 
     if (endDate <= startDate) {
-      throw new BadRequestException('endDate must be after startDate');
+      throw new BadRequestException('La fecha de fin debe ser posterior a la fecha de inicio');
     }
 
     return this.repository.update(id, {
@@ -100,7 +100,7 @@ export class CampaignsService {
   async remove(id: string) {
     const campaign = await this.repository.findById(id);
     if (!campaign) {
-      throw new NotFoundException(`Campaign with id=${id} not found`);
+      throw new NotFoundException(`Campaña con id=${id} no encontrada`);
     }
     return this.repository.delete(id);
   }

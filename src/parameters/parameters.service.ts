@@ -21,7 +21,7 @@ export class ParametersService {
     );
     if (existing) {
       throw new ConflictException(
-        `Parameter with type="${dto.type}" and code="${dto.code}" already exists`,
+        `Ya existe un parámetro con type="${dto.type}" y code="${dto.code}"`,
       );
     }
 
@@ -67,7 +67,7 @@ export class ParametersService {
   async findById(id: number) {
     const parameter = await this.repository.findById(id);
     if (!parameter) {
-      throw new NotFoundException(`Parameter with id=${id} not found`);
+      throw new NotFoundException(`Parámetro con id=${id} no encontrado`);
     }
     return parameter;
   }
@@ -75,7 +75,7 @@ export class ParametersService {
   async update(id: number, dto: UpdateParameterDto) {
     const current = await this.repository.findById(id);
     if (!current) {
-      throw new NotFoundException(`Parameter with id=${id} not found`);
+      throw new NotFoundException(`Parámetro con id=${id} no encontrado`);
     }
 
     const newType = dto.type ?? current.type;
@@ -88,14 +88,14 @@ export class ParametersService {
       );
       if (duplicate && duplicate.id !== id) {
         throw new ConflictException(
-          `Parameter with type="${newType}" and code="${newCode}" already exists`,
+          `Ya existe un parámetro con type="${newType}" y code="${newCode}"`,
         );
       }
     }
 
     if (dto.parentId) {
       if (dto.parentId === id) {
-        throw new BadRequestException('A parameter cannot be its own parent');
+        throw new BadRequestException('Un parámetro no puede ser su propio padre');
       }
       await this.ensureExists(dto.parentId);
     }
@@ -119,20 +119,20 @@ export class ParametersService {
   async remove(id: number) {
     const parameter = await this.repository.findById(id);
     if (!parameter) {
-      throw new NotFoundException(`Parameter with id=${id} not found`);
+      throw new NotFoundException(`Parámetro con id=${id} no encontrado`);
     }
 
     const hasChildren = await this.repository.hasChildren(id);
     if (hasChildren) {
       throw new ConflictException(
-        'Cannot delete: this parameter has associated children',
+        'No se puede eliminar: este parámetro tiene parámetros hijos asociados',
       );
     }
 
     const isReferenced = await this.repository.isReferencedByOtherTables(id);
     if (isReferenced) {
       throw new ConflictException(
-        'Cannot delete: this parameter is referenced by other records',
+        'No se puede eliminar: este parámetro está referenciado por otros registros',
       );
     }
 
@@ -142,7 +142,7 @@ export class ParametersService {
   private async ensureExists(id: number) {
     const parameter = await this.repository.findById(id);
     if (!parameter) {
-      throw new NotFoundException(`Parent parameter with id=${id} not found`);
+      throw new NotFoundException(`Parámetro padre con id=${id} no encontrado`);
     }
   }
 }
