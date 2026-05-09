@@ -118,7 +118,7 @@ export class ProfilesService {
 
         const usersRemaining = subscription.maxUsers - usage.usersCount;
 
-        const creditStudyRemaingin = (subscription.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
+        const creditStudiesRemaining = (subscription.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
 
         const customersUnlimited = subscription.maxCustomers === null;
 
@@ -143,7 +143,7 @@ export class ProfilesService {
 
 
         permissions = {
-          canAddCreditStudy: subscriptionActive && creditStudyRemaingin > 0,
+          canAddCreditStudy: subscriptionActive && creditStudiesRemaining > 0,
           canAddUser: subscriptionActive && isAdmin && usersRemaining > 0,
           canAddCustomer:
             subscriptionActive &&
