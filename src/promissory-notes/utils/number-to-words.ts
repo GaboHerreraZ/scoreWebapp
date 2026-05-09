@@ -160,7 +160,7 @@ function integerToWords(n: number): string {
  */
 export function numberToSpanishWords(amount: number): string {
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`Invalid amount for conversion: ${amount}`);
+    throw new Error(`Monto inválido para conversión: ${amount}`);
   }
 
   const integer = Math.trunc(amount);

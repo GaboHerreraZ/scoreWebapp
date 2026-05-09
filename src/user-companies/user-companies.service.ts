@@ -20,18 +20,18 @@ export class UserCompaniesService {
   ) {
     const profileExists = await this.repository.profileExists(dto.userId);
     if (!profileExists) {
-      throw new NotFoundException(`Profile with id=${dto.userId} not found`);
+      throw new NotFoundException(`Perfil con id=${dto.userId} no encontrado`);
     }
 
     const companyExists = await this.repository.companyExists(companyId);
     if (!companyExists) {
-      throw new NotFoundException(`Company with id=${companyId} not found`);
+      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
     }
 
     const roleExists = await this.repository.parameterExists(dto.roleId);
     if (!roleExists) {
       throw new NotFoundException(
-        `Role parameter with id=${dto.roleId} not found`,
+        `Parámetro de rol con id=${dto.roleId} no encontrado`,
       );
     }
 
@@ -41,7 +41,7 @@ export class UserCompaniesService {
     );
     if (existing) {
       throw new ConflictException(
-        'This user is already associated with this company',
+        'Este usuario ya está asociado a esta empresa',
       );
     }
 
@@ -101,7 +101,7 @@ export class UserCompaniesService {
     const userCompany = await this.repository.findById(id, companyId);
     if (!userCompany) {
       throw new NotFoundException(
-        `User-company relation with id=${id} not found in this company`,
+        `Relación usuario-empresa con id=${id} no encontrada en esta empresa`,
       );
     }
     return userCompany;
@@ -111,7 +111,7 @@ export class UserCompaniesService {
     const current = await this.repository.findById(id, companyId);
     if (!current) {
       throw new NotFoundException(
-        `User-company relation with id=${id} not found in this company`,
+        `Relación usuario-empresa con id=${id} no encontrada en esta empresa`,
       );
     }
 
@@ -119,7 +119,7 @@ export class UserCompaniesService {
       const roleExists = await this.repository.parameterExists(dto.roleId);
       if (!roleExists) {
         throw new NotFoundException(
-          `Role parameter with id=${dto.roleId} not found`,
+          `Parámetro de rol con id=${dto.roleId} no encontrado`,
         );
       }
     }
@@ -134,7 +134,7 @@ export class UserCompaniesService {
     const userCompany = await this.repository.findById(id, companyId);
     if (!userCompany) {
       throw new NotFoundException(
-        `User-company relation with id=${id} not found in this company`,
+        `Relación usuario-empresa con id=${id} no encontrada en esta empresa`,
       );
     }
 

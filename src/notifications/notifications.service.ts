@@ -69,7 +69,7 @@ export class NotificationsService {
     const notification = await this.repository.findById(id, companyId);
     if (!notification) {
       throw new NotFoundException(
-        `Notification with id=${id} not found in this company`,
+        `Notificación con id=${id} no encontrada en esta empresa`,
       );
     }
 
@@ -89,7 +89,7 @@ export class NotificationsService {
     const notification = await this.repository.findById(id, companyId);
     if (!notification) {
       throw new NotFoundException(
-        `Notification with id=${id} not found in this company`,
+        `Notificación con id=${id} no encontrada en esta empresa`,
       );
     }
 

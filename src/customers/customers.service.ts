@@ -55,7 +55,7 @@ export class CustomersService {
     );
     if (existing) {
       throw new ConflictException(
-        `Customer with identification "${dto.identificationNumber}" already exists in this company`,
+        `Ya existe un cliente con identificación "${dto.identificationNumber}" en esta empresa`,
       );
     }
 
@@ -132,7 +132,7 @@ export class CustomersService {
     const customer = await this.repository.findById(id, companyId);
     if (!customer) {
       throw new NotFoundException(
-        `Customer with id=${id} not found in this company`,
+        `Cliente con id=${id} no encontrado en esta empresa`,
       );
     }
     return customer;
@@ -147,7 +147,7 @@ export class CustomersService {
     const current = await this.repository.findById(id, companyId);
     if (!current) {
       throw new NotFoundException(
-        `Customer with id=${id} not found in this company`,
+        `Cliente con id=${id} no encontrado en esta empresa`,
       );
     }
 
@@ -161,7 +161,7 @@ export class CustomersService {
       );
       if (duplicate) {
         throw new ConflictException(
-          `Customer with identification "${dto.identificationNumber}" already exists in this company`,
+          `Ya existe un cliente con identificación "${dto.identificationNumber}" en esta empresa`,
         );
       }
     }
@@ -176,14 +176,14 @@ export class CustomersService {
     const customer = await this.repository.findById(id, companyId);
     if (!customer) {
       throw new NotFoundException(
-        `Customer with id=${id} not found in this company`,
+        `Cliente con id=${id} no encontrado en esta empresa`,
       );
     }
 
     const hasStudies = await this.repository.hasCreditStudies(id);
     if (hasStudies) {
       throw new ConflictException(
-        'Cannot delete: this customer has associated credit studies',
+        'No se puede eliminar: este cliente tiene estudios de crédito asociados',
       );
     }
 
@@ -194,7 +194,7 @@ export class CustomersService {
     const customer = await this.repository.findById(customerId, companyId);
     if (!customer) {
       throw new NotFoundException(
-        `Customer with id=${customerId} not found in this company`,
+        `Cliente con id=${customerId} no encontrado en esta empresa`,
       );
     }
 

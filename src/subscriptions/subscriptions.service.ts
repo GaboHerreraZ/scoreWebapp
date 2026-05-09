@@ -59,7 +59,7 @@ export class SubscriptionsService {
   async findById(id: string) {
     const subscription = await this.repository.findById(id);
     if (!subscription) {
-      throw new NotFoundException(`Subscription with id=${id} not found`);
+      throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
     }
     return subscription;
   }
@@ -67,7 +67,7 @@ export class SubscriptionsService {
   async update(id: string, dto: UpdateSubscriptionDto) {
     const current = await this.repository.findById(id);
     if (!current) {
-      throw new NotFoundException(`Subscription with id=${id} not found`);
+      throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
     }
 
     return this.repository.update(id, {
@@ -93,13 +93,13 @@ export class SubscriptionsService {
   async remove(id: string) {
     const subscription = await this.repository.findById(id);
     if (!subscription) {
-      throw new NotFoundException(`Subscription with id=${id} not found`);
+      throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
     }
 
     const hasCompanies = await this.repository.hasCompanies(id);
     if (hasCompanies) {
       throw new ConflictException(
-        'Cannot delete: this subscription has associated companies',
+        'No se puede eliminar: esta suscripción tiene empresas asociadas',
       );
     }
 
@@ -113,7 +113,7 @@ export class SubscriptionsService {
     });
     if (existingCompany) {
       throw new ConflictException(
-        `Company with NIT "${dto.company.nit}" already exists`,
+        `Ya existe una empresa con el NIT "${dto.company.nit}"`,
       );
     }
 
@@ -123,7 +123,7 @@ export class SubscriptionsService {
     });
     if (!adminRole) {
       throw new BadRequestException(
-        'Role parameter "administrator" not found',
+        'Parámetro de rol "administrator" no encontrado',
       );
     }
 

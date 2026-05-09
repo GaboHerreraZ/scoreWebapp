@@ -57,7 +57,7 @@ export class CreditStudiesService {
       companyId,
     );
     if (!customerBelongs) {
-      throw new BadRequestException('Customer does not belong to this company');
+      throw new BadRequestException('El cliente no pertenece a esta empresa');
     }
 
     const { customerId, studyDate, resolutionDate, ...rest } = dto;
@@ -137,7 +137,7 @@ export class CreditStudiesService {
     const study = await this.repository.findById(id, companyId);
     if (!study) {
       throw new NotFoundException(
-        `Credit study with id=${id} not found in this company`,
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
     return study;
@@ -152,7 +152,7 @@ export class CreditStudiesService {
     const current = await this.repository.findById(id, companyId);
     if (!current) {
       throw new NotFoundException(
-        `Credit study with id=${id} not found in this company`,
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
 
@@ -169,7 +169,7 @@ export class CreditStudiesService {
       );
       if (!customerBelongs) {
         throw new BadRequestException(
-          'Customer does not belong to this company',
+          'El cliente no pertenece a esta empresa',
         );
       }
     }
@@ -188,7 +188,7 @@ export class CreditStudiesService {
     const study = await this.repository.findById(id, companyId);
     if (!study) {
       throw new NotFoundException(
-        `Credit study with id=${id} not found in this company`,
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
 
@@ -205,7 +205,7 @@ export class CreditStudiesService {
     const study = await this.repository.findById(id, companyId);
     if (!study) {
       throw new NotFoundException(
-        `Credit study with id=${id} not found in this company`,
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
 
