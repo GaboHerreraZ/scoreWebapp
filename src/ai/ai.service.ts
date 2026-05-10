@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AiProvider, AiCompletionResult } from './providers/ai-provider.interface.js';
+import {
+  AiProvider,
+  AiCompletionResult,
+} from './providers/ai-provider.interface.js';
 import { AnthropicProvider } from './providers/anthropic.provider.js';
 import { GeminiProvider } from './providers/gemini.provider.js';
 
@@ -13,7 +16,10 @@ export class AiService {
   private readonly maxTokens: number;
 
   constructor(private configService: ConfigService) {
-    const aiProvider = this.configService.get<string>('AI_PROVIDER', 'anthropic');
+    const aiProvider = this.configService.get<string>(
+      'AI_PROVIDER',
+      'anthropic',
+    );
     this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '4096'));
 
     this.provider = this.createProvider(aiProvider);
@@ -30,8 +36,14 @@ export class AiService {
       case 'anthropic':
       default:
         return new AnthropicProvider(
-          this.configService.get<string>('ANTHROPIC_API_KEY', 'sk-ant-placeholder'),
-          this.configService.get<string>('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+          this.configService.get<string>(
+            'ANTHROPIC_API_KEY',
+            'sk-ant-placeholder',
+          ),
+          this.configService.get<string>(
+            'ANTHROPIC_MODEL',
+            'claude-haiku-4-5-20251001',
+          ),
         );
     }
   }
@@ -40,14 +52,22 @@ export class AiService {
     systemPrompt: string,
     userMessage: string,
   ): Promise<AiCompletionResult> {
-    return this.provider.generateCompletion(systemPrompt, userMessage, this.maxTokens);
+    return this.provider.generateCompletion(
+      systemPrompt,
+      userMessage,
+      this.maxTokens,
+    );
   }
 
   async extractFromPdf(
     pdfBuffer: Buffer,
     extractionPrompt: string,
   ): Promise<AiCompletionResult> {
-    return this.provider.extractFromPdf(pdfBuffer, extractionPrompt, this.maxTokens);
+    return this.provider.extractFromPdf(
+      pdfBuffer,
+      extractionPrompt,
+      this.maxTokens,
+    );
   }
 
   estimateCostUsd(

@@ -119,7 +119,9 @@ export class SubscriptionsService {
 
     // Get administrator role
     const adminRole = await this.prisma.parameter.findUnique({
-      where: { type_code: { type: 'user_company_role', code: 'administrator' } },
+      where: {
+        type_code: { type: 'user_company_role', code: 'administrator' },
+      },
     });
     if (!adminRole) {
       throw new BadRequestException(
@@ -140,7 +142,7 @@ export class SubscriptionsService {
           position: dto.profile.position,
           identificationTypeId: dto.profile.identificationTypeId,
           identificationNumber: dto.profile.identificationNumber,
-          roleId: dto.profile.roleId
+          roleId: dto.profile.roleId,
         },
         create: {
           id: userId,
@@ -151,7 +153,7 @@ export class SubscriptionsService {
           position: dto.profile.position,
           identificationTypeId: dto.profile.identificationTypeId,
           identificationNumber: dto.profile.identificationNumber,
-          roleId: dto.profile.roleId
+          roleId: dto.profile.roleId,
         },
       });
 

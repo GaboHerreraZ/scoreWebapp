@@ -1,8 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {
-  AiProvider,
-  AiCompletionResult,
-} from './ai-provider.interface.js';
+import { AiProvider, AiCompletionResult } from './ai-provider.interface.js';
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-haiku-4-5-20251001': { input: 0.8, output: 4.0 },

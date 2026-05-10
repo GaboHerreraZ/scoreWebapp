@@ -12,7 +12,8 @@ const propertyLabels: Record<string, string> = {
   // Representante legal
   legalRepName: 'Nombre del representante legal',
   legalRepId: 'Identificación del representante legal',
-  legalRepIdentificationTypeId: 'Tipo de identificación del representante legal',
+  legalRepIdentificationTypeId:
+    'Tipo de identificación del representante legal',
   legalRepEmail: 'Correo del representante legal',
   legalRepPhone: 'Teléfono del representante legal',
 

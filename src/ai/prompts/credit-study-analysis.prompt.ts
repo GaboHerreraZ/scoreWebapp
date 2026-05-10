@@ -57,7 +57,21 @@ export function buildCreditStudyUserMessage(study: {
   viabilityConditions: {
     dimensions: Record<
       string,
-      { score: number; maxScore: number; status: string; label: string; reason?: string; suggestions?: Array<{ type: string; suggestedTerm: number; suggestedCredit: number; numberOfPayments: number; paymentAmount: number; description: string }> }
+      {
+        score: number;
+        maxScore: number;
+        status: string;
+        label: string;
+        reason?: string;
+        suggestions?: Array<{
+          type: string;
+          suggestedTerm: number;
+          suggestedCredit: number;
+          numberOfPayments: number;
+          paymentAmount: number;
+          description: string;
+        }>;
+      }
     >;
     alerts: Array<{ type: string; dimension: string; message: string }>;
     summary: { totalScore: number; maxScore: number; status: string };
@@ -67,29 +81,46 @@ export function buildCreditStudyUserMessage(study: {
   const alerts = study.viabilityConditions.alerts;
 
   const termInMonths = study.requestedTerm > 0 ? study.requestedTerm / 30 : 1;
-  const monthlyObligation = Math.round(study.requestedCreditLine / termInMonths);
+  const monthlyObligation = Math.round(
+    study.requestedCreditLine / termInMonths,
+  );
 
   const fmt = (n: number) => n.toLocaleString('es-CO');
 
   // Build suggestions text
   const suggestions = dims.paymentSuggestions?.suggestions ?? [];
-  const suggestionsText = suggestions.length > 0
-    ? suggestions.map((s: { type: string; suggestedTerm: number; suggestedCredit: number; numberOfPayments: number; paymentAmount: number; description: string }) => {
-        return `- ${s.description}`;
-      }).join('\n')
-    : 'Ninguna (el cupo solicitado es viable en el plazo solicitado)';
+  const suggestionsText =
+    suggestions.length > 0
+      ? suggestions
+          .map(
+            (s: {
+              type: string;
+              suggestedTerm: number;
+              suggestedCredit: number;
+              numberOfPayments: number;
+              paymentAmount: number;
+              description: string;
+            }) => {
+              return `- ${s.description}`;
+            },
+          )
+          .join('\n')
+      : 'Ninguna (el cupo solicitado es viable en el plazo solicitado)';
 
-  const debtRatio = study.totalAssets > 0
-    ? ((study.totalLiabilities / study.totalAssets) * 100).toFixed(1)
-    : 'N/A';
+  const debtRatio =
+    study.totalAssets > 0
+      ? ((study.totalLiabilities / study.totalAssets) * 100).toFixed(1)
+      : 'N/A';
 
-  const grossMargin = study.ordinaryActivityRevenue > 0
-    ? ((study.grossProfit / study.ordinaryActivityRevenue) * 100).toFixed(1)
-    : 'N/A';
+  const grossMargin =
+    study.ordinaryActivityRevenue > 0
+      ? ((study.grossProfit / study.ordinaryActivityRevenue) * 100).toFixed(1)
+      : 'N/A';
 
-  const netMargin = study.ordinaryActivityRevenue > 0
-    ? ((study.netIncome / study.ordinaryActivityRevenue) * 100).toFixed(1)
-    : 'N/A';
+  const netMargin =
+    study.ordinaryActivityRevenue > 0
+      ? ((study.netIncome / study.ordinaryActivityRevenue) * 100).toFixed(1)
+      : 'N/A';
 
   return `DATOS DEL ESTUDIO DE CREDITO:
 
@@ -112,7 +143,10 @@ Plazo recomendado: ${study.recommendedTerm} dias
 DESGLOSE POR DIMENSION (cada una sobre 25 puntos):
 ${Object.entries(dims)
   .filter(([key]) => key !== 'paymentSuggestions')
-  .map(([, d]) => `- ${d.label}: ${d.score}/${d.maxScore} (${d.status}) — ${d.reason ?? ''}`)
+  .map(
+    ([, d]) =>
+      `- ${d.label}: ${d.score}/${d.maxScore} (${d.status}) — ${d.reason ?? ''}`,
+  )
   .join('\n')}
 
 ALERTAS DEL SISTEMA:

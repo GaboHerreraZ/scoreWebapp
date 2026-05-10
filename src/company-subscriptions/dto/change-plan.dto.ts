@@ -10,7 +10,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
-class CardDto {
+class ChangePlanCardDto {
   @ApiProperty({ example: '4575623182290326' })
   @IsString()
   cardNumber: string;
@@ -36,7 +36,7 @@ class CardDto {
   expYear: string;
 }
 
-class BillingDto {
+class ChangePlanBillingDto {
   @ApiProperty({ example: 'Gabriel', maxLength: 150 })
   @IsString()
   @MaxLength(150)
@@ -47,15 +47,12 @@ class BillingDto {
   @MaxLength(150)
   lastName: string;
 
-  @ApiProperty({
-    example: 'CC',
-    description: 'Document type code (CC, CE, NIT, etc.)',
-  })
+  @ApiProperty({ example: 'CC' })
   @IsString()
   @MaxLength(10)
   docTypeCode: string;
 
-  @ApiProperty({ example: 1, description: '1' })
+  @ApiProperty({ example: 1 })
   @IsNumber()
   docType: number;
 
@@ -90,28 +87,32 @@ class BillingDto {
   phone: string;
 }
 
-export class SubscribeDto {
-  @ApiProperty({
-    example: 'uuid-del-plan',
-    description: 'ID of the subscription plan in your DB',
-  })
+export class ChangePlanDto {
+  @ApiProperty({ description: 'ID del nuevo plan al que se quiere cambiar' })
   @IsUUID()
   subscriptionId: string;
 
-  @ApiProperty({ type: CardDto })
+  @ApiPropertyOptional({
+    type: ChangePlanCardDto,
+    description:
+      'Tarjeta de crédito. Requerida si la empresa no tiene un cliente ePayco previo. Opcional si se quiere reemplazar la tarjeta actual.',
+  })
+  @IsOptional()
   @ValidateNested()
-  @Type(() => CardDto)
-  card: CardDto;
-
-  @ApiProperty({ type: BillingDto })
-  @ValidateNested()
-  @Type(() => BillingDto)
-  billing: BillingDto;
+  @Type(() => ChangePlanCardDto)
+  card?: ChangePlanCardDto;
 
   @ApiPropertyOptional({
-    example: 'uuid-de-campaña',
-    description: 'Campaign ID for discount (optional)',
+    type: ChangePlanBillingDto,
+    description:
+      'Datos de facturación. Requeridos si la empresa no tiene un cliente ePayco previo. Opcional para reemplazar los datos actuales.',
   })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ChangePlanBillingDto)
+  billing?: ChangePlanBillingDto;
+
+  @ApiPropertyOptional({ description: 'ID de campaña promocional' })
   @IsOptional()
   @IsUUID()
   campaignId?: string;

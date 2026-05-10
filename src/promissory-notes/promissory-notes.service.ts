@@ -171,8 +171,7 @@ export class PromissoryNotesService {
         companyLogoSignedUrl,
       });
 
-      const isLegalEntity =
-        customer.personType?.code === 'legalEntity';
+      const isLegalEntity = customer.personType?.code === 'legalEntity';
       const signerEmail = isLegalEntity
         ? customer.legalRepEmail!
         : customer.email!;
@@ -316,8 +315,7 @@ export class PromissoryNotesService {
 
       const html = this.renderHtmlTemplate(values);
 
-      const isLegalEntity =
-        customer.personType?.code === 'legalEntity';
+      const isLegalEntity = customer.personType?.code === 'legalEntity';
       const signerEmail = isLegalEntity
         ? customer.legalRepEmail!
         : customer.email!;
@@ -673,9 +671,8 @@ export class PromissoryNotesService {
     });
 
     // 5. Close the credit study by moving it to `estudioCompletado`
-    const completedStudyStatus = await this.parametersRepository.findByCode(
-      'studyClosed',
-    );
+    const completedStudyStatus =
+      await this.parametersRepository.findByCode('studyClosed');
     if (!completedStudyStatus) {
       this.logger.warn(
         'Parameter with code "estudioCompletado" not found — credit study status was not updated',
@@ -759,9 +756,7 @@ export class PromissoryNotesService {
       if (!customer.address) missing.push('address');
 
       if (missing.length > 0) {
-        const missingLabels = missing
-          .map((key) => fieldLabels[key])
-          .join(', ');
+        const missingLabels = missing.map((key) => fieldLabels[key]).join(', ');
         throw new BadRequestException(
           `Al cliente (persona jurídica) le faltan los siguientes datos obligatorios para generar el pagaré: ${missingLabels}.`,
         );
@@ -781,9 +776,7 @@ export class PromissoryNotesService {
       if (!customer.phone) missing.push('phone');
 
       if (missing.length > 0) {
-        const missingLabels = missing
-          .map((key) => fieldLabels[key])
-          .join(', ');
+        const missingLabels = missing.map((key) => fieldLabels[key]).join(', ');
         throw new BadRequestException(
           `Al cliente le faltan los siguientes datos obligatorios para generar el pagaré: ${missingLabels}.`,
         );
@@ -856,8 +849,7 @@ export class PromissoryNotesService {
     const currentMonth = SPANISH_MONTHS[now.getMonth()];
     const currentDay = now.getDate().toString();
 
-    const isLegalEntity =
-      params.customer.personType?.code === 'legalEntity';
+    const isLegalEntity = params.customer.personType?.code === 'legalEntity';
 
     // For persona jurídica, use legal representative data for identification,
     // phone and email; for persona natural, use the customer's own data.
@@ -954,13 +946,10 @@ export class PromissoryNotesService {
     );
 
     // Replace text-field tags with their default value for preview
-    html = html.replace(
-      /<text-field[^>]*>.*?<\/text-field>/gs,
-      (match) => {
-        const defaultValue = match.match(/default="([^"]*)"/)?.[1] ?? '';
-        return `<span class="field" style="font-weight:bold;">${defaultValue}</span>`;
-      },
-    );
+    html = html.replace(/<text-field[^>]*>.*?<\/text-field>/gs, (match) => {
+      const defaultValue = match.match(/default="([^"]*)"/)?.[1] ?? '';
+      return `<span class="field" style="font-weight:bold;">${defaultValue}</span>`;
+    });
 
     return html;
   }

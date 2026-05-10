@@ -73,7 +73,6 @@ export class DocuSealService {
   async createSubmission(
     params: CreateSubmissionParams,
   ): Promise<DocuSealSubmitterResult> {
-
     const fields = Object.entries(params.values).map(([name, value]) => ({
       name,
       default_value: value,
@@ -201,8 +200,7 @@ export class DocuSealService {
       return {
         id: submission.id,
         status: submission.status as DocuSealSubmissionStatus,
-        completedAt:
-          submission.submitters?.[0]?.completed_at ?? null,
+        completedAt: submission.submitters?.[0]?.completed_at ?? null,
       };
     } catch (err) {
       this.logger.error(

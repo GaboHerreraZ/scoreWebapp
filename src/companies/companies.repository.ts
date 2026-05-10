@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
+import { getEffectiveLimits } from '../common/utils/subscription-limits.js';
 
 @Injectable()
 export class CompaniesRepository {
@@ -204,9 +206,14 @@ export class CompaniesRepository {
 
     const subscription = currentCompanySubscription.subscription;
 
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
+      currentCompanySubscription.startDate,
+    );
+
+    const effectiveLimits = getEffectiveLimits(
+      currentCompanySubscription,
+      subscription,
+    );
 
     // Get parameter IDs for AI analysis types
     const [estudioCreditoParam, cargaPdfParam] = await Promise.all([
@@ -232,14 +239,14 @@ export class CompaniesRepository {
       this.prisma.creditStudy.count({
         where: {
           companyId,
-          createdAt: { gte: startOfMonth, lt: endOfMonth },
+          createdAt: { gte: cycleStart, lt: cycleEnd },
         },
       }),
       this.prisma.aiAnalysis.count({
         where: {
           companyId,
           status: 'success',
-          createdAt: { gte: startOfMonth, lt: endOfMonth },
+          createdAt: { gte: cycleStart, lt: cycleEnd },
           ...(estudioCreditoParam ? { typeId: estudioCreditoParam.id } : {}),
         },
       }),
@@ -247,7 +254,7 @@ export class CompaniesRepository {
         where: {
           companyId,
           status: 'success',
-          createdAt: { gte: startOfMonth, lt: endOfMonth },
+          createdAt: { gte: cycleStart, lt: cycleEnd },
           ...(cargaPdfParam ? { typeId: cargaPdfParam.id } : {}),
         },
       }),
@@ -257,6 +264,8 @@ export class CompaniesRepository {
       company,
       subscription,
       companySubscription: currentCompanySubscription,
+      effectiveLimits,
+      cycle: { cycleStart, cycleEnd },
       usage: {
         usersCount,
         customersCount,
@@ -267,11 +276,9 @@ export class CompaniesRepository {
     };
   }
 
-  async findPaymentHistoryByCompanySubscriptionId(
-    companySubscriptionId: string,
-  ) {
+  async findPaymentHistoryByCompanyId(companyId: string) {
     return this.prisma.paymentHistory.findMany({
-      where: { companySubscriptionId },
+      where: { companySubscription: { companyId } },
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -113,6 +113,62 @@ export class CompanySubscriptionsRepository {
     });
   }
 
+  async countActiveUsers(companyId: string): Promise<number> {
+    return this.prisma.userCompany.count({
+      where: { companyId, isActive: true },
+    });
+  }
+
+  async countCustomers(companyId: string): Promise<number> {
+    return this.prisma.customer.count({ where: { companyId } });
+  }
+
+  async setCompanyEpaycoCustomerId(
+    companyId: string,
+    epaycoCustomerId: string,
+  ) {
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { epaycoCustomerId },
+    });
+  }
+
+  async replaceCurrentSubscription(params: {
+    currentSubscriptionId: string;
+    cancelledStatusId: number;
+    newData: Prisma.CompanySubscriptionUncheckedCreateInput;
+    firstPayment: Omit<
+      Prisma.PaymentHistoryUncheckedCreateInput,
+      'companySubscriptionId'
+    >;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.companySubscription.update({
+        where: { id: params.currentSubscriptionId },
+        data: {
+          statusId: params.cancelledStatusId,
+          isCurrent: false,
+          autoRenew: false,
+          cancelledAt: new Date(),
+        },
+      });
+
+      const created = await tx.companySubscription.create({
+        data: params.newData,
+        include: this.defaultInclude,
+      });
+
+      await tx.paymentHistory.create({
+        data: {
+          ...params.firstPayment,
+          companySubscriptionId: created.id,
+        },
+      });
+
+      return created;
+    });
+  }
+
   // ─── PaymentHistory ─────────────────────────────────────────
 
   async createPaymentHistory(data: Prisma.PaymentHistoryUncheckedCreateInput) {

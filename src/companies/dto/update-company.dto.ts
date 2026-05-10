@@ -1,5 +1,11 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsInt, IsString, MaxLength, Matches } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  IsString,
+  MaxLength,
+  Matches,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateCompanyDto } from './create-company.dto.js';
 

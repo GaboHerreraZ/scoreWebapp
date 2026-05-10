@@ -44,7 +44,9 @@ export class NotificationsController {
   }
 
   @Get('unread-count')
-  @ApiOperation({ summary: 'Get unread notification count for the authenticated user' })
+  @ApiOperation({
+    summary: 'Get unread notification count for the authenticated user',
+  })
   @ApiResponse({ status: 200, description: 'Unread notification count' })
   getUnreadCount(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -56,7 +58,9 @@ export class NotificationsController {
 
   @Patch('read-all')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Mark all notifications as read for the authenticated user' })
+  @ApiOperation({
+    summary: 'Mark all notifications as read for the authenticated user',
+  })
   @ApiResponse({ status: 200, description: 'All notifications marked as read' })
   markAllAsRead(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -70,7 +74,10 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a notification as read' })
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
-  @ApiResponse({ status: 404, description: 'Notification not found in this company' })
+  @ApiResponse({
+    status: 404,
+    description: 'Notification not found in this company',
+  })
   markAsRead(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -83,8 +90,14 @@ export class NotificationsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a notification' })
-  @ApiResponse({ status: 204, description: 'Notification deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Notification not found in this company' })
+  @ApiResponse({
+    status: 204,
+    description: 'Notification deleted successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Notification not found in this company',
+  })
   remove(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,

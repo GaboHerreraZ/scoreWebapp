@@ -1,8 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import {
-  AiProvider,
-  AiCompletionResult,
-} from './ai-provider.interface.js';
+import { AiProvider, AiCompletionResult } from './ai-provider.interface.js';
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gemini-2.5-flash': { input: 0.15, output: 0.6 },
@@ -41,8 +38,7 @@ export class GeminiProvider implements AiProvider {
     const response = result.response;
     const durationMs = Date.now() - startTime;
 
-    const promptTokens =
-      response.usageMetadata?.promptTokenCount ?? null;
+    const promptTokens = response.usageMetadata?.promptTokenCount ?? null;
     const completionTokens =
       response.usageMetadata?.candidatesTokenCount ?? null;
 
@@ -89,8 +85,7 @@ export class GeminiProvider implements AiProvider {
     const response = result.response;
     const durationMs = Date.now() - startTime;
 
-    const promptTokens =
-      response.usageMetadata?.promptTokenCount ?? null;
+    const promptTokens = response.usageMetadata?.promptTokenCount ?? null;
     const completionTokens =
       response.usageMetadata?.candidatesTokenCount ?? null;
 
