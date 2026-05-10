@@ -104,6 +104,26 @@ export class MailService {
     });
   }
 
+  async sendPlanChangedEmail(params: {
+    to: string;
+    userName: string;
+    newPlanName: string;
+  }) {
+    const { to, userName, newPlanName } = params;
+
+    const html = this.loadTemplate('plan-changed', {
+      userName,
+      newPlanName,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Tu plan ha sido cambiado a ${newPlanName}`,
+      html,
+    });
+  }
+
   async sendUserDeactivatedEmail(params: { to: string; companyName: string }) {
     const { to, companyName } = params;
 

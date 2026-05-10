@@ -95,7 +95,9 @@ export class ParametersService {
 
     if (dto.parentId) {
       if (dto.parentId === id) {
-        throw new BadRequestException('Un parámetro no puede ser su propio padre');
+        throw new BadRequestException(
+          'Un parámetro no puede ser su propio padre',
+        );
       }
       await this.ensureExists(dto.parentId);
     }

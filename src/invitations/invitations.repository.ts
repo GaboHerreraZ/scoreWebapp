@@ -153,7 +153,7 @@ export class InvitationsRepository {
     const currentSub = company.companySubscriptions[0];
     if (!currentSub) return null;
 
-    return currentSub.subscription.maxUsers;
+    return currentSub.maxUsersOverride ?? currentSub.subscription.maxUsers;
   }
 
   async getInvitationStatusId(code: string): Promise<number | null> {

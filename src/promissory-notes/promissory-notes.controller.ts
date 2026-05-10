@@ -31,9 +31,7 @@ import { DocuSealWebhookGuard } from './guards/docuseal-webhook.guard.js';
 // ── Spanish-message pipes reused across this controller ──
 const companyIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
-    new BadRequestException(
-      'El parámetro companyId debe ser un UUID válido.',
-    ),
+    new BadRequestException('El parámetro companyId debe ser un UUID válido.'),
 });
 
 const promissoryIdPipe = new ParseIntPipe({
@@ -51,8 +49,7 @@ export class PromissoryNotesController {
 
   @Post('companies/:companyId/promissory-notes')
   @ApiOperation({
-    summary:
-      'Crea un pagaré y lo envía al cliente vía DocuSeal para su firma',
+    summary: 'Crea un pagaré y lo envía al cliente vía DocuSeal para su firma',
   })
   @ApiResponse({ status: 201, description: 'Pagaré creado y enviado' })
   @ApiResponse({
@@ -128,7 +125,8 @@ export class PromissoryNotesController {
 
   @Patch('companies/:companyId/promissory-notes/:id/decline')
   @ApiOperation({
-    summary: 'Declina un pagaré pendiente de firma y revierte el estudio de crédito a estudio realizado',
+    summary:
+      'Declina un pagaré pendiente de firma y revierte el estudio de crédito a estudio realizado',
   })
   @ApiResponse({ status: 200, description: 'Pagaré declinado exitosamente' })
   @ApiResponse({

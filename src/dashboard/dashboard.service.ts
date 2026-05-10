@@ -127,7 +127,8 @@ export class DashboardService {
       avgMonthlyPaymentCapacity:
         financialIndicatorsRaw._avg.monthlyPaymentCapacity ?? 0,
       avgStabilityFactor: financialIndicatorsRaw._avg.stabilityFactor ?? 0,
-      avgPaymentTimeSuppliers: financialIndicatorsRaw._avg.paymentTimeSuppliers ?? 0,
+      avgPaymentTimeSuppliers:
+        financialIndicatorsRaw._avg.paymentTimeSuppliers ?? 0,
     };
 
     const paymentCapacityTrend = this.fillMonthsWithValue(

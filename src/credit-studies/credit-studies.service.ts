@@ -168,9 +168,7 @@ export class CreditStudiesService {
         companyId,
       );
       if (!customerBelongs) {
-        throw new BadRequestException(
-          'El cliente no pertenece a esta empresa',
-        );
+        throw new BadRequestException('El cliente no pertenece a esta empresa');
       }
     }
 

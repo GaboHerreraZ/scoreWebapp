@@ -28,8 +28,8 @@ export class ProfilesRepository {
 
   async findByIdSingle(id: string) {
     return this.prisma.profile.findUnique({
-        where: { id },
-      });
+      where: { id },
+    });
   }
 
   async findById(id: string) {

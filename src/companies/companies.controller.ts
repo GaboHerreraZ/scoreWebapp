@@ -149,7 +149,9 @@ export class CompaniesController {
 
     const maxSize = 2 * 1024 * 1024; // 2MB
     if (file.size > maxSize) {
-      throw new BadRequestException('El tamaño del archivo no debe exceder 2MB');
+      throw new BadRequestException(
+        'El tamaño del archivo no debe exceder 2MB',
+      );
     }
 
     return this.companiesService.uploadLogo(id, file);

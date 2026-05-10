@@ -77,7 +77,10 @@ export class EpaycoService {
       });
 
       if (!response?.data?.customerId) {
-        this.logger.error('ePayco customers.create no retornó customerId', response);
+        this.logger.error(
+          'ePayco customers.create no retornó customerId',
+          response,
+        );
         throw new Error('No se obtuvo customerId');
       }
 
@@ -109,6 +112,27 @@ export class EpaycoService {
       return await this.epayco.customers.list();
     } catch (error: any) {
       throw new BadRequestException(error.message);
+    }
+  }
+
+  async getDefaultTokenCard(customerId: string): Promise<string | null> {
+    try {
+      const response = await this.epayco.customers.get(customerId);
+      const cards = response?.data?.cards ?? response?.cards ?? [];
+      if (!Array.isArray(cards) || cards.length === 0) return null;
+
+      const defaultCard =
+        cards.find((c: any) => c?.default === true || c?.default === 'true') ??
+        cards[0];
+
+      const token =
+        defaultCard?.token ?? defaultCard?.token_id ?? defaultCard?.id;
+      return typeof token === 'string' ? token : null;
+    } catch (error: any) {
+      this.logger.error(
+        `Error obteniendo cliente ePayco ${customerId}: ${error.message}`,
+      );
+      return null;
     }
   }
 
@@ -152,13 +176,18 @@ export class EpaycoService {
       });
 
       if (!response?.id) {
-        this.logger.error('ePayco subscriptions.create no retornó id', response);
+        this.logger.error(
+          'ePayco subscriptions.create no retornó id',
+          response,
+        );
         throw new Error('No se obtuvo subscription id');
       }
 
       return response.id as string;
     } catch (error: any) {
-      this.logger.error(`Error creando suscripción en ePayco: ${error.message}`);
+      this.logger.error(
+        `Error creando suscripción en ePayco: ${error.message}`,
+      );
       throw new BadRequestException(
         'Error realizando el pago de la suscripción. Por favor intenta de nuevo más tarde.',
       );

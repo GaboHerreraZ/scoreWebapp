@@ -99,7 +99,9 @@ export class NotificationsRepository {
   }
 
   async delete(id: string) {
-    await this.prisma.notificationRead.deleteMany({ where: { notificationId: id } });
+    await this.prisma.notificationRead.deleteMany({
+      where: { notificationId: id },
+    });
     return this.prisma.notification.delete({ where: { id } });
   }
 }

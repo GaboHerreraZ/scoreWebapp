@@ -71,15 +71,18 @@ export class AiAnalysesService {
       );
     }
 
-    const maxAnalyses = companySub.subscription.maxAiAnalysisPerMonth;
+    const maxAnalyses =
+      companySub.maxAiAnalysisPerMonthOverride ??
+      companySub.subscription.maxAiAnalysisPerMonth;
     if (maxAnalyses != null && maxAnalyses > 0) {
-      const usageThisMonth = await this.repository.countThisMonthByType(
+      const usageThisMonth = await this.repository.countCurrentCycleByType(
         companyId,
         typeId,
+        companySub.startDate,
       );
       if (usageThisMonth >= maxAnalyses) {
         throw new BadRequestException(
-          `Limite de analisis IA alcanzado para este mes (${maxAnalyses}). Actualice su suscripcion para obtener mas analisis.`,
+          `Limite de analisis IA alcanzado para este ciclo (${maxAnalyses}). Actualice su suscripcion para obtener mas analisis.`,
         );
       }
     }
@@ -206,7 +209,9 @@ export class AiAnalysesService {
       );
     }
 
-    const maxExtractions = companySub.subscription.maxPdfExtractionsPerMonth;
+    const maxExtractions =
+      companySub.maxPdfExtractionsPerMonthOverride ??
+      companySub.subscription.maxPdfExtractionsPerMonth;
 
     if (maxExtractions == null || maxExtractions <= 0) {
       throw new BadRequestException(
@@ -214,13 +219,14 @@ export class AiAnalysesService {
       );
     }
 
-    const usageThisMonth = await this.repository.countThisMonthByType(
+    const usageThisMonth = await this.repository.countCurrentCycleByType(
       companyId,
       typeId,
+      companySub.startDate,
     );
     if (usageThisMonth >= maxExtractions) {
       throw new BadRequestException(
-        `Limite de extracciones PDF alcanzado para este mes (${maxExtractions}). Actualice su suscripcion para obtener mas extracciones.`,
+        `Limite de extracciones PDF alcanzado para este ciclo (${maxExtractions}). Actualice su suscripcion para obtener mas extracciones.`,
       );
     }
 
@@ -409,9 +415,14 @@ export class AiAnalysesService {
   async getUsage(companyId: string) {
     const companySub = await this.repository.findCurrentSubscription(companyId);
 
-    const maxAnalyses = companySub?.subscription.maxAiAnalysisPerMonth ?? null;
-    const maxExtractions =
-      companySub?.subscription.maxPdfExtractionsPerMonth ?? null;
+    const maxAnalyses = companySub
+      ? (companySub.maxAiAnalysisPerMonthOverride ??
+        companySub.subscription.maxAiAnalysisPerMonth)
+      : null;
+    const maxExtractions = companySub
+      ? (companySub.maxPdfExtractionsPerMonthOverride ??
+        companySub.subscription.maxPdfExtractionsPerMonth)
+      : null;
 
     // Get type IDs for counting per type
     const [analysisType, extractionType] = await Promise.all([
@@ -420,11 +431,19 @@ export class AiAnalysesService {
     ]);
 
     const [analysisUsage, extractionUsage] = await Promise.all([
-      analysisType
-        ? this.repository.countThisMonthByType(companyId, analysisType.id)
+      analysisType && companySub
+        ? this.repository.countCurrentCycleByType(
+            companyId,
+            analysisType.id,
+            companySub.startDate,
+          )
         : Promise.resolve(0),
-      extractionType
-        ? this.repository.countThisMonthByType(companyId, extractionType.id)
+      extractionType && companySub
+        ? this.repository.countCurrentCycleByType(
+            companyId,
+            extractionType.id,
+            companySub.startDate,
+          )
         : Promise.resolve(0),
     ]);
 

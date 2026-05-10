@@ -24,9 +24,7 @@ export class CompaniesService {
   async create(dto: CreateCompanyDto, userId: string) {
     const existing = await this.repository.findByNit(dto.nit);
     if (existing) {
-      throw new ConflictException(
-        `Ya existe una empresa con NIT "${dto.nit}"`,
-      );
+      throw new ConflictException(`Ya existe una empresa con NIT "${dto.nit}"`);
     }
 
     const adminRoleId = await this.repository.getRoleId('administrator');
@@ -227,52 +225,54 @@ export class CompaniesService {
     let paymentHistory: unknown[] = [];
 
     if (usageResult) {
-      const { subscription, usage, companySubscription } = usageResult;
+      const { subscription, usage, effectiveLimits } = usageResult;
 
       subscriptionUsage = {
         subscription,
+        effectiveLimits,
         usage: {
           users: {
             used: usage.usersCount,
-            max: subscription.maxUsers,
-            remaining: subscription.maxUsers - usage.usersCount,
+            max: effectiveLimits.maxUsers,
+            remaining: effectiveLimits.maxUsers - usage.usersCount,
           },
           customers: {
             used: usage.customersCount,
-            max: subscription.maxCustomers,
+            max: effectiveLimits.maxCustomers,
             remaining:
-              subscription.maxCustomers !== null
-                ? subscription.maxCustomers - usage.customersCount
+              effectiveLimits.maxCustomers !== null
+                ? effectiveLimits.maxCustomers - usage.customersCount
                 : null,
-            unlimited: subscription.maxCustomers === null,
+            unlimited: effectiveLimits.maxCustomers === null,
           },
           studiesThisMonth: {
             used: usage.studiesThisMonth,
-            max: subscription.maxStudiesPerMonth,
+            max: effectiveLimits.maxStudiesPerMonth,
             remaining:
-              subscription.maxStudiesPerMonth !== null
-                ? subscription.maxStudiesPerMonth - usage.studiesThisMonth
+              effectiveLimits.maxStudiesPerMonth !== null
+                ? effectiveLimits.maxStudiesPerMonth - usage.studiesThisMonth
                 : null,
-            unlimited: subscription.maxStudiesPerMonth === null,
+            unlimited: effectiveLimits.maxStudiesPerMonth === null,
           },
           aiAnalysesThisMonth: {
             used: usage.aiAnalysesThisMonth,
-            max: subscription.maxAiAnalysisPerMonth,
+            max: effectiveLimits.maxAiAnalysisPerMonth,
             remaining:
-              subscription.maxAiAnalysisPerMonth !== null
-                ? subscription.maxAiAnalysisPerMonth - usage.aiAnalysesThisMonth
+              effectiveLimits.maxAiAnalysisPerMonth !== null
+                ? effectiveLimits.maxAiAnalysisPerMonth -
+                  usage.aiAnalysesThisMonth
                 : null,
-            unlimited: subscription.maxAiAnalysisPerMonth === null,
+            unlimited: effectiveLimits.maxAiAnalysisPerMonth === null,
           },
           pdfExtractionsThisMonth: {
             used: usage.pdfExtractionsThisMonth,
-            max: subscription.maxPdfExtractionsPerMonth,
+            max: effectiveLimits.maxPdfExtractionsPerMonth,
             remaining:
-              subscription.maxPdfExtractionsPerMonth !== null
-                ? subscription.maxPdfExtractionsPerMonth -
+              effectiveLimits.maxPdfExtractionsPerMonth !== null
+                ? effectiveLimits.maxPdfExtractionsPerMonth -
                   usage.pdfExtractionsThisMonth
                 : null,
-            unlimited: subscription.maxPdfExtractionsPerMonth === null,
+            unlimited: effectiveLimits.maxPdfExtractionsPerMonth === null,
           },
         },
         features: {
@@ -286,11 +286,9 @@ export class CompaniesService {
         },
       };
 
-      // 3. Payment history for the current company subscription
+      // 3. Payment history across all subscriptions of the company
       paymentHistory =
-        await this.repository.findPaymentHistoryByCompanySubscriptionId(
-          companySubscription.id,
-        );
+        await this.repository.findPaymentHistoryByCompanyId(companyId);
     }
 
     return {

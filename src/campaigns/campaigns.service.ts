@@ -15,7 +15,9 @@ export class CampaignsService {
 
   async create(dto: CreateCampaignDto) {
     if (new Date(dto.endDate) <= new Date(dto.startDate)) {
-      throw new BadRequestException('La fecha de fin debe ser posterior a la fecha de inicio');
+      throw new BadRequestException(
+        'La fecha de fin debe ser posterior a la fecha de inicio',
+      );
     }
 
     return this.repository.create({
@@ -84,7 +86,9 @@ export class CampaignsService {
     const endDate = dto.endDate ? new Date(dto.endDate) : current.endDate;
 
     if (endDate <= startDate) {
-      throw new BadRequestException('La fecha de fin debe ser posterior a la fecha de inicio');
+      throw new BadRequestException(
+        'La fecha de fin debe ser posterior a la fecha de inicio',
+      );
     }
 
     return this.repository.update(id, {

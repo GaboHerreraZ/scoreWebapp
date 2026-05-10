@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
 
 @Injectable()
 export class AiAnalysesRepository {
@@ -87,32 +88,38 @@ export class AiAnalysesRepository {
     });
   }
 
-  async countThisMonth(companyId: string): Promise<number> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  async countCurrentCycle(
+    companyId: string,
+    subscriptionStartDate: Date,
+  ): Promise<number> {
+    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
+      subscriptionStartDate,
+    );
 
     return this.prisma.aiAnalysis.count({
       where: {
         companyId,
         status: 'success',
-        createdAt: { gte: startOfMonth },
+        createdAt: { gte: cycleStart, lt: cycleEnd },
       },
     });
   }
 
-  async countThisMonthByType(
+  async countCurrentCycleByType(
     companyId: string,
     typeId: number,
+    subscriptionStartDate: Date,
   ): Promise<number> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
+      subscriptionStartDate,
+    );
 
     return this.prisma.aiAnalysis.count({
       where: {
         companyId,
         typeId,
         status: 'success',
-        createdAt: { gte: startOfMonth },
+        createdAt: { gte: cycleStart, lt: cycleEnd },
       },
     });
   }

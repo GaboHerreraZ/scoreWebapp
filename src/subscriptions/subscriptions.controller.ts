@@ -27,9 +27,7 @@ import { Public } from '../common/decorators/public.decorator.js';
 @ApiTags('Subscriptions')
 @Controller('subscriptions')
 export class SubscriptionsController {
-  constructor(
-    private readonly subscriptionsService: SubscriptionsService,
-  ) {}
+  constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   @ApiBearerAuth()
   @Post()
@@ -44,8 +42,13 @@ export class SubscriptionsController {
 
   @ApiBearerAuth()
   @Post('onboarding-setup')
-  @ApiOperation({ summary: 'Create profile and company in a single transaction (onboarding)' })
-  @ApiResponse({ status: 201, description: 'Profile and company created successfully' })
+  @ApiOperation({
+    summary: 'Create profile and company in a single transaction (onboarding)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Profile and company created successfully',
+  })
   @ApiResponse({ status: 409, description: 'Company NIT already exists' })
   onboardingSetup(@Body() dto: OnboardingSetupDto, @Req() req: Request) {
     const userId = (req as any).user.id as string;

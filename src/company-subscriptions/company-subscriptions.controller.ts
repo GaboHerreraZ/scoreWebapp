@@ -8,6 +8,7 @@ import {
 import { CompanySubscriptionsService } from './company-subscriptions.service.js';
 import { SubscribeDto } from './dto/subscribe.dto.js';
 import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
+import { ChangePlanDto } from './dto/change-plan.dto.js';
 
 @ApiTags('Company Subscriptions')
 @ApiBearerAuth()
@@ -41,8 +42,14 @@ export class CompanySubscriptionsController {
   @ApiOperation({
     summary: 'Cancel the current subscription and fall back to the free plan',
   })
-  @ApiResponse({ status: 201, description: 'Subscription cancelled and free plan activated' })
-  @ApiResponse({ status: 404, description: 'Company or active subscription not found' })
+  @ApiResponse({
+    status: 201,
+    description: 'Subscription cancelled and free plan activated',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Company or active subscription not found',
+  })
   cancel(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.companySubscriptionsService.cancel(companyId);
   }
@@ -51,7 +58,10 @@ export class CompanySubscriptionsController {
   @ApiOperation({
     summary: 'Subscribe a company to a plan via ePayco recurring billing',
   })
-  @ApiResponse({ status: 201, description: 'Subscription created successfully' })
+  @ApiResponse({
+    status: 201,
+    description: 'Subscription created successfully',
+  })
   @ApiResponse({
     status: 400,
     description: 'Missing billing data or ePayco plan not configured',
@@ -69,5 +79,27 @@ export class CompanySubscriptionsController {
     @Body() dto: SubscribeDto,
   ) {
     return this.companySubscriptionsService.subscribe(companyId, dto);
+  }
+
+  @Post('change-plan')
+  @ApiOperation({
+    summary:
+      'Change the company subscription plan (free or paid). Reuses the existing ePayco customer when available.',
+  })
+  @ApiResponse({ status: 201, description: 'Plan changed successfully' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Same plan, plan limits exceeded by current resources, or payment data missing/invalid',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Company, current subscription, or new plan not found',
+  })
+  changePlan(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Body() dto: ChangePlanDto,
+  ) {
+    return this.companySubscriptionsService.changePlan(companyId, dto);
   }
 }

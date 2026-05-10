@@ -106,41 +106,45 @@ export class ProfilesService {
         );
 
       const isAdmin = userCompany.role?.code === ADMIN_ROLE_CODE;
-      const currentSubscription = userCompany.company.companySubscriptions.find(c => c.isCurrent);
+      const currentSubscription = userCompany.company.companySubscriptions.find(
+        (c) => c.isCurrent,
+      );
 
       isFreeSubscription = currentSubscription?.subscription.name === 'Gratis';
 
       const subscriptionActive =
-         (currentSubscription && (currentSubscription.status.code === ACTIVE_STATUS_CODE)) ?? false;
+        (currentSubscription &&
+          currentSubscription.status.code === ACTIVE_STATUS_CODE) ??
+        false;
 
       if (usageResult) {
-        const { subscription, usage } = usageResult;
+        const { subscription, usage, effectiveLimits } = usageResult;
 
-        const usersRemaining = subscription.maxUsers - usage.usersCount;
+        const usersRemaining = effectiveLimits.maxUsers - usage.usersCount;
 
-        const creditStudiesRemaining = (subscription.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
+        const creditStudiesRemaining =
+          (effectiveLimits.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
 
-        const customersUnlimited = subscription.maxCustomers === null;
+        const customersUnlimited = effectiveLimits.maxCustomers === null;
 
         const customersRemaining = customersUnlimited
           ? null
-          : (subscription.maxCustomers ?? 0) - usage.customersCount;
+          : (effectiveLimits.maxCustomers ?? 0) - usage.customersCount;
 
-        const aiUnlimited = subscription.maxAiAnalysisPerMonth === null;
+        const aiUnlimited = effectiveLimits.maxAiAnalysisPerMonth === null;
 
         const aiRemaining = aiUnlimited
           ? null
-          : (subscription.maxAiAnalysisPerMonth ?? 0) -
-          usage.aiAnalysesThisMonth;
+          : (effectiveLimits.maxAiAnalysisPerMonth ?? 0) -
+            usage.aiAnalysesThisMonth;
 
-        const extractPdfUnlimited = subscription.maxPdfExtractionsPerMonth === null;
-
+        const extractPdfUnlimited =
+          effectiveLimits.maxPdfExtractionsPerMonth === null;
 
         const extractPdfRemaining = extractPdfUnlimited
           ? null
-          : (subscription.maxPdfExtractionsPerMonth ?? 0) -
-          usage.pdfExtractionsThisMonth;
-
+          : (effectiveLimits.maxPdfExtractionsPerMonth ?? 0) -
+            usage.pdfExtractionsThisMonth;
 
         permissions = {
           canAddCreditStudy: subscriptionActive && creditStudiesRemaining > 0,
@@ -150,7 +154,9 @@ export class ProfilesService {
             (customersUnlimited || (customersRemaining ?? 0) > 0),
           canMakeAiAnalysis:
             subscriptionActive && (aiUnlimited || (aiRemaining ?? 0) > 0),
-          canExtractPdf:  subscriptionActive && (extractPdfUnlimited || (extractPdfRemaining ?? 0) > 0),
+          canExtractPdf:
+            subscriptionActive &&
+            (extractPdfUnlimited || (extractPdfRemaining ?? 0) > 0),
           canExportExcel: subscriptionActive && subscription.excelReports,
           subscriptionActive,
           canEditTheme: subscription.themeCustomization,
@@ -158,7 +164,7 @@ export class ProfilesService {
           supportLevel: subscription.supportLevel.code,
           emailNotification: subscription.emailNotifications,
           subscriptionStatus: currentSubscription?.status.code ?? '',
-          hasSubscription: true
+          hasSubscription: true,
         };
       } else {
         permissions = { ...permissions, subscriptionActive };
@@ -167,7 +173,6 @@ export class ProfilesService {
 
     const { userCompanies, ...rest } = profile;
     const company = userCompanies[0];
-
 
     return {
       ...rest,
