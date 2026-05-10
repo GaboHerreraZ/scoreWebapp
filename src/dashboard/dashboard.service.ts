@@ -6,34 +6,79 @@ import {
 import { DashboardRepository } from './dashboard.repository.js';
 import { FilterDashboardDto } from './dto/filter-dashboard.dto.js';
 
+export interface ComparableMetric {
+  value: number;
+  previous: number;
+  delta: number;
+  deltaPercent: number | null;
+}
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly repository: DashboardRepository) {}
 
   async getBasicDashboard(companyId: string) {
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNextMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1,
+    );
+    const startOfPrevMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    );
+
     const [
       totalCustomers,
+      totalCustomersPrev,
       totalStudies,
+      totalStudiesPrev,
       studiesThisMonth,
+      studiesPrevMonth,
       activeUsers,
-      creditAgg,
+      activeUsersPrev,
+      creditAggCurrent,
+      creditAggPrev,
       studiesByStatusRaw,
       studiesByMonthRaw,
       customersByPersonTypeRaw,
       recentStudiesRaw,
     ] = await Promise.all([
       this.repository.countCustomers(companyId),
+      this.repository.countCustomers(companyId, startOfThisMonth),
       this.repository.countStudies(companyId),
-      this.repository.countStudiesThisMonth(companyId),
+      this.repository.countStudies(companyId, startOfThisMonth),
+      this.repository.countStudiesInRange(
+        companyId,
+        startOfThisMonth,
+        startOfNextMonth,
+      ),
+      this.repository.countStudiesInRange(
+        companyId,
+        startOfPrevMonth,
+        startOfThisMonth,
+      ),
       this.repository.countActiveUsers(companyId),
-      this.repository.creditSummaryThisMonth(companyId),
+      this.repository.countActiveUsers(companyId, startOfThisMonth),
+      this.repository.creditSummaryInRange(
+        companyId,
+        startOfThisMonth,
+        startOfNextMonth,
+      ),
+      this.repository.creditSummaryInRange(
+        companyId,
+        startOfPrevMonth,
+        startOfThisMonth,
+      ),
       this.repository.studiesByStatus(companyId),
       this.repository.studiesByMonth(companyId, 6),
       this.repository.customersByPersonType(companyId),
       this.repository.recentStudies(companyId, 5),
     ]);
 
-    // Collect all parameter IDs that need labels
     const paramIds = [
       ...studiesByStatusRaw.map((s) => s.statusId),
       ...customersByPersonTypeRaw.map((c) => c.personTypeId),
@@ -64,15 +109,24 @@ export class DashboardService {
 
     return {
       summary: {
-        totalCustomers,
-        totalStudies,
-        studiesThisMonth,
-        activeUsers,
+        totalCustomers: this.compare(totalCustomers, totalCustomersPrev),
+        totalStudies: this.compare(totalStudies, totalStudiesPrev),
+        studiesThisMonth: this.compare(studiesThisMonth, studiesPrevMonth),
+        activeUsers: this.compare(activeUsers, activeUsersPrev),
       },
       creditSummary: {
-        totalRequestedThisMonth: creditAgg._sum.requestedCreditLine ?? 0,
-        avgRequestedThisMonth: creditAgg._avg.requestedCreditLine ?? 0,
-        avgRequestedTerm: creditAgg._avg.requestedTerm ?? 0,
+        totalRequestedThisMonth: this.compare(
+          Number(creditAggCurrent._sum.requestedCreditLine ?? 0),
+          Number(creditAggPrev._sum.requestedCreditLine ?? 0),
+        ),
+        avgRequestedThisMonth: this.compare(
+          Number(creditAggCurrent._avg.requestedCreditLine ?? 0),
+          Number(creditAggPrev._avg.requestedCreditLine ?? 0),
+        ),
+        avgRequestedTerm: this.compare(
+          Number(creditAggCurrent._avg.requestedTerm ?? 0),
+          Number(creditAggPrev._avg.requestedTerm ?? 0),
+        ),
       },
       studiesByStatus,
       studiesByMonth,
@@ -87,31 +141,53 @@ export class DashboardService {
     const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : undefined;
     const dateTo = filters.dateTo ? new Date(filters.dateTo) : undefined;
 
+    const { previousFrom, previousTo } = this.resolvePreviousRange(
+      dateFrom,
+      dateTo,
+    );
+
     const basicData = await this.getBasicDashboard(companyId);
 
     const [
       financialIndicatorsRaw,
+      financialIndicatorsPrev,
       stabilityDistribution,
       paymentCapacityTrendRaw,
       avgTurnoverRaw,
+      avgTurnoverPrev,
       topCustomersByCredit,
       revenueVsNetIncomeRaw,
       avgDebtStructureRaw,
+      avgDebtStructurePrev,
       studiesByAnalystRaw,
       customersByEconomicActivityRaw,
     ] = await Promise.all([
       this.repository.avgFinancialIndicators(companyId, dateFrom, dateTo),
+      this.repository.avgFinancialIndicatorsInRange(
+        companyId,
+        previousFrom,
+        previousTo,
+      ),
       this.repository.stabilityDistribution(companyId, dateFrom, dateTo),
       this.repository.paymentCapacityTrend(companyId, 12, dateFrom, dateTo),
       this.repository.avgTurnoverIndicators(companyId, dateFrom, dateTo),
+      this.repository.avgTurnoverIndicatorsInRange(
+        companyId,
+        previousFrom,
+        previousTo,
+      ),
       this.repository.topCustomersByCredit(companyId, 10, dateFrom, dateTo),
       this.repository.revenueVsNetIncome(companyId, 12, dateFrom, dateTo),
       this.repository.avgDebtStructure(companyId, dateFrom, dateTo),
+      this.repository.avgDebtStructureInRange(
+        companyId,
+        previousFrom,
+        previousTo,
+      ),
       this.repository.studiesByAnalyst(companyId, dateFrom, dateTo),
       this.repository.customersByEconomicActivity(companyId),
     ]);
 
-    // Collect IDs for label lookups
     const analystIds = studiesByAnalystRaw.map((a) => a.createdBy);
     const economicActivityIds = customersByEconomicActivityRaw
       .map((c) => c.economicActivityId)
@@ -123,12 +199,22 @@ export class DashboardService {
     ]);
 
     const financialIndicators = {
-      avgEbitda: financialIndicatorsRaw._avg.ebitda ?? 0,
-      avgMonthlyPaymentCapacity:
-        financialIndicatorsRaw._avg.monthlyPaymentCapacity ?? 0,
-      avgStabilityFactor: financialIndicatorsRaw._avg.stabilityFactor ?? 0,
-      avgPaymentTimeSuppliers:
-        financialIndicatorsRaw._avg.paymentTimeSuppliers ?? 0,
+      avgEbitda: this.compare(
+        Number(financialIndicatorsRaw._avg.ebitda ?? 0),
+        Number(financialIndicatorsPrev._avg.ebitda ?? 0),
+      ),
+      avgMonthlyPaymentCapacity: this.compare(
+        Number(financialIndicatorsRaw._avg.monthlyPaymentCapacity ?? 0),
+        Number(financialIndicatorsPrev._avg.monthlyPaymentCapacity ?? 0),
+      ),
+      avgStabilityFactor: this.compare(
+        Number(financialIndicatorsRaw._avg.stabilityFactor ?? 0),
+        Number(financialIndicatorsPrev._avg.stabilityFactor ?? 0),
+      ),
+      avgPaymentTimeSuppliers: this.compare(
+        Number(financialIndicatorsRaw._avg.paymentTimeSuppliers ?? 0),
+        Number(financialIndicatorsPrev._avg.paymentTimeSuppliers ?? 0),
+      ),
     };
 
     const paymentCapacityTrend = this.fillMonthsWithValue(
@@ -138,11 +224,22 @@ export class DashboardService {
     );
 
     const avgTurnoverIndicators = {
-      accountsReceivableTurnover:
-        avgTurnoverRaw._avg.accountsReceivableTurnover ?? 0,
-      inventoryTurnover: avgTurnoverRaw._avg.inventoryTurnover ?? 0,
-      suppliersTurnover: avgTurnoverRaw._avg.suppliersTurnover ?? 0,
-      paymentTimeSuppliers: avgTurnoverRaw._avg.paymentTimeSuppliers ?? 0,
+      accountsReceivableTurnover: this.compare(
+        Number(avgTurnoverRaw._avg.accountsReceivableTurnover ?? 0),
+        Number(avgTurnoverPrev._avg.accountsReceivableTurnover ?? 0),
+      ),
+      inventoryTurnover: this.compare(
+        Number(avgTurnoverRaw._avg.inventoryTurnover ?? 0),
+        Number(avgTurnoverPrev._avg.inventoryTurnover ?? 0),
+      ),
+      suppliersTurnover: this.compare(
+        Number(avgTurnoverRaw._avg.suppliersTurnover ?? 0),
+        Number(avgTurnoverPrev._avg.suppliersTurnover ?? 0),
+      ),
+      paymentTimeSuppliers: this.compare(
+        Number(avgTurnoverRaw._avg.paymentTimeSuppliers ?? 0),
+        Number(avgTurnoverPrev._avg.paymentTimeSuppliers ?? 0),
+      ),
     };
 
     const revenueVsNetIncome = this.fillMonthsWithDualValues(
@@ -150,17 +247,30 @@ export class DashboardService {
       12,
     );
 
-    const avgEquity = avgDebtStructureRaw._avg.equity ?? 0;
+    const avgEquityCurrent = Number(avgDebtStructureRaw._avg.equity ?? 0);
+    const avgEquityPrev = Number(avgDebtStructurePrev._avg.equity ?? 0);
+    const debtToEquityCurrent =
+      avgEquityCurrent !== 0
+        ? Number(avgDebtStructureRaw._avg.totalLiabilities ?? 0) /
+          avgEquityCurrent
+        : 0;
+    const debtToEquityPrev =
+      avgEquityPrev !== 0
+        ? Number(avgDebtStructurePrev._avg.totalLiabilities ?? 0) /
+          avgEquityPrev
+        : 0;
+
     const avgDebtStructure = {
-      avgCurrentLiabilities:
-        avgDebtStructureRaw._avg.totalCurrentLiabilities ?? 0,
-      avgNonCurrentLiabilities:
-        avgDebtStructureRaw._avg.totalNonCurrentLiabilities ?? 0,
-      avgEquity,
-      debtToEquityRatio:
-        avgEquity !== 0
-          ? (avgDebtStructureRaw._avg.totalLiabilities ?? 0) / avgEquity
-          : null,
+      avgCurrentLiabilities: this.compare(
+        Number(avgDebtStructureRaw._avg.totalCurrentLiabilities ?? 0),
+        Number(avgDebtStructurePrev._avg.totalCurrentLiabilities ?? 0),
+      ),
+      avgNonCurrentLiabilities: this.compare(
+        Number(avgDebtStructureRaw._avg.totalNonCurrentLiabilities ?? 0),
+        Number(avgDebtStructurePrev._avg.totalNonCurrentLiabilities ?? 0),
+      ),
+      avgEquity: this.compare(avgEquityCurrent, avgEquityPrev),
+      debtToEquityRatio: this.compare(debtToEquityCurrent, debtToEquityPrev),
     };
 
     const studiesByAnalyst = studiesByAnalystRaw.map((a) => ({
@@ -192,6 +302,32 @@ export class DashboardService {
   }
 
   // ── Private helpers ─────────────────────────────────────────
+
+  private compare(value: number, previous: number): ComparableMetric {
+    const v = Number(value ?? 0);
+    const p = Number(previous ?? 0);
+    const delta = v - p;
+    const deltaPercent =
+      p === 0 ? null : Number(((delta / Math.abs(p)) * 100).toFixed(2));
+    return { value: v, previous: p, delta, deltaPercent };
+  }
+
+  private resolvePreviousRange(
+    dateFrom?: Date,
+    dateTo?: Date,
+  ): { previousFrom: Date; previousTo: Date } {
+    const now = new Date();
+    const effectiveTo = dateTo ?? now;
+    const effectiveFrom =
+      dateFrom ??
+      new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+
+    const spanMs = effectiveTo.getTime() - effectiveFrom.getTime();
+    const previousTo = new Date(effectiveFrom.getTime());
+    const previousFrom = new Date(effectiveFrom.getTime() - spanMs);
+
+    return { previousFrom, previousTo };
+  }
 
   private async assertAdvancedAccess(companyId: string): Promise<void> {
     const company = await this.repository.getCompanySubscription(companyId);

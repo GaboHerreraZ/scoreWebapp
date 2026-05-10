@@ -8,42 +8,52 @@ export class DashboardRepository {
 
   // ── BASIC DASHBOARD QUERIES ─────────────────────────────────
 
-  async countCustomers(companyId: string): Promise<number> {
-    return this.prisma.customer.count({ where: { companyId } });
-  }
-
-  async countStudies(companyId: string): Promise<number> {
-    return this.prisma.creditStudy.count({ where: { companyId } });
-  }
-
-  async countStudiesThisMonth(companyId: string): Promise<number> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-    return this.prisma.creditStudy.count({
+  async countCustomers(companyId: string, before?: Date): Promise<number> {
+    return this.prisma.customer.count({
       where: {
         companyId,
-        createdAt: { gte: startOfMonth, lt: startOfNextMonth },
+        ...(before ? { createdAt: { lt: before } } : {}),
       },
     });
   }
 
-  async countActiveUsers(companyId: string): Promise<number> {
-    return this.prisma.userCompany.count({
-      where: { companyId, isActive: true },
+  async countStudies(companyId: string, before?: Date): Promise<number> {
+    return this.prisma.creditStudy.count({
+      where: {
+        companyId,
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
     });
   }
 
-  async creditSummaryThisMonth(companyId: string) {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  async countStudiesInRange(
+    companyId: string,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    return this.prisma.creditStudy.count({
+      where: {
+        companyId,
+        createdAt: { gte: from, lt: to },
+      },
+    });
+  }
 
+  async countActiveUsers(companyId: string, before?: Date): Promise<number> {
+    return this.prisma.userCompany.count({
+      where: {
+        companyId,
+        isActive: true,
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
+    });
+  }
+
+  async creditSummaryInRange(companyId: string, from: Date, to: Date) {
     return this.prisma.creditStudy.aggregate({
       where: {
         companyId,
-        createdAt: { gte: startOfMonth, lt: startOfNextMonth },
+        createdAt: { gte: from, lt: to },
       },
       _sum: { requestedCreditLine: true },
       _avg: { requestedCreditLine: true, requestedTerm: true },
@@ -218,6 +228,61 @@ export class DashboardRepository {
         inventoryTurnover: true,
         suppliersTurnover: true,
         paymentTimeSuppliers: true,
+      },
+    });
+  }
+
+  async avgFinancialIndicatorsInRange(
+    companyId: string,
+    from: Date,
+    to: Date,
+  ) {
+    return this.prisma.creditStudy.aggregate({
+      where: {
+        companyId,
+        stabilityFactor: { not: null },
+        studyDate: { gte: from, lt: to },
+      },
+      _avg: {
+        ebitda: true,
+        monthlyPaymentCapacity: true,
+        stabilityFactor: true,
+        paymentTimeSuppliers: true,
+      },
+    });
+  }
+
+  async avgTurnoverIndicatorsInRange(
+    companyId: string,
+    from: Date,
+    to: Date,
+  ) {
+    return this.prisma.creditStudy.aggregate({
+      where: {
+        companyId,
+        accountsReceivableTurnover: { not: null },
+        studyDate: { gte: from, lt: to },
+      },
+      _avg: {
+        accountsReceivableTurnover: true,
+        inventoryTurnover: true,
+        suppliersTurnover: true,
+        paymentTimeSuppliers: true,
+      },
+    });
+  }
+
+  async avgDebtStructureInRange(companyId: string, from: Date, to: Date) {
+    return this.prisma.creditStudy.aggregate({
+      where: {
+        companyId,
+        studyDate: { gte: from, lt: to },
+      },
+      _avg: {
+        totalCurrentLiabilities: true,
+        totalNonCurrentLiabilities: true,
+        equity: true,
+        totalLiabilities: true,
       },
     });
   }
