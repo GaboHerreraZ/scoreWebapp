@@ -292,11 +292,11 @@ export class CreditStudiesService {
       [];
     const dimensions: Record<string, any> = {};
 
-    // ── Dimension 1: Salud Financiera (Z-Score de Altman) ──
+    // ── Dimension 1: Salud Financiera (Z-Score de Altman) — 20 pts ──
     if (zScore > 3.0) {
       dimensions.financialHealth = {
-        score: 25,
-        maxScore: 25,
+        score: 20,
+        maxScore: 20,
         status: 'healthy',
         label: 'Salud Financiera',
         reason:
@@ -310,8 +310,8 @@ export class CreditStudiesService {
       });
     } else if (zScore > 1.8) {
       dimensions.financialHealth = {
-        score: 12,
-        maxScore: 25,
+        score: 10,
+        maxScore: 20,
         status: 'gray_zone',
         label: 'Salud Financiera',
         reason:
@@ -326,7 +326,7 @@ export class CreditStudiesService {
     } else {
       dimensions.financialHealth = {
         score: 0,
-        maxScore: 25,
+        maxScore: 20,
         status: 'critical',
         label: 'Salud Financiera',
         reason:
@@ -355,7 +355,7 @@ export class CreditStudiesService {
     if (monthlyPaymentCapacity <= 0) {
       dimensions.paymentCapacity = {
         score: 0,
-        maxScore: 25,
+        maxScore: 20,
         status: 'insufficient',
         ratio: 0,
         marginPercent: 0,
@@ -371,8 +371,8 @@ export class CreditStudiesService {
       });
     } else if (paymentRatio >= 1.2) {
       dimensions.paymentCapacity = {
-        score: 25,
-        maxScore: 25,
+        score: 20,
+        maxScore: 20,
         status: 'comfortable',
         ratio: Math.round(paymentRatio * 1000) / 1000,
         marginPercent,
@@ -387,8 +387,8 @@ export class CreditStudiesService {
       });
     } else if (paymentRatio >= 1.0) {
       dimensions.paymentCapacity = {
-        score: 15,
-        maxScore: 25,
+        score: 12,
+        maxScore: 20,
         status: 'tight',
         ratio: Math.round(paymentRatio * 1000) / 1000,
         marginPercent,
@@ -405,7 +405,7 @@ export class CreditStudiesService {
       const deficit = Math.round((1 - paymentRatio) * 1000) / 10;
       dimensions.paymentCapacity = {
         score: 0,
-        maxScore: 25,
+        maxScore: 20,
         status: 'insufficient',
         ratio: Math.round(paymentRatio * 1000) / 1000,
         marginPercent: -deficit,
@@ -420,9 +420,12 @@ export class CreditStudiesService {
       });
     }
 
-    // ── Dimension 3: Coherencia de Plazos ──
-    // La referencia principal es la rotación de cartera (días que tarda en cobrar)
-    // El tiempo de pago a proveedores es informativo pero no define el plazo
+    // ── Dimension 3: Coherencia de Plazos — 20 pts — RIESGO DEL CLIENTE ──
+    // Mide el riesgo de impago: si el credito vence antes de que el cliente
+    // cobre a sus propios clientes, no tendra flujo para pagar.
+    // IMPORTANTE: esta dimension NO empuja el plazo recomendado hacia arriba.
+    // El credito es comercial SIN intereses, por lo que ampliar el plazo es
+    // perjudicial para el prestamista. El desajuste solo se reporta como alerta.
     const realTerm =
       accountsReceivableTurnover > 0
         ? accountsReceivableTurnover
@@ -449,8 +452,8 @@ export class CreditStudiesService {
 
     if (requestedTerm >= realTerm) {
       dimensions.termCoherence = {
-        score: 25,
-        maxScore: 25,
+        score: 20,
+        maxScore: 20,
         status: 'coherent',
         requestedTerm,
         realTerm,
@@ -464,23 +467,23 @@ export class CreditStudiesService {
       });
     } else if (requestedTerm >= realTerm * 0.7) {
       dimensions.termCoherence = {
-        score: 12,
-        maxScore: 25,
+        score: 10,
+        maxScore: 20,
         status: 'risky',
         requestedTerm,
         realTerm,
         label: 'Coherencia de Plazos',
-        reason: `El plazo solicitado (${requestedTerm}d) es inferior a la rotacion de cartera (${realTerm}d) pero cubre al menos el 70%. Riesgo moderado.`,
+        reason: `El plazo solicitado (${requestedTerm}d) es inferior a la rotacion de cartera (${realTerm}d) pero cubre al menos el 70%. Riesgo moderado de cobro tardio.`,
       };
       alerts.push({
         type: 'warning',
         dimension: 'termCoherence',
-        message: `El plazo solicitado (${requestedTerm} dias) es inferior a los tiempos reales de operacion (${realTerm} dias). Se recomienda un plazo de al menos ${realTerm} dias.`,
+        message: `El plazo solicitado (${requestedTerm} dias) es inferior a la rotacion de cartera del cliente (${realTerm} dias). Existe riesgo de que el cliente aun no haya cobrado al vencer el credito.`,
       });
     } else {
       dimensions.termCoherence = {
         score: 0,
-        maxScore: 25,
+        maxScore: 20,
         status: 'incoherent',
         requestedTerm,
         realTerm,
@@ -490,27 +493,34 @@ export class CreditStudiesService {
       alerts.push({
         type: 'danger',
         dimension: 'termCoherence',
-        message: `El plazo solicitado (${requestedTerm} dias) es significativamente inferior a los tiempos reales de operacion (${realTerm} dias). Alto riesgo de incumplimiento en plazos.`,
+        message: `El plazo solicitado (${requestedTerm} dias) es significativamente inferior a la rotacion de cartera del cliente (${realTerm} dias). Alto riesgo de incumplimiento por cobro tardio.`,
       });
     }
 
+    // ── Ciclo de Conversion de Efectivo (CCC) ──
+    // Plazo natural del negocio del cliente, derivado de sus estados financieros.
+    // CCC = rotacion de cartera + rotacion de inventarios - tiempo de pago a proveedores
+    // Se usa como umbral de exposicion (Dimension 5) y para el plazo recomendado.
+    //
+    // Si paymentTimeSuppliers es negativo (dato atipico de la formula de rotacion
+    // de proveedores), se trata como 0 para no inflar artificialmente el CCC ni
+    // el umbral de exposicion. Un proveedor negativo no debe extender el ciclo.
+    const supplierDays = Math.max(paymentTimeSuppliers, 0);
+    const cashConversionCycle =
+      accountsReceivableTurnover + inventoryTurnover - supplierDays;
+
     // ── Plazo recomendado ──
-    // Basado en rotación de cartera, pero con dos cotas:
-    //  - piso mínimo de 30 días: un crédito comercial nunca debería tener
-    //    plazo menor a un mes, aunque el cliente cobre casi de contado
-    //  - se respeta el plazo solicitado: si el cliente pide más plazo y el
-    //    cupo es viable en ese plazo, no se penaliza forzando uno más corto
+    // Credito comercial SIN intereses: el plazo recomendado NUNCA amplia el
+    // solicitado (ampliar inmoviliza capital del prestamista sin compensacion).
+    // Solo puede igualarlo o reducirlo:
+    //  - nunca mayor al solicitado
+    //  - puede ser menor si el ciclo de caja del cliente (CCC) es mas corto:
+    //    recuperar el capital antes reduce la exposicion del prestamista
+    //  - piso minimo de 30 dias: un credito comercial no baja de un mes
     const MIN_RECOMMENDED_TERM = 30;
-    let recommendedTerm: number;
-    if (accountsReceivableTurnover > 0) {
-      recommendedTerm = Math.max(
-        accountsReceivableTurnover,
-        requestedTerm,
-        MIN_RECOMMENDED_TERM,
-      );
-    } else {
-      recommendedTerm = Math.max(requestedTerm, MIN_RECOMMENDED_TERM);
-    }
+    const cicloRef = Math.max(cashConversionCycle, MIN_RECOMMENDED_TERM);
+    const recommendedTerm =
+      requestedTerm > 0 ? Math.min(requestedTerm, cicloRef) : cicloRef;
 
     // ── Cupo recomendado ──
     // Nunca recomendar más de lo que el cliente solicita
@@ -524,11 +534,16 @@ export class CreditStudiesService {
         ? Math.min(requestedCredit, maxAffordableCredit)
         : 0;
 
-    // ── Dimension 4: Adecuacion del Cupo ──
+    // ── Dimension 4: Adecuacion del Cupo — 20 pts ──
+    // Cupo maximo pagable manteniendo el plazo solicitado.
+    const maxCreditForRequestedTerm =
+      monthlyPaymentCapacity > 0
+        ? Math.round(monthlyPaymentCapacity * termInMonths)
+        : 0;
     if (monthlyPaymentCapacity <= 0) {
       dimensions.creditLineAdequacy = {
         score: 0,
-        maxScore: 25,
+        maxScore: 20,
         status: 'not_applicable',
         ratio: 0,
         label: 'Adecuacion del Cupo',
@@ -542,9 +557,6 @@ export class CreditStudiesService {
           'No es posible recomendar un cupo de credito dado que la capacidad de pago es negativa.',
       });
     } else {
-      const maxCreditForRequestedTerm = Math.round(
-        monthlyPaymentCapacity * termInMonths,
-      );
       const creditRatio =
         maxCreditForRequestedTerm > 0
           ? requestedCredit / maxCreditForRequestedTerm
@@ -552,8 +564,8 @@ export class CreditStudiesService {
 
       if (creditRatio <= 1.0) {
         dimensions.creditLineAdequacy = {
-          score: 25,
-          maxScore: 25,
+          score: 20,
+          maxScore: 20,
           status: 'adequate',
           ratio: Math.round(creditRatio * 1000) / 1000,
           maxCreditForRequestedTerm,
@@ -568,40 +580,147 @@ export class CreditStudiesService {
       } else if (creditRatio <= 1.3) {
         const exceso = Math.round((creditRatio - 1) * 1000) / 10;
         dimensions.creditLineAdequacy = {
-          score: 15,
-          maxScore: 25,
+          score: 12,
+          maxScore: 20,
           status: 'slightly_exceeded',
           ratio: Math.round(creditRatio * 1000) / 1000,
           maxCreditForRequestedTerm,
           label: 'Adecuacion del Cupo',
-          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda ajustar cupo o ampliar plazo.`,
+          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda reducir el cupo.`,
         };
         alerts.push({
           type: 'warning',
           dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Considere un cupo de hasta $${maxCreditForRequestedTerm.toLocaleString('es-CO')} o ampliar el plazo.`,
+          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Considere un cupo de hasta $${maxCreditForRequestedTerm.toLocaleString('es-CO')}.`,
         });
       } else {
         const exceso = Math.round((creditRatio - 1) * 1000) / 10;
         dimensions.creditLineAdequacy = {
           score: 0,
-          maxScore: 25,
+          maxScore: 20,
           status: 'excessive',
           ratio: Math.round(creditRatio * 1000) / 1000,
           maxCreditForRequestedTerm,
           label: 'Adecuacion del Cupo',
-          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Es inviable sin reducir cupo o ampliar plazo.`,
+          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Es inviable sin reducir el cupo.`,
         };
         alerts.push({
           type: 'danger',
           dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda reducirlo o ampliar el plazo.`,
+          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda reducirlo.`,
         });
       }
     }
 
+    // ── Dimension 5: Exposicion / Eficiencia del Capital — 20 pts ──
+    // Perspectiva del PRESTAMISTA en un credito comercial SIN intereses.
+    // Mide cuanto capital propio queda inmovilizado y por cuanto tiempo,
+    // relativo al ciclo de caja del cliente (CCC). Un credito puede ser
+    // pagable por el cliente y aun asi ser mal negocio si la exposicion es alta.
+    // El umbral es el propio ciclo del cliente (derivado de datos, sin numeros
+    // fijos), por lo que el ratio es adimensional: funciona igual para $5M o $500M.
+    const exposureMonths =
+      monthlyPaymentCapacity > 0 ? requestedCredit / monthlyPaymentCapacity : 0;
+    const healthyExposure = monthlyPaymentCapacity * (cicloRef / 30);
+    const exposureRatio =
+      healthyExposure > 0 ? requestedCredit / healthyExposure : 0;
+
+    if (monthlyPaymentCapacity <= 0) {
+      dimensions.capitalExposure = {
+        score: 0,
+        maxScore: 20,
+        status: 'not_applicable',
+        ratio: 0,
+        exposureMonths: 0,
+        cashConversionCycle,
+        label: 'Exposicion / Eficiencia del Capital',
+        reason:
+          'No evaluable: la capacidad de pago es negativa, no es posible medir la exposicion del capital.',
+      };
+    } else if (exposureRatio <= 1.0) {
+      dimensions.capitalExposure = {
+        score: 20,
+        maxScore: 20,
+        status: 'efficient',
+        ratio: Math.round(exposureRatio * 1000) / 1000,
+        exposureMonths: Math.round(exposureMonths * 100) / 100,
+        cashConversionCycle,
+        label: 'Exposicion / Eficiencia del Capital',
+        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) respeta el ciclo de operacion del cliente. El capital prestado rota de forma eficiente.`,
+      };
+      alerts.push({
+        type: 'success',
+        dimension: 'capitalExposure',
+        message:
+          'El credito respeta el ciclo de caja del cliente. El capital prestado rota de forma eficiente.',
+      });
+    } else if (exposureRatio <= 1.5) {
+      dimensions.capitalExposure = {
+        score: 12,
+        maxScore: 20,
+        status: 'acceptable',
+        ratio: Math.round(exposureRatio * 1000) / 1000,
+        exposureMonths: Math.round(exposureMonths * 100) / 100,
+        cashConversionCycle,
+        label: 'Exposicion / Eficiencia del Capital',
+        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) supera levemente el ciclo de operacion del cliente. Tolerable.`,
+      };
+      alerts.push({
+        type: 'warning',
+        dimension: 'capitalExposure',
+        message:
+          'El credito supera levemente el ciclo de caja del cliente. La exposicion del capital es algo mayor a lo ideal.',
+      });
+    } else {
+      dimensions.capitalExposure = {
+        score: 0,
+        maxScore: 20,
+        status: 'excessive',
+        ratio: Math.round(exposureRatio * 1000) / 1000,
+        exposureMonths: Math.round(exposureMonths * 100) / 100,
+        cashConversionCycle,
+        label: 'Exposicion / Eficiencia del Capital',
+        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) supera ampliamente el ciclo de operacion del cliente. Mal negocio para el prestamista aunque el cliente pudiera pagar.`,
+      };
+      alerts.push({
+        type: 'danger',
+        dimension: 'capitalExposure',
+        message:
+          'El credito inmoviliza capital muy por encima del ciclo de caja del cliente. Exposicion excesiva para un credito sin intereses, incluso si el cliente pudiera pagar.',
+      });
+    }
+
+    // ── Score y status final ──
+    // Se calcula ANTES de las sugerencias de pago, porque las sugerencias
+    // solo tienen sentido cuando el estudio es viable (aprobado o condicionado).
+    const viabilityScore =
+      dimensions.financialHealth.score +
+      dimensions.paymentCapacity.score +
+      dimensions.termCoherence.score +
+      dimensions.creditLineAdequacy.score +
+      dimensions.capitalExposure.score;
+
+    let viabilityStatus: string;
+    if (monthlyPaymentCapacity <= 0) {
+      viabilityStatus = 'rejected';
+    } else if (viabilityScore >= 75) {
+      viabilityStatus = 'approved';
+    } else if (viabilityScore >= 40) {
+      viabilityStatus = 'conditional';
+    } else {
+      viabilityStatus = 'rejected';
+    }
+
     // ── Sugerencias de Pago ──
-    // Genera alternativas con cuotas y plazos explícitos
+    // Genera alternativas con cuotas y plazos explícitos.
+    // Solo se generan cuando el estudio NO está rechazado: si el cliente fue
+    // rechazado (por capacidad nula o por score insuficiente) no se ofrecen
+    // alternativas de pago, ya que la solicitud no es viable y debe rehacerse.
+    //
+    // Credito comercial SIN intereses: el sistema NUNCA sugiere ampliar el plazo
+    // (la antigua sugerencia 'adjusted_term' fue eliminada). Las unicas palancas
+    // son: reducir el cupo manteniendo el plazo, o reducir el plazo cuando el
+    // ciclo de caja del cliente lo permite (recuperar antes el capital).
     const paymentSuggestions: Array<{
       type: string;
       suggestedTerm: number;
@@ -611,7 +730,7 @@ export class CreditStudiesService {
       description: string;
     }> = [];
 
-    if (monthlyPaymentCapacity > 0) {
+    if (viabilityStatus !== 'rejected' && monthlyPaymentCapacity > 0) {
       const buildSuggestion = (
         type: string,
         days: number,
@@ -630,42 +749,21 @@ export class CreditStudiesService {
         });
       };
 
-      // Sugerencia 1: Mismo cupo, plazo ajustado
-      const requiredMonths = requestedCredit / monthlyPaymentCapacity;
-      const requiredDays = Math.ceil(requiredMonths * 30);
-      if (requiredDays > requestedTerm) {
-        const payments = Math.ceil(requiredDays / 30);
-        const amount = Math.round(requestedCredit / payments);
-        buildSuggestion(
-          'adjusted_term',
-          requiredDays,
-          requestedCredit,
-          `Mantener cupo de $${requestedCredit.toLocaleString('es-CO')} ampliando a ${requiredDays} dias: ${payments} cuotas de $${amount.toLocaleString('es-CO')}.`,
-        );
-        alerts.push({
-          type: 'info',
-          dimension: 'paymentSuggestions',
-          message: `Para pagar $${requestedCredit.toLocaleString('es-CO')} se requiere un plazo de ${requiredDays} dias (${payments} cuotas de $${amount.toLocaleString('es-CO')}).`,
-        });
-      }
-
-      // Sugerencia 2: Mismo plazo, cupo ajustado (solo si excede capacidad)
-      const maxCreditForTerm = Math.round(
-        monthlyPaymentCapacity * termInMonths,
-      );
-      if (maxCreditForTerm < requestedCredit) {
+      // Sugerencia 1: Mismo plazo, cupo reducido (solo si excede capacidad)
+      if (maxCreditForRequestedTerm < requestedCredit) {
         const payments = Math.ceil(requestedTerm / 30);
-        const amount = Math.round(maxCreditForTerm / payments);
+        const amount = Math.round(maxCreditForRequestedTerm / payments);
         buildSuggestion(
           'adjusted_credit',
           requestedTerm,
-          maxCreditForTerm,
-          `Mantener plazo de ${requestedTerm} dias reduciendo cupo a $${maxCreditForTerm.toLocaleString('es-CO')}: ${payments} cuotas de $${amount.toLocaleString('es-CO')}.`,
+          maxCreditForRequestedTerm,
+          `Mantener plazo de ${requestedTerm} dias reduciendo cupo a $${maxCreditForRequestedTerm.toLocaleString('es-CO')}: ${payments} cuotas de $${amount.toLocaleString('es-CO')}.`,
         );
       }
 
-      // Sugerencia 3: Con plazo recomendado (rotación de cartera)
-      if (recommendedTerm !== requestedTerm) {
+      // Sugerencia 2: Plazo recomendado MENOR (solo si el ciclo del cliente
+      // permite recuperar antes el capital). Nunca amplia el plazo solicitado.
+      if (recommendedTerm < requestedTerm) {
         const maxCreditWithRecommendedTerm = Math.round(
           monthlyPaymentCapacity * (recommendedTerm / 30),
         );
@@ -679,7 +777,7 @@ export class CreditStudiesService {
           'recommended_term',
           recommendedTerm,
           suggestedCredit,
-          `Con plazo de ${recommendedTerm} dias (rotacion de cartera): cupo de $${suggestedCredit.toLocaleString('es-CO')} en ${payments} cuotas de $${amount.toLocaleString('es-CO')}.`,
+          `Con plazo de ${recommendedTerm} dias (ciclo de caja del cliente): cupo de $${suggestedCredit.toLocaleString('es-CO')} en ${payments} cuotas de $${amount.toLocaleString('es-CO')}. Recuperar antes reduce la exposicion del capital.`,
         );
       }
     }
@@ -689,24 +787,6 @@ export class CreditStudiesService {
       suggestions: paymentSuggestions,
     };
 
-    // ── Score y status final ──
-    const viabilityScore =
-      dimensions.financialHealth.score +
-      dimensions.paymentCapacity.score +
-      dimensions.termCoherence.score +
-      dimensions.creditLineAdequacy.score;
-
-    let viabilityStatus: string;
-    if (monthlyPaymentCapacity <= 0) {
-      viabilityStatus = 'rejected';
-    } else if (viabilityScore >= 75) {
-      viabilityStatus = 'approved';
-    } else if (viabilityScore >= 40) {
-      viabilityStatus = 'conditional';
-    } else {
-      viabilityStatus = 'rejected';
-    }
-
     // ── Alertas cross-dimension ──
     if (viabilityStatus === 'conditional') {
       alerts.push({
@@ -714,18 +794,6 @@ export class CreditStudiesService {
         dimension: 'general',
         message:
           'El estudio es aprobable sujeto a las condiciones indicadas. Revise las recomendaciones de plazo y cupo.',
-      });
-    }
-
-    if (
-      viabilityStatus === 'rejected' &&
-      monthlyPaymentCapacity > 0 &&
-      dimensions.termCoherence.score === 0
-    ) {
-      alerts.push({
-        type: 'info',
-        dimension: 'general',
-        message: `El cliente podria ser viable con un plazo de ${recommendedTerm} dias en lugar de ${requestedTerm} dias.`,
       });
     }
 
@@ -747,6 +815,7 @@ export class CreditStudiesService {
         status: viabilityStatus,
         recommendedTerm,
         recommendedCreditLine,
+        cashConversionCycle,
         monthlyPaymentCapacity,
         annualPaymentCapacity: Math.round(annualPaymentCapacity),
       },
