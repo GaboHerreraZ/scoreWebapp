@@ -239,19 +239,14 @@ export class CreditStudiesService {
     const result = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + x5;
 
     const stabilityFactor = result > 3 ? 1 : result > 1.8 ? 0.66 : 0.33;
-   /*  const ebitda =
+    const ebitda =
       (study.ordinaryActivityRevenue ?? 0) -
       (study.costOfSales ?? 0) -
       (study.administrativeExpenses ?? 0) -
       (study.sellingExpenses ?? 0) +
       (study.depreciation ?? 0) +
-      (study.amortization ?? 0); */
-
-    const ebitda = (study.netIncome ?? 0) +
-      (study.taxes ?? 0) +
-      (study.sellingExpenses ?? 0) +
-      (study.depreciation ?? 0) +
       (study.amortization ?? 0);
+
 
     const adjustedEbitda = ebitda * stabilityFactor;
     const currentDebtSevice =
