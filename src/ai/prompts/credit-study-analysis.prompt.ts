@@ -298,4 +298,14 @@ REGLAS PARA reliabilityFlags:
 - Cada flag debe citar las cifras concretas que la respaldan.
 - severity: "danger" = compromete seriamente la fiabilidad o sugiere ocultamiento; "warning" = inconsistencia que requiere revision; "info" = observacion menor o contextual.
 - Si los estados financieros se ven solidos y consistentes, devuelve un arreglo vacio: "reliabilityFlags": [].
-- Maximo 12 flags, priorizando las de mayor severidad.`;
+- Maximo 12 flags, priorizando las de mayor severidad.
+
+VERIFICACION ARITMETICA OBLIGATORIA (evita falsos positivos):
+- ANTES de emitir un flag que afirme una inconsistencia numerica (balance que no cuadra, una cifra mayor/menor que otra, un porcentaje, un descuadre), HAZ EL CALCULO COMPLETO primero y confirma el resultado.
+- Si despues de calcular el resultado NO confirma la inconsistencia, NO generes el flag. Descartalo.
+- El "title" y el "detail" deben ser COHERENTES entre si y con las cifras. Esta PROHIBIDO emitir un flag cuyo detalle contradiga su titulo (ej: titulo "el balance no cuadra" pero el detalle muestra que activo = pasivo + patrimonio).
+- Para el balance: solo marca descuadre si Activo Total != Pasivo Total + Patrimonio Total. Si la suma coincide (aunque sea por poco), el balance CUADRA y NO debe haber flag.
+- Para comparaciones (mayor/menor, crece mas/menos): verifica la direccion real de la comparacion. No afirmes "A es mayor que B" si A < B. Y asegurate de que la conclusion de riesgo corresponda a la direccion correcta (ej: las cuentas por cobrar creciendo MAS rapido que los ingresos es una alerta; creciendo MAS LENTO no lo es).
+- Para porcentajes: recalcula el porcentaje y confirma que el numero citado es correcto antes de usarlo.
+- Si no estas seguro de un calculo, NO emitas el flag. Es preferible omitir un hallazgo dudoso que emitir uno falso o contradictorio.
+- Revisa cada flag una vez mas antes de incluirlo: si su detalle no sustenta exactamente lo que dice su titulo, eliminalo.`;

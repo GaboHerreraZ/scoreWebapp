@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AiProvider, AiCompletionResult } from './ai-provider.interface.js';
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'gemini-2.5-pro': { input: 1.25, output: 10.0 },
   'gemini-2.5-flash': { input: 0.15, output: 0.6 },
   'gemini-2.0-flash': { input: 0.1, output: 0.4 },
   'gemini-2.0-flash-lite': { input: 0.025, output: 0.1 },
@@ -59,12 +60,14 @@ export class GeminiProvider implements AiProvider {
     pdfBuffer: Buffer,
     extractionPrompt: string,
     maxTokens: number,
+    modelOverride?: string,
   ): Promise<AiCompletionResult> {
     const startTime = Date.now();
     const pdfBase64 = pdfBuffer.toString('base64');
+    const modelName = modelOverride || this.model;
 
     const model = this.client.getGenerativeModel({
-      model: this.model,
+      model: modelName,
       generationConfig: {
         maxOutputTokens: maxTokens,
         // @ts-expect-error -- thinkingConfig not yet in SDK types
@@ -97,7 +100,7 @@ export class GeminiProvider implements AiProvider {
         promptTokens != null && completionTokens != null
           ? promptTokens + completionTokens
           : null,
-      model: this.model,
+      model: modelName,
       durationMs,
     };
   }

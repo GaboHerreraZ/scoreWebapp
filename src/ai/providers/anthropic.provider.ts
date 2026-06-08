@@ -48,12 +48,13 @@ export class AnthropicProvider implements AiProvider {
     pdfBuffer: Buffer,
     extractionPrompt: string,
     maxTokens: number,
+    modelOverride?: string,
   ): Promise<AiCompletionResult> {
     const startTime = Date.now();
     const pdfBase64 = pdfBuffer.toString('base64');
 
     const response = await this.client.messages.create({
-      model: this.model,
+      model: modelOverride || this.model,
       max_tokens: maxTokens,
       messages: [
         {
