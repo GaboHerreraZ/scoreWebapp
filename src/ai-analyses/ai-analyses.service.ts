@@ -125,6 +125,12 @@ export class AiAnalysesService {
       inventoryTurnover: study.inventoryTurnover ?? 0,
       paymentTimeSuppliers: study.paymentTimeSuppliers ?? 0,
       viabilityConditions,
+      reliabilityFlags: study.reliabilityFlags as Array<{
+        severity: string;
+        category: string;
+        title: string;
+        detail: string;
+      }> | null,
     });
 
     const fullPrompt = `[SYSTEM]\n${CREDIT_STUDY_SYSTEM_PROMPT}\n\n[USER]\n${userMessage}`;
@@ -249,12 +255,24 @@ export class AiAnalysesService {
       if (jsonBlockMatch) {
         rawContent = jsonBlockMatch[1].trim();
       }
-      const parsedData = JSON.parse(rawContent);
+      const parsed = JSON.parse(rawContent);
+
+      // The prompt returns { financialData, reliabilityFlags }. Fall back to the
+      // old flat shape (financial fields at the top level) for resilience.
+      const financialData = parsed.financialData ?? parsed;
+      const reliabilityFlags: Array<{
+        severity: string;
+        category: string;
+        title: string;
+        detail: string;
+      }> = Array.isArray(parsed.reliabilityFlags)
+        ? parsed.reliabilityFlags
+        : [];
 
       // Replace null values with 0 (except balanceSheetDate which is a date string)
-      for (const key of Object.keys(parsedData)) {
-        if (parsedData[key] === null && key !== 'balanceSheetDate') {
-          parsedData[key] = 0;
+      for (const key of Object.keys(financialData)) {
+        if (financialData[key] === null && key !== 'balanceSheetDate') {
+          financialData[key] = 0;
         }
       }
 
@@ -285,7 +303,7 @@ export class AiAnalysesService {
         'ai_analysis',
       );
 
-      return parsedData;
+      return { financialData, reliabilityFlags };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Error desconocido';

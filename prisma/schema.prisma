@@ -373,6 +373,7 @@ model CreditStudy {
   viabilityScore             Int?      @map("viability_score")                   // Score 0-100
   viabilityStatus            String?   @map("viability_status")                  // 'approved' | 'conditional' | 'rejected'
   viabilityConditions        Json?     @map("viability_conditions")              // JSON con dimensiones, alertas y resumen
+  reliabilityFlags           Json?     @map("reliability_flags")                 // Red flags de fiabilidad de los EEFF (detectadas por IA al extraer el PDF)
 
 
 

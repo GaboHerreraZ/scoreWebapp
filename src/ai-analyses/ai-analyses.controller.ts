@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Body,
   Param,
   Query,
   Req,
@@ -24,16 +25,25 @@ import {
 import type { Request } from 'express';
 import { AiAnalysesService } from './ai-analyses.service.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
+import { ExtractPdfCreateStudyDto } from './dto/extract-pdf-create-study.dto.js';
+import { CreditStudiesService } from '../credit-studies/credit-studies.service.js';
+import type { CreateCreditStudyDto } from '../credit-studies/dto/create-credit-study.dto.js';
 
 @ApiTags('AI Analyses')
 @ApiBearerAuth()
 @Controller('companies/:companyId/ai-analyses')
 export class AiAnalysesController {
-  constructor(private readonly aiAnalysesService: AiAnalysesService) {}
+  constructor(
+    private readonly aiAnalysesService: AiAnalysesService,
+    private readonly creditStudiesService: CreditStudiesService,
+  ) {}
 
   @Post('extract-pdf')
   @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Extract financial data from a PDF using AI' })
+  @ApiOperation({
+    summary:
+      'Extract financial data + reliability flags from a PDF and create the credit study',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -44,22 +54,30 @@ export class AiAnalysesController {
           format: 'binary',
           description: 'PDF file with financial statements',
         },
+        customerId: { type: 'string', format: 'uuid' },
+        studyDate: { type: 'string', example: '2026-06-08' },
+        notes: { type: 'string' },
+        requestedTerm: { type: 'number', example: 60 },
+        requestedCreditLine: { type: 'number', example: 50000000 },
+        incomeStatementId: { type: 'number', example: 1 },
       },
-      required: ['file'],
+      required: ['file', 'customerId', 'studyDate'],
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Financial data extracted successfully from PDF',
+    description:
+      'PDF read once: financial data + reliability flags extracted and credit study created',
   })
   @ApiResponse({
     status: 400,
     description:
       'Invalid file, subscription limit reached, or extraction failed',
   })
-  extractPdf(
+  async extractPdf(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ExtractPdfCreateStudyDto,
     @Req() req: Request,
   ) {
     if (!file) {
@@ -69,7 +87,38 @@ export class AiAnalysesController {
       throw new BadRequestException('Solo se aceptan archivos en formato PDF');
     }
     const userId = (req as any).user.id as string;
-    return this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);
+
+    // 1. La IA lee el PDF UNA sola vez: extrae datos financieros + red flags.
+    const { financialData, reliabilityFlags } =
+      await this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);
+
+    // 2. Se crea el estudio de inmediato con los datos del usuario + los
+    //    extraidos, persistiendo las red flags de fiabilidad. Asi no se pierde
+    //    la lectura del PDF si el usuario refresca la pantalla.
+    const { balanceSheetDate, ...financialFields } = financialData as Record<
+      string,
+      unknown
+    >;
+    const createDto = {
+      customerId: dto.customerId,
+      studyDate: dto.studyDate,
+      notes: dto.notes,
+      requestedTerm: dto.requestedTerm,
+      requestedCreditLine: dto.requestedCreditLine,
+      incomeStatementId: dto.incomeStatementId,
+      ...financialFields,
+      balanceSheetDate:
+        typeof balanceSheetDate === 'string' && balanceSheetDate
+          ? new Date(balanceSheetDate)
+          : undefined,
+    } as CreateCreditStudyDto;
+
+    return this.creditStudiesService.createFromExtraction(
+      companyId,
+      userId,
+      createDto,
+      reliabilityFlags,
+    );
   }
 
   @Post('credit-studies/:creditStudyId')
