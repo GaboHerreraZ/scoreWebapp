@@ -15,11 +15,19 @@ export class AiService {
   private readonly provider: AiProvider;
   private readonly maxTokens: number;
   private readonly maxTokensExtraction: number;
+  private readonly extractionModel: string | undefined;
 
   constructor(private configService: ConfigService) {
     const aiProvider = this.configService.get<string>(
       'AI_PROVIDER',
       'anthropic',
+    );
+    // Modelo opcional especifico para la extraccion de PDF. Permite usar un
+    // modelo mas capaz (ej. gemini-2.5-pro) solo en la extraccion, que es
+    // sensible a errores aritmeticos en las red flags, sin encarecer el
+    // analisis narrativo. Si no se define, se usa el modelo por defecto.
+    this.extractionModel = this.configService.get<string>(
+      'AI_EXTRACTION_MODEL',
     );
     // Limite de salida para el analisis narrativo del estudio (respuesta corta).
     this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '4096'));
@@ -78,6 +86,7 @@ export class AiService {
       pdfBuffer,
       extractionPrompt,
       this.maxTokensExtraction,
+      this.extractionModel,
     );
   }
 
