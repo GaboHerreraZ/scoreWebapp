@@ -14,13 +14,24 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly provider: AiProvider;
   private readonly maxTokens: number;
+  private readonly maxTokensExtraction: number;
 
   constructor(private configService: ConfigService) {
     const aiProvider = this.configService.get<string>(
       'AI_PROVIDER',
       'anthropic',
     );
+    // Limite de salida para el analisis narrativo del estudio (respuesta corta).
     this.maxTokens = Number(this.configService.get('AI_MAX_TOKENS', '4096'));
+    // Limite de salida para la extraccion de PDF: ademas de los datos
+    // financieros devuelve red flags de fiabilidad, por lo que necesita mas
+    // espacio de salida. Si no se configura, cae al valor general.
+    this.maxTokensExtraction = Number(
+      this.configService.get(
+        'AI_MAX_TOKENS_EXTRACTION',
+        String(this.maxTokens),
+      ),
+    );
 
     this.provider = this.createProvider(aiProvider);
     this.logger.log(`AI provider initialized: ${this.provider.providerName}`);
@@ -66,7 +77,7 @@ export class AiService {
     return this.provider.extractFromPdf(
       pdfBuffer,
       extractionPrompt,
-      this.maxTokens,
+      this.maxTokensExtraction,
     );
   }
 

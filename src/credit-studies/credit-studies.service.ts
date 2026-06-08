@@ -76,6 +76,53 @@ export class CreditStudiesService {
     });
   }
 
+  /**
+   * Crea un estudio a partir de los datos extraidos de un PDF por IA.
+   * Reutiliza la validacion de create() y persiste las red flags de fiabilidad
+   * de los estados financieros detectadas durante la extraccion.
+   *
+   * La responsabilidad de leer el PDF y obtener financialData + reliabilityFlags
+   * es del AiAnalysesService; este metodo solo persiste el estudio.
+   */
+  async createFromExtraction(
+    companyId: string,
+    userId: string,
+    dto: CreateCreditStudyDto,
+    reliabilityFlags?: Array<{
+      severity: string;
+      category: string;
+      title: string;
+      detail: string;
+    }> | null,
+  ) {
+    const customerBelongs = await this.repository.customerBelongsToCompany(
+      dto.customerId,
+      companyId,
+    );
+    if (!customerBelongs) {
+      throw new BadRequestException('El cliente no pertenece a esta empresa');
+    }
+
+    const { customerId, studyDate, resolutionDate, ...rest } = dto;
+
+    const newStatus = await this.parametersRepository.findByCode('inReview');
+
+    return this.repository.create({
+      ...rest,
+      customerId,
+      companyId,
+      studyDate: new Date(studyDate),
+      resolutionDate: resolutionDate ? new Date(resolutionDate) : undefined,
+      createdBy: userId,
+      updatedBy: userId,
+      statusId: newStatus!.id,
+      reliabilityFlags:
+        reliabilityFlags && reliabilityFlags.length > 0
+          ? (reliabilityFlags as unknown as Prisma.InputJsonValue)
+          : undefined,
+    });
+  }
+
   async findAll(companyId: string, filters: FilterCreditStudyDto) {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 10;
