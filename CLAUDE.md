@@ -91,3 +91,39 @@ npm run test:e2e           # Run e2e tests
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key
 - `PORT` — Server port (default 3000)
+- `AI_MAX_TOKENS` — Output limit for the credit-study narrative analysis
+- `AI_MAX_TOKENS_EXTRACTION` — Output limit for PDF extraction (data + reliability flags)
+
+## Migrations & Environments
+
+There are **two separate Supabase projects**, mapped by env file:
+
+| Env file | Supabase project | Region | Used by |
+|----------|------------------|--------|---------|
+| `.env.staging` | `bjawxcnsjjobweucxfpf` | us-east-2 | **STAGING** — `npm run start:dev`, `prisma:migrate:*` scripts |
+| `.env` / `.env.pro` | `rggavdujvohqxfgjzuyd` | us-east-1 | **PRODUCTION** — `start:pro`, `*:pro` scripts |
+
+**CRITICAL:** Never run `npx prisma ...` directly. `prisma.config.ts` loads `.env` by
+default = **PRODUCTION**, so a bare `npx prisma migrate ...` applies changes to prod.
+Always use the npm scripts (they prepend the correct `dotenv -e`). `prisma.config.ts`
+prints a banner showing which environment a command targets (⚠️ yellow for PROD).
+
+**Migration workflow (no shadow DB):** Supabase has no free shadow database, so the
+standard `migrate dev` is avoided (it tries to reset). Instead:
+
+```bash
+npm run prisma:migrate:create   # migrate dev --create-only on staging: generates SQL, no apply
+# review the generated SQL, then:
+npm run prisma:migrate:deploy   # applies pending migrations to STAGING
+npm run prisma:migrate:pro      # applies pending migrations to PRODUCTION
+npm run prisma:migrate:status   # check status (staging)
+npm run migrate:check           # compare local vs staging vs prod, flag drift/duplicates
+```
+
+After applying via the pooled connection, **restart the app** (`start:dev`) so the
+Prisma connection pool refreshes its cached schema — otherwise you get P2022
+"column does not exist" on a column that actually exists.
+
+**Note:** the `_data_migrations` table is intentional (it backs the custom data
+migration system, see `DATA_MIGRATION_VERSION` and `scripts/apply-data-migrations.js`).
+It is NOT managed by Prisma and showing up in `migrate diff` is expected — not drift.
