@@ -3,6 +3,32 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+const directUrl = process.env["DIRECT_URL"];
+
+// Aviso de entorno: imprime a que proyecto Supabase apunta el comando antes de
+// ejecutarlo. NO bloquea — solo evita aplicar cambios en el entorno equivocado
+// por accidente (ej: correr `npx prisma ...` directo carga `.env` = PRODUCCION,
+// mientras la app de desarrollo usa `.env.staging`). Para apuntar a un entorno
+// distinto, anteponer `npx dotenv -e .env.staging --` (o usar los scripts npm).
+if (directUrl) {
+  const ref = directUrl.match(/postgres\.([a-z0-9]+):/)?.[1] ?? "desconocido";
+  const KNOWN: Record<string, string> = {
+    rggavdujvohqxfgjzuyd: "PRODUCCION",
+    bjawxcnsjjobweucxfpf: "STAGING",
+  };
+  const env = KNOWN[ref] ?? "DESCONOCIDO";
+  const banner = `[prisma.config] Datasource -> ${env} (project: ${ref})`;
+  if (env === "PRODUCCION") {
+    console.warn(`\x1b[33m⚠️  ${banner}\x1b[0m`);
+  } else {
+    console.log(banner);
+  }
+} else {
+  console.warn(
+    "[prisma.config] ⚠️  DIRECT_URL no definido. ¿Olvidaste `dotenv -e .env.staging`?",
+  );
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -11,6 +37,6 @@ export default defineConfig({
   datasource: {
     // Usa la conexion directa (puerto 5432) para migraciones y CLI
     // La app en runtime usa DATABASE_URL (pooled) via PrismaClient
-    url: process.env["DIRECT_URL"],
+    url: directUrl,
   },
 });
