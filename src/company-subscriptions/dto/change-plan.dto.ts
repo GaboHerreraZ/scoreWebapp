@@ -111,9 +111,4 @@ export class ChangePlanDto {
   @ValidateNested()
   @Type(() => ChangePlanBillingDto)
   billing?: ChangePlanBillingDto;
-
-  @ApiPropertyOptional({ description: 'ID de campaña promocional' })
-  @IsOptional()
-  @IsUUID()
-  campaignId?: string;
 }

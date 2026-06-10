@@ -22,6 +22,7 @@ import { CreateParameterDto } from './dto/create-parameter.dto.js';
 import { UpdateParameterDto } from './dto/update-parameter.dto.js';
 import { FilterParameterDto } from './dto/filter-parameter.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
+import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 
 @ApiTags('Parameters')
 @ApiBearerAuth()
@@ -30,6 +31,7 @@ export class ParametersController {
   constructor(private readonly parametersService: ParametersService) {}
 
   @Post()
+  @AdminOnly()
   @ApiOperation({ summary: 'Create a parameter' })
   @ApiResponse({ status: 201, description: 'Parameter created successfully' })
   @ApiResponse({
@@ -57,6 +59,7 @@ export class ParametersController {
   }
 
   @Patch(':id')
+  @AdminOnly()
   @ApiOperation({ summary: 'Partially update a parameter' })
   @ApiResponse({ status: 200, description: 'Parameter updated successfully' })
   @ApiResponse({ status: 404, description: 'Parameter not found' })
@@ -69,6 +72,7 @@ export class ParametersController {
   }
 
   @Delete(':id')
+  @AdminOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a parameter' })
   @ApiResponse({ status: 204, description: 'Parameter deleted successfully' })

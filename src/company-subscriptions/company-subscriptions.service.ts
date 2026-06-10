@@ -212,7 +212,6 @@ export class CompanySubscriptionsService {
       pricePaid: subscription.price,
       autoRenew: true,
       epaycoSubscriptionId,
-      campaignId: dto.campaignId,
     });
 
     // 10. Registrar primer pago en historial
@@ -687,7 +686,6 @@ export class CompanySubscriptionsService {
             pricePaid: newPlan.price ?? 0,
             autoRenew: true,
             epaycoSubscriptionId: newEpaycoSubscriptionId,
-            campaignId: dto.campaignId,
           },
           firstPayment: {
             periodStart: startDate,

@@ -352,13 +352,22 @@ export class InvitationsService {
       );
     }
 
-    // Obtener el rol "auxiliar" para asignar al usuario aceptado
+    // Rol a asignar al usuario aceptado.
+    // Por defecto se asigna "auxiliar" (colaborador). Pero si la invitación fue
+    // creada con un rol especial (ej. "owner" en el onboarding del portal admin),
+    // se respeta ese rol. Así el dueño de la empresa queda como owner y los
+    // colaboradores normales siguen quedando como auxiliar.
+    const ownerRoleId = await this.repository.getRoleId('owner');
     const auxiliarRoleId = await this.repository.getRoleId('assistant');
     if (!auxiliarRoleId) {
       throw new BadRequestException(
         'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
       );
     }
+    const assignedRoleId =
+      ownerRoleId && invitation.roleId === ownerRoleId
+        ? ownerRoleId
+        : auxiliarRoleId;
 
     // Re-validar límite de suscripción
     const maxUsers = await this.repository.getCompanyMaxUsers(
@@ -380,7 +389,7 @@ export class InvitationsService {
       userId,
       email: invitation.email,
       companyId: invitation.companyId,
-      roleId: auxiliarRoleId,
+      roleId: assignedRoleId,
       acceptedStatusId,
       invitedBy: invitation.invitedBy,
     });

@@ -10,7 +10,6 @@ export class CompanySubscriptionsRepository {
     subscription: true,
     status: true,
     company: true,
-    campaign: true,
   };
 
   async create(data: Prisma.CompanySubscriptionUncheckedCreateInput) {
