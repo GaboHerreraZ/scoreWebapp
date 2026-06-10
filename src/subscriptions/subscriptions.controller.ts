@@ -23,6 +23,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
+import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 
 @ApiTags('Subscriptions')
 @Controller('subscriptions')
@@ -31,6 +32,7 @@ export class SubscriptionsController {
 
   @ApiBearerAuth()
   @Post()
+  @AdminOnly()
   @ApiOperation({ summary: 'Create a subscription' })
   @ApiResponse({
     status: 201,
@@ -74,6 +76,7 @@ export class SubscriptionsController {
 
   @ApiBearerAuth()
   @Patch(':id')
+  @AdminOnly()
   @ApiOperation({ summary: 'Partially update a subscription' })
   @ApiResponse({
     status: 200,
@@ -89,6 +92,7 @@ export class SubscriptionsController {
 
   @ApiBearerAuth()
   @Delete(':id')
+  @AdminOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a subscription' })
   @ApiResponse({

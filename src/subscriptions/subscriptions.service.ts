@@ -5,7 +5,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { SubscriptionsRepository } from './subscriptions.repository.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
@@ -15,7 +14,6 @@ import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
 export class SubscriptionsService {
   constructor(
     private readonly repository: SubscriptionsRepository,
-    private readonly campaignsService: CampaignsService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -41,14 +39,10 @@ export class SubscriptionsService {
   }
 
   async findAll() {
-    const [subscriptions, activeCampaign] = await Promise.all([
-      this.repository.findAllActive(),
-      this.campaignsService.findActiveCampaign(),
-    ]);
+    const subscriptions = await this.repository.findAllActive();
 
     return {
       data: subscriptions,
-      campaign: activeCampaign ?? null,
     };
   }
 

@@ -107,12 +107,4 @@ export class SubscribeDto {
   @ValidateNested()
   @Type(() => BillingDto)
   billing: BillingDto;
-
-  @ApiPropertyOptional({
-    example: 'uuid-de-campaña',
-    description: 'Campaign ID for discount (optional)',
-  })
-  @IsOptional()
-  @IsUUID()
-  campaignId?: string;
 }
