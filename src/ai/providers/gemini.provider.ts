@@ -66,13 +66,21 @@ export class GeminiProvider implements AiProvider {
     const pdfBase64 = pdfBuffer.toString('base64');
     const modelName = modelOverride || this.model;
 
+    // gemini-2.5-pro solo funciona en "thinking mode": no acepta thinkingBudget 0.
+    // Para esos modelos no se envia thinkingConfig (deja el thinking por defecto).
+    const supportsDisablingThinking = !modelName.includes('pro');
+
+    // thinkingConfig aun no esta en los tipos del SDK.
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: maxTokens,
+    };
+    if (supportsDisablingThinking) {
+      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
     const model = this.client.getGenerativeModel({
       model: modelName,
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        // @ts-expect-error -- thinkingConfig not yet in SDK types
-        thinkingConfig: { thinkingBudget: 0 },
-      },
+      generationConfig,
     });
 
     const result = await model.generateContent([
