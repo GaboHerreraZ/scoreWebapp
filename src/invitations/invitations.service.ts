@@ -8,6 +8,7 @@ import {
 import { randomBytes } from 'crypto';
 import { InvitationsRepository } from './invitations.repository.js';
 import { MailService } from '../mail/mail.service.js';
+import { SupabaseService } from '../auth/supabase.service.js';
 import { CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { RespondInvitationDto } from './dto/respond-invitation.dto.js';
 import { FilterInvitationDto } from './dto/filter-invitation.dto.js';
@@ -18,6 +19,7 @@ export class InvitationsService {
   constructor(
     private readonly repository: InvitationsRepository,
     private readonly mailService: MailService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   async create(companyId: string, invitedBy: string, dto: CreateInvitationDto) {
@@ -326,6 +328,26 @@ export class InvitationsService {
       await this.repository.getInvitationStatusId('pending');
     if (invitation.statusId !== pendingStatusId) {
       throw new BadRequestException('Esta invitación ya fue respondida');
+    }
+
+    // Validar que el usuario autenticado en Supabase corresponda al correo de la
+    // invitación. La fuente de verdad es Supabase (no el front): consultamos el
+    // usuario por su id con la service-role key y comparamos el email. Evita que
+    // alguien con el link se registre con un correo distinto al invitado.
+    const { data: supabaseUser, error } = await this.supabaseService
+      .getClient()
+      .auth.admin.getUserById(userId);
+    if (error || !supabaseUser?.user?.email) {
+      throw new BadRequestException(
+        'No se pudo verificar el usuario autenticado.',
+      );
+    }
+    if (
+      supabaseUser.user.email.toLowerCase() !== invitation.email.toLowerCase()
+    ) {
+      throw new ForbiddenException(
+        'El correo de tu cuenta no coincide con el de la invitación.',
+      );
     }
 
     // Verificar que no exista ya un profile con este userId

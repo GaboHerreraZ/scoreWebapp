@@ -28,49 +28,49 @@ import { ChangeTierDto } from './dto/change-tier.dto.js';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
-  @Post('clients/onboard')
+  @Post('companies/onboard')
   @ApiOperation({
     summary:
-      'Alta atómica de un cliente: empresa + suscripción PRO con nivel + invitación al dueño',
+      'Alta atómica de una empresa: empresa + suscripción PRO con nivel + invitación al dueño',
   })
-  @ApiResponse({ status: 201, description: 'Cliente creado e invitación enviada' })
+  @ApiResponse({ status: 201, description: 'Empresa creada e invitación enviada' })
   @ApiResponse({ status: 409, description: 'NIT ya existe' })
   onboard(@Body() dto: OnboardClientDto, @Req() req: Request) {
     const adminUserId = (req as any).user.id as string;
     return this.adminService.onboardClient(dto, adminUserId);
   }
 
-  @Get('clients')
-  @ApiOperation({ summary: 'Listar todos los clientes (cross-tenant)' })
-  @ApiResponse({ status: 200, description: 'Listado paginado de clientes' })
-  listClients(
+  @Get('companies')
+  @ApiOperation({ summary: 'Listar todas las empresas (cross-tenant)' })
+  @ApiResponse({ status: 200, description: 'Listado paginado de empresas' })
+  listCompanies(
     @Query('page') page = '1',
     @Query('limit') limit = '10',
     @Query('search') search?: string,
   ) {
-    return this.adminService.listClients({
+    return this.adminService.listCompanies({
       page: Number(page),
       limit: Number(limit),
       search,
     });
   }
 
-  @Get('clients/:companyId')
-  @ApiOperation({ summary: 'Detalle de un cliente' })
-  @ApiResponse({ status: 200, description: 'Detalle del cliente' })
+  @Get('companies/:companyId')
+  @ApiOperation({ summary: 'Detalle de una empresa' })
+  @ApiResponse({ status: 200, description: 'Detalle de la empresa' })
   @ApiResponse({ status: 404, description: 'Empresa no encontrada' })
   getDetail(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.adminService.getClientDetail(companyId);
   }
 
-  @Get('clients/:companyId/usage')
+  @Get('companies/:companyId/usage')
   @ApiOperation({ summary: 'Consumo del ciclo actual (estudios usados / cupo)' })
   @ApiResponse({ status: 200, description: 'Consumo del ciclo' })
   getUsage(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.adminService.getUsage(companyId);
   }
 
-  @Get('clients/:companyId/contract-summary')
+  @Get('companies/:companyId/contract-summary')
   @ApiOperation({
     summary: 'Resumen del contrato anual (total comprometido por tramos)',
   })

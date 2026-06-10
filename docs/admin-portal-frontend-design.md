@@ -62,7 +62,7 @@ Un **servicio Angular por dominio**, que llama a los endpoints `/api/admin/*`:
 
 | Servicio Angular | Endpoints que consume |
 |------------------|------------------------|
-| `AdminClientsService` | `POST /admin/clients/onboard`, `GET /admin/clients`, `GET /admin/clients/:id`, `GET /admin/clients/:id/usage`, `GET /admin/clients/:id/contract-summary` |
+| `AdminCompaniesService` | `POST /admin/companies/onboard`, `GET /admin/companies`, `GET /admin/companies/:id`, `GET /admin/companies/:id/usage`, `GET /admin/companies/:id/contract-summary` |
 | `AdminSubscriptionService` | `POST /admin/companies/:id/subscription/change-tier`, `PATCH /admin/companies/:id/suspend` |
 | `AdminCompanyService` | `PATCH /admin/companies/:id`, `POST /admin/companies/:id/invitations/resend` |
 | `AdminPaymentsService` | `POST /admin/companies/:id/payments/link`, `POST /admin/companies/:id/payments` |
@@ -85,7 +85,7 @@ alineados con el backend (`OnboardClientDto`, `ChangeTierDto`, etc.).
 - Accesos rápidos: "Nuevo cliente", "Ver clientes".
 
 ### 5.3 Listado de clientes (`/clients`)
-Consume `GET /admin/clients`.
+Consume `GET /admin/companies`.
 - Tabla: empresa (nombre/NIT), nivel vigente (estudios/mes), consumo del ciclo
   (X/Y), vigencia (fin de contrato), estado (activo/suspendido).
 - Filtros: búsqueda por nombre/NIT, estado.
@@ -93,7 +93,7 @@ Consume `GET /admin/clients`.
 - Click en fila → detalle del cliente.
 
 ### 5.4 Onboarding de cliente (`/clients/new`) — la pantalla clave
-Consume `POST /admin/clients/onboard` (operación atómica).
+Consume `POST /admin/companies/onboard` (operación atómica).
 Formulario (puede ser un wizard de 1-3 pasos o un solo formulario):
 - **Datos de la empresa:** nombre, NIT, sector, departamento, ciudad, dirección.
 - **Facturación** (para trazabilidad de pagos): nombre, documento, email, teléfono.
@@ -104,7 +104,7 @@ Formulario (puede ser un wizard de 1-3 pasos o un solo formulario):
   invitación (enviada a X email) y opción de copiar/reenviar el link.
 
 ### 5.5 Detalle de cliente (`/clients/:id`)
-Consume `GET /admin/clients/:id`, `.../usage`, `.../contract-summary`.
+Consume `GET /admin/companies/:id`, `.../usage`, `.../contract-summary`.
 Secciones:
 - **Resumen:** empresa, estado, vigencia, nivel vigente.
 - **Consumo del ciclo:** barra X/Y estudios del mes actual.
