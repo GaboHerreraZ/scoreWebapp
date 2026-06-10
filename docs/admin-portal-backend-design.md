@@ -151,7 +151,7 @@ Agrupados en un módulo nuevo **`AdminModule`** que importa los servicios existe
 
 ### 5.1 Onboarding de cliente (operación atómica)
 
-**`POST /api/admin/clients/onboard`**
+**`POST /api/admin/companies/onboard`**
 
 Crea empresa + suscripción PRO con nivel + invitación al dueño, todo o nada
 (transacción). Devuelve el cliente creado y el estado de la invitación.
@@ -239,10 +239,10 @@ Por ahora la "recarga" = `change-tier` a un nivel mayor.
 
 | Método | Ruta | Uso |
 |--------|------|-----|
-| GET | `/api/admin/clients` | Listar todas las empresas (cross-tenant) con su nivel, consumo del ciclo, vigencia, estado. Paginado + filtros (search, estado). |
-| GET | `/api/admin/clients/:companyId` | Detalle de un cliente: empresa, suscripción vigente, consumo, historial de tramos (por `contractId`), usuarios, invitaciones. |
-| GET | `/api/admin/clients/:companyId/usage` | Consumo del ciclo actual (estudios usados / cupo) — reusa `countCurrentCycleByType`. |
-| GET | `/api/admin/clients/:companyId/contract-summary` | Recálculo anual: total comprometido = Σ (meses por tramo × nivel). Ver sección 6. |
+| GET | `/api/admin/companies` | Listar todas las empresas (cross-tenant) con su nivel, consumo del ciclo, vigencia, estado. Paginado + filtros (search, estado). |
+| GET | `/api/admin/companies/:companyId` | Detalle de un cliente: empresa, suscripción vigente, consumo, historial de tramos (por `contractId`), usuarios, invitaciones. |
+| GET | `/api/admin/companies/:companyId/usage` | Consumo del ciclo actual (estudios usados / cupo) — reusa `countCurrentCycleByType`. |
+| GET | `/api/admin/companies/:companyId/contract-summary` | Recálculo anual: total comprometido = Σ (meses por tramo × nivel). Ver sección 6. |
 | PATCH | `/api/admin/companies/:companyId` | Editar datos de la empresa / facturación. |
 | POST | `/api/admin/companies/:companyId/invitations/resend` | Reenviar invitación al dueño (reusa Invitation). |
 | PATCH | `/api/admin/companies/:companyId/suspend` | Suspender/reactivar acceso (estado de la suscripción). |
@@ -331,7 +331,7 @@ transaccional en los repositorios reusados).
 
 **Backend:**
 - [ ] `AdminModule` + `AdminGuard` + decorator.
-- [ ] `POST /admin/clients/onboard` (atómico).
+- [ ] `POST /admin/companies/onboard` (atómico).
 - [ ] `POST /admin/companies/:id/subscription/change-tier`.
 - [ ] GET de listado/detalle/usage/contract-summary.
 - [ ] PATCH editar empresa / suspend / resend invitation.

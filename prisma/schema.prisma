@@ -420,9 +420,12 @@ model AiAnalysis {
 model Invitation {
   id          String    @id @default(uuid()) @db.Uuid
   companyId   String    @map("company_id") @db.Uuid
-  invitedBy   String    @map("invited_by") @db.Uuid
+  invitedBy   String?   @map("invited_by") @db.Uuid
   email       String    @db.VarChar(255)
   roleId      Int       @map("role_id")
+  // Tipo de invitación: 'account_onboarding' (alta nueva desde el portal admin)
+  // | 'collaboration' (invitar a un colaborador a una empresa existente).
+  type        String    @default("collaboration") @db.VarChar(30)
   statusId    Int       @map("status_id")
   token       String    @unique @db.VarChar(64)
   expiresAt   DateTime  @map("expires_at")
@@ -431,7 +434,7 @@ model Invitation {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   company       Company   @relation(fields: [companyId], references: [id])
-  invitedByUser Profile   @relation("InvitationInvitedBy", fields: [invitedBy], references: [id])
+  invitedByUser Profile?  @relation("InvitationInvitedBy", fields: [invitedBy], references: [id])
   status        Parameter @relation("InvitationStatus", fields: [statusId], references: [id])
 
   @@map("invitations")
