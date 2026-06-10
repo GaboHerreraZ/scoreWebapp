@@ -86,6 +86,30 @@ class OnboardSubscriptionDto {
   @Min(1)
   studiesPerMonth: number;
 
+  @ApiProperty({ example: 3, description: 'Máximo de usuarios de la empresa' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxUsers: number;
+
+  @ApiProperty({ example: 5, description: 'Máximo de clientes (customers)' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxCustomers: number;
+
+  @ApiProperty({ example: 20, description: 'Máximo de análisis con IA al mes' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxAiAnalysisPerMonth: number;
+
+  @ApiProperty({ example: 15, description: 'Máximo de extracciones de PDF al mes' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxPdfExtractionsPerMonth: number;
+
   @ApiProperty({ example: '2026-06-08', description: 'Inicio del contrato anual' })
   @IsDateString()
   startDate: string;

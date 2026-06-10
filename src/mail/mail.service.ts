@@ -11,11 +11,17 @@ export class MailService {
   private readonly templatesDir: string;
 
   private readonly frontendUrl: string;
+  private readonly logoUrl: string;
 
   constructor(private readonly configService: ConfigService) {
     this.resend = new Resend(this.configService.get<string>('RESEND_API_KEY'));
     this.frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    // URL pública absoluta del logo (los clientes de correo no renderizan
+    // archivos locales). Configurable vía LOGO_URL.
+    this.logoUrl =
+      this.configService.get<string>('LOGO_URL') ||
+      'https://creditia.co/logo.png';
     const __dirname = dirname(fileURLToPath(import.meta.url));
     this.templatesDir = join(__dirname, '..', '..', 'mail', 'templates');
   }
@@ -48,6 +54,7 @@ export class MailService {
       invitedByName,
       companyName,
       invitationUrl,
+      logoUrl: this.logoUrl,
     });
 
     await this.resend.emails.send({
@@ -58,68 +65,30 @@ export class MailService {
     });
   }
 
-  async sendSubscriptionCancelledEmail(params: {
+  /**
+   * Correo de bienvenida al dueño (owner) de una empresa recién dada de alta
+   * desde el portal admin. Usa la MISMA URL de invitación que sendInvitationEmail
+   * (mismo flujo de aceptación en el front), pero con un mensaje de bienvenida.
+   */
+  async sendOwnerWelcomeEmail(params: {
     to: string;
-    userName: string;
+    invitationId: string;
+    token: string;
     companyName: string;
-    planName: string;
-    maxUsers: number;
-    maxCustomers: number | null;
-    maxStudiesPerMonth: number | null;
-    maxAiAnalysisPerMonth: number | null;
-    maxPdfExtractionsPerMonth: number | null;
   }) {
-    const {
-      to,
-      userName,
-      companyName,
-      planName,
-      maxUsers,
-      maxCustomers,
-      maxStudiesPerMonth,
-      maxAiAnalysisPerMonth,
-      maxPdfExtractionsPerMonth,
-    } = params;
+    const { to, invitationId, token, companyName } = params;
+    const invitationUrl = `${this.frontendUrl}/invitacion?email=${encodeURIComponent(to)}&invitationId=${invitationId}&token=${token}`;
 
-    const formatLimit = (value: number | null) =>
-      value === null ? 'Ilimitados' : value.toString();
-
-    const html = this.loadTemplate('subscription-cancelled', {
-      userName,
+    const html = this.loadTemplate('owner-welcome', {
       companyName,
-      planName,
-      maxUsers: maxUsers.toString(),
-      maxCustomers: formatLimit(maxCustomers),
-      maxStudiesPerMonth: formatLimit(maxStudiesPerMonth),
-      maxAiAnalysisPerMonth: formatLimit(maxAiAnalysisPerMonth),
-      maxPdfExtractionsPerMonth: formatLimit(maxPdfExtractionsPerMonth),
-      frontendUrl: this.frontendUrl,
+      invitationUrl,
+      logoUrl: this.logoUrl,
     });
 
     await this.resend.emails.send({
       from: 'Creditia <notificaciones@creditia.co>',
       to,
-      subject: `Tu suscripción a ${planName} ha sido cancelada`,
-      html,
-    });
-  }
-
-  async sendPlanChangedEmail(params: {
-    to: string;
-    userName: string;
-    newPlanName: string;
-  }) {
-    const { to, userName, newPlanName } = params;
-
-    const html = this.loadTemplate('plan-changed', {
-      userName,
-      newPlanName,
-    });
-
-    await this.resend.emails.send({
-      from: 'Creditia <notificaciones@creditia.co>',
-      to,
-      subject: `Tu plan ha sido cambiado a ${newPlanName}`,
+      subject: `Bienvenido a Creditia — activa el acceso de ${companyName}`,
       html,
     });
   }
@@ -127,7 +96,10 @@ export class MailService {
   async sendUserDeactivatedEmail(params: { to: string; companyName: string }) {
     const { to, companyName } = params;
 
-    const html = this.loadTemplate('user-deactivated', { companyName });
+    const html = this.loadTemplate('user-deactivated', {
+      companyName,
+      logoUrl: this.logoUrl,
+    });
 
     await this.resend.emails.send({
       from: 'Creditia <notificaciones@creditia.co>',

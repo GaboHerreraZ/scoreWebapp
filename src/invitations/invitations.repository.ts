@@ -272,7 +272,7 @@ export class InvitationsRepository {
     companyId: string;
     roleId: number;
     acceptedStatusId: number;
-    invitedBy: string;
+    invitedBy: string | null;
   }) {
     const {
       invitationId,
@@ -292,7 +292,7 @@ export class InvitationsRepository {
           roleId,
           email,
           name: 'Usuario',
-          lastName: 'Invitado',
+          lastName: 'Administrador',
         },
       });
 

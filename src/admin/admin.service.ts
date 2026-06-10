@@ -36,7 +36,7 @@ export class AdminService {
    * Todo o nada. El cliente recibe el link de invitación y entra con todo listo.
    * El plan (subscriptionId) lo elige el admin desde el portal.
    */
-  async onboardClient(dto: OnboardClientDto, adminUserId: string) {
+  async onboardClient(dto: OnboardClientDto, _adminUserId: string) {
     const subscriptionId = dto.subscription.subscriptionId;
 
     // Validaciones previas a la transacción (fallar rápido).
@@ -105,11 +105,18 @@ export class AdminService {
           autoRenew: false,
           pricePaid: dto.subscription.pricePaid,
           maxStudiesPerMonthOverride: dto.subscription.studiesPerMonth,
+          maxUsersOverride: dto.subscription.maxUsers,
+          maxCustomersOverride: dto.subscription.maxCustomers,
+          maxAiAnalysisPerMonthOverride: dto.subscription.maxAiAnalysisPerMonth,
+          maxPdfExtractionsPerMonthOverride:
+            dto.subscription.maxPdfExtractionsPerMonth,
           contractId: newContractId,
         },
       });
 
-      // 3. Invitación del dueño (rol owner)
+      // 3. Invitación del dueño (rol owner).
+      // invitedBy = null: quien invita es el equipo Creditia (platform_admin),
+      // que no es un Profile de empresa, así que no puede referenciarse aquí.
       const invitation = await tx.invitation.create({
         data: {
           email: dto.owner.email,
@@ -118,7 +125,8 @@ export class AdminService {
           statusId: pendingInvStatus.id,
           token,
           expiresAt,
-          invitedBy: adminUserId,
+          invitedBy: null,
+          type: 'account_onboarding',
         },
       });
 
@@ -129,7 +137,7 @@ export class AdminService {
             userId: existingProfile.id,
             companyId: company.id,
             roleId: ownerRole.id,
-            invitedBy: adminUserId,
+            invitedBy: null,
             isActive: false,
           },
         });
@@ -138,14 +146,13 @@ export class AdminService {
       return { company, subscription, invitation };
     });
 
-    // Envío de email fuera de la transacción (best effort).
+    // Envío de email de bienvenida al owner fuera de la transacción (best effort).
     this.mailService
-      .sendInvitationEmail({
+      .sendOwnerWelcomeEmail({
         to: dto.owner.email,
         invitationId: result.invitation.id,
         token,
         companyName: result.company.name,
-        invitedByName: 'El equipo de Creditia',
       })
       .catch(() => {});
 
@@ -231,8 +238,8 @@ export class AdminService {
     };
   }
 
-  /** Listado cross-tenant de clientes con su nivel vigente y vigencia. */
-  async listClients(params: { page: number; limit: number; search?: string }) {
+  /** Listado cross-tenant de empresas con su nivel vigente y vigencia. */
+  async listCompanies(params: { page: number; limit: number; search?: string }) {
     const { page, limit, search } = params;
     const skip = (page - 1) * limit;
 
@@ -262,7 +269,7 @@ export class AdminService {
     ]);
 
     const data = companies.map((c) => {
-      const sub = c.companySubscriptions[0];
+      const sub = c.companySubscriptions.find((s) => s.isCurrent);
       return {
         id: c.id,
         name: c.name,
@@ -272,7 +279,11 @@ export class AdminService {
           ? {
               id: sub.id,
               plan: sub.subscription?.name,
-              studiesPerMonth: sub.maxStudiesPerMonthOverride,
+              studiesPerMonth: sub.maxStudiesPerMonthOverride ?? 0,
+              maxUsers: sub.maxUsersOverride ?? 0,
+              maxAiAnalysisPerMonth: sub.maxAiAnalysisPerMonthOverride ?? 0,
+              maxPdfExtractionsPerMonth:
+                sub.maxPdfExtractionsPerMonthOverride ?? 0,
               startDate: sub.startDate,
               endDate: sub.endDate,
               status: sub.status?.code,
