@@ -6,12 +6,10 @@ import {
   Delete,
   Body,
   Param,
-  Req,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -21,7 +19,6 @@ import {
 import { SubscriptionsService } from './subscriptions.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
-import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 
@@ -40,21 +37,6 @@ export class SubscriptionsController {
   })
   create(@Body() dto: CreateSubscriptionDto) {
     return this.subscriptionsService.create(dto);
-  }
-
-  @ApiBearerAuth()
-  @Post('onboarding-setup')
-  @ApiOperation({
-    summary: 'Create profile and company in a single transaction (onboarding)',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Profile and company created successfully',
-  })
-  @ApiResponse({ status: 409, description: 'Company NIT already exists' })
-  onboardingSetup(@Body() dto: OnboardingSetupDto, @Req() req: Request) {
-    const userId = (req as any).user.id as string;
-    return this.subscriptionsService.onboardingSetup(userId, dto);
   }
 
   @Public()
