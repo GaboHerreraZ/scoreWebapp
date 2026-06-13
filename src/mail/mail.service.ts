@@ -21,7 +21,7 @@ export class MailService {
     // archivos locales). Configurable vía LOGO_URL.
     this.logoUrl =
       this.configService.get<string>('LOGO_URL') ||
-      'https://creditia.co/logo.png';
+      'https://bjawxcnsjjobweucxfpf.supabase.co/storage/v1/object/public/general/creditia-logo.png';
     const __dirname = dirname(fileURLToPath(import.meta.url));
     this.templatesDir = join(__dirname, '..', '..', 'mail', 'templates');
   }
