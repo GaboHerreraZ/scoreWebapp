@@ -11,11 +11,13 @@ import { CreditStudiesModule } from './credit-studies/credit-studies.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
+import { CompanySubscriptionsModule } from './company-subscriptions/company-subscriptions.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { PromissoryNotesModule } from './promissory-notes/promissory-notes.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { EpaycoModule } from './epayco/epayco.module.js';
 import { ExcelModule } from './common/excel/excel.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
@@ -34,11 +36,13 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
     ProfilesModule,
     UserCompaniesModule,
     SubscriptionsModule,
+    CompanySubscriptionsModule,
     DashboardModule,
     AiAnalysesModule,
     InvitationsModule,
     PromissoryNotesModule,
     NotificationsModule,
+    EpaycoModule,
     AdminModule,
   ],
   providers: [

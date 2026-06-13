@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f7; padding: 40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 40px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 26px; font-weight: 700;">Tu suscripción ha sido cancelada</h1>
+              <p style="color: #e0e7ff; margin: 0; font-size: 15px;">Lamentamos verte partir, {{userName}}</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #1f2937; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+                Hola <strong>{{userName}}</strong>,
+              </p>
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+                Hemos procesado correctamente la cancelación de tu suscripción al plan <strong>{{planName}}</strong> para la empresa <strong>{{companyName}}</strong>. No se realizarán nuevos cobros.
+              </p>
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 24px;">
+                Como parte de nuestra comunidad, seguirás teniendo acceso al <strong>plan gratuito</strong>, pero queremos que sepas lo que dejarás de disfrutar:
+              </p>
+
+              <!-- Features lost -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px; margin: 0 0 24px;">
+                <tr>
+                  <td style="padding: 20px 24px;">
+                    <p style="color: #991b1b; font-size: 14px; font-weight: 600; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Lo que dejarás de tener
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; Hasta <strong>{{maxUsers}}</strong> usuarios por empresa
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; <strong>{{maxCustomers}}</strong> clientes gestionados
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; <strong>{{maxStudiesPerMonth}}</strong> estudios de crédito al mes
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; <strong>{{maxAiAnalysisPerMonth}}</strong> análisis con IA al mes
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; <strong>{{maxPdfExtractionsPerMonth}}</strong> extracciones de PDF al mes
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; Reportes avanzados en Excel
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; Notificaciones por correo
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; Personalización de tema
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                          <span style="color: #dc2626; font-weight: 700;">✕</span>&nbsp; Soporte prioritario
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Sad farewell message -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f3ff; border-radius: 8px; margin: 0 0 24px;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <p style="color: #4c1d95; font-size: 15px; line-height: 1.6; margin: 0; text-align: center;">
+                      Es una pena que dejes de trabajar con nosotros. 💜<br>
+                      Hemos disfrutado ser parte del crecimiento de <strong>{{companyName}}</strong> y esperamos volver a verte pronto.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+                Si cambias de opinión, puedes reactivar tu suscripción en cualquier momento desde tu panel de administración.
+              </p>
+
+              <!-- CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 8px 0 16px;">
+                    <a href="{{frontendUrl}}" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block;">
+                      Volver a Creditia
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 24px 0 0; text-align: center;">
+                ¿Tienes alguna duda? Responde este correo y te ayudaremos.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 24px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; font-weight: 600;">Creditia</p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                © 2026 Creditia. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
