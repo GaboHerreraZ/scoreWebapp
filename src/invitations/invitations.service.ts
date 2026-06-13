@@ -374,22 +374,19 @@ export class InvitationsService {
       );
     }
 
-    // Rol a asignar al usuario aceptado.
-    // Por defecto se asigna "auxiliar" (colaborador). Pero si la invitación fue
-    // creada con un rol especial (ej. "owner" en el onboarding del portal admin),
-    // se respeta ese rol. Así el dueño de la empresa queda como owner y los
-    // colaboradores normales siguen quedando como auxiliar.
-    const ownerRoleId = await this.repository.getRoleId('owner');
-    const auxiliarRoleId = await this.repository.getRoleId('assistant');
-    if (!auxiliarRoleId) {
-      throw new BadRequestException(
-        'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
-      );
+    // Se respeta el rol con el que se creó la invitación (administrator en el
+    // onboarding del portal admin, auxiliar/invitado en invitaciones normales).
+    // Como fallback, si la invitación no trae rol, se asigna "auxiliar".
+    let assignedRoleId = invitation.roleId;
+    if (!assignedRoleId) {
+      const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
+      if (!auxiliarRoleId) {
+        throw new BadRequestException(
+          'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',
+        );
+      }
+      assignedRoleId = auxiliarRoleId;
     }
-    const assignedRoleId =
-      ownerRoleId && invitation.roleId === ownerRoleId
-        ? ownerRoleId
-        : auxiliarRoleId;
 
     // Re-validar límite de suscripción
     const maxUsers = await this.repository.getCompanyMaxUsers(
@@ -544,7 +541,7 @@ export class InvitationsService {
       }
 
       // Obtener el rol "auxiliar" para asignar al usuario aceptado
-      const auxiliarRoleId = await this.repository.getRoleId('assistant');
+      const auxiliarRoleId = await this.repository.getRoleId('auxiliar');
       if (!auxiliarRoleId) {
         throw new BadRequestException(
           'No se encontró el parámetro de rol "auxiliar". Cree un parámetro con type=user_company_role, code=auxiliar',

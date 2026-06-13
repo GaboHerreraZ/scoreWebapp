@@ -62,10 +62,10 @@ export class AdminService {
       where: { email: dto.owner.email },
     });
 
-    const [activeSubStatus, pendingInvStatus, ownerRole] = await Promise.all([
+    const [activeSubStatus, pendingInvStatus, adminRole] = await Promise.all([
       this.getParam('subscription_status', 'active'),
       this.getParam('invitation_status', 'pending'),
-      this.getParam('user_company_role', 'owner'),
+      this.getParam('user_company_role', 'administrator'),
     ]);
 
     const token = randomBytes(32).toString('hex');
@@ -114,14 +114,14 @@ export class AdminService {
         },
       });
 
-      // 3. Invitación del dueño (rol owner).
+      // 3. Invitación del dueño de la empresa (rol administrator).
       // invitedBy = null: quien invita es el equipo Creditia (platform_admin),
       // que no es un Profile de empresa, así que no puede referenciarse aquí.
       const invitation = await tx.invitation.create({
         data: {
           email: dto.owner.email,
           companyId: company.id,
-          roleId: ownerRole.id,
+          roleId: adminRole.id,
           statusId: pendingInvStatus.id,
           token,
           expiresAt,
@@ -136,7 +136,7 @@ export class AdminService {
           data: {
             userId: existingProfile.id,
             companyId: company.id,
-            roleId: ownerRole.id,
+            roleId: adminRole.id,
             invitedBy: null,
             isActive: false,
           },
