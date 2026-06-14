@@ -96,6 +96,11 @@ model Subscription {
   maxStudiesPerMonth        Int?     @map("max_studies_per_month")
   maxAiAnalysisPerMonth     Int?     @map("max_ai_analysis_per_month")
   maxPdfExtractionsPerMonth Int?     @map("max_pdf_extractions_per_month")
+  // Plan estático precreado en ePayco. null = plan dinámico: el plan de ePayco se
+  // crea por empresa en el onboarding (monto = estudios × ConsultationPrice vigente).
+  // No-null = plan de catálogo cuyo id_plan en ePayco se reutiliza en cada cobro,
+  // con el monto congelado en el momento en que se creó el plan.
+  epaycoPlanId              String?  @map("epayco_plan_id") @db.VarChar(255)
   isActive                  Boolean  @default(true) @map("is_active")
   createdBy                 String?  @map("created_by") @db.Uuid
   createdAt                 DateTime @default(now()) @map("created_at")

@@ -3,21 +3,76 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { SubscriptionsRepository } from './subscriptions.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
+import { EpaycoService } from '../epayco/epayco.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly logger = new Logger(SubscriptionsService.name);
+
   constructor(
     private readonly repository: SubscriptionsRepository,
     private readonly prisma: PrismaService,
     private readonly consultationPricesService: ConsultationPricesService,
+    private readonly epaycoService: EpaycoService,
   ) {}
+
+  /**
+   * Para un plan "estático": calcula el monto (estudios × precio de consulta
+   * vigente) y crea el plan recurrente en ePayco. Devuelve el id_plan a guardar
+   * en la subscription para reutilizarlo en cada cobro. El monto queda congelado
+   * en ePayco; si el ConsultationPrice cambia luego, el plan debe recrearse
+   * (parte del flujo de versionado de ConsultationPrice, fuera de este alcance).
+   */
+  private async createEpaycoPlan(dto: CreateSubscriptionDto): Promise<string> {
+    const studies = dto.maxStudiesPerMonth ?? 0;
+    if (studies <= 0) {
+      throw new BadRequestException(
+        'Un plan de ePayco requiere maxStudiesPerMonth mayor a 0 para calcular el monto a cobrar.',
+      );
+    }
+
+    const activePrice = await this.consultationPricesService.getActivePrice();
+    if (!activePrice) {
+      throw new BadRequestException(
+        'No hay un precio de consulta activo configurado. Configure un ConsultationPrice antes de crear planes de ePayco.',
+      );
+    }
+
+    const amount = studies * activePrice.unitPrice;
+    // isMonthly por defecto es true (igual que la columna en BD).
+    const interval = dto.isMonthly === false ? 'year' : 'month';
+    // id_plan visible en el panel de ePayco: prefijo legible + sufijo único para
+    // no colisionar con planes anteriores del mismo nombre.
+    const idPlan = `plan_${this.slug(dto.name)}_${randomBytes(4).toString('hex')}`;
+
+    return this.epaycoService.createPlan({
+      idPlan,
+      name: dto.name.slice(0, 90),
+      description: (dto.description ?? dto.name).slice(0, 250),
+      amount,
+      interval,
+    });
+  }
+
+  /** Normaliza un nombre a un slug seguro para el id_plan de ePayco. */
+  private slug(value: string): string {
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+  }
 
   /**
    * Aplana la relación createdByAdmin a un campo plano createdByEmail,
@@ -55,21 +110,40 @@ export class SubscriptionsService {
     // El plan lo crea un admin del portal: resolvemos su PK desde el userId Supabase.
     const admin = await this.repository.findPlatformAdminByUserId(userId);
 
-    const subscription = await this.repository.create({
-      name: dto.name,
-      description: dto.description,
-      isMonthly: dto.isMonthly,
-      maxUsers: dto.maxUsers,
-      maxCompanies: dto.maxCompanies,
-      maxCustomers: dto.maxCustomers,
-      maxStudiesPerMonth: dto.maxStudiesPerMonth,
-      maxAiAnalysisPerMonth: dto.maxAiAnalysisPerMonth,
-      maxPdfExtractionsPerMonth: dto.maxPdfExtractionsPerMonth,
-      isActive: dto.isActive,
-      createdBy: admin?.id ?? null,
-    });
+    // Plan estático: creamos el plan recurrente en ePayco ANTES de persistir, para
+    // guardar su id_plan. Plan dinámico (isEpaycoPlan false/undefined): epaycoPlanId
+    // queda null y el plan ePayco se crea por empresa en el onboarding.
+    const epaycoPlanId = dto.isEpaycoPlan
+      ? await this.createEpaycoPlan(dto)
+      : null;
 
-    return this.withCreatedByEmail(subscription);
+    try {
+      const subscription = await this.repository.create({
+        name: dto.name,
+        description: dto.description,
+        isMonthly: dto.isMonthly,
+        maxUsers: dto.maxUsers,
+        maxCompanies: dto.maxCompanies,
+        maxCustomers: dto.maxCustomers,
+        maxStudiesPerMonth: dto.maxStudiesPerMonth,
+        maxAiAnalysisPerMonth: dto.maxAiAnalysisPerMonth,
+        maxPdfExtractionsPerMonth: dto.maxPdfExtractionsPerMonth,
+        isActive: dto.isActive,
+        epaycoPlanId,
+        createdBy: admin?.id ?? null,
+      });
+
+      return this.withCreatedByEmail(subscription);
+    } catch (error) {
+      // El plan ya quedó creado en ePayco pero no en BD: queda huérfano allá. No
+      // afecta cobros (nadie lo referencia); solo se registra para limpieza manual.
+      if (epaycoPlanId) {
+        this.logger.warn(
+          `Subscription no se guardó en BD tras crear el plan ePayco "${epaycoPlanId}". El plan quedó huérfano en ePayco.`,
+        );
+      }
+      throw error;
+    }
   }
 
   async findAll() {
@@ -106,6 +180,16 @@ export class SubscriptionsService {
     const current = await this.repository.findById(id);
     if (!current) {
       throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
+    }
+
+    // El update solo aplica a planes dinámicos. Un plan estático tiene su monto
+    // congelado en ePayco; editarlo (estudios, vigencia, etc.) lo desincronizaría
+    // del plan ePayco. Esos planes se reemplazan al versionar el ConsultationPrice,
+    // no se editan en sitio.
+    if (current.epaycoPlanId) {
+      throw new ConflictException(
+        'Este plan está vinculado a un plan de ePayco y no puede editarse. Para cambiar su precio o límites, recree el plan al actualizar el precio de consulta.',
+      );
     }
 
     const subscription = await this.repository.update(id, {

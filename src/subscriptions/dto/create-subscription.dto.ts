@@ -89,4 +89,14 @@ export class CreateSubscriptionDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'true = crear un plan recurrente en ePayco con el monto (estudios × precio de consulta vigente) y guardar su id_plan; false = plan dinámico, el plan ePayco se crea por empresa en el onboarding. Requiere maxStudiesPerMonth > 0.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isEpaycoPlan?: boolean;
 }
