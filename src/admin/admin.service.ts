@@ -354,7 +354,11 @@ export class AdminService {
       include: {
         companySubscriptions: {
           orderBy: { startDate: 'asc' },
-          include: { subscription: { select: { name: true } }, status: true },
+          include: {
+            subscription: { select: { name: true } },
+            status: true,
+            paymentHistory: { orderBy: { createdAt: 'desc' } },
+          },
         },
         userCompanies: {
           include: { role: true, user: true },
@@ -366,6 +370,25 @@ export class AdminService {
     }
 
     const current = company.companySubscriptions.find((s) => s.isCurrent);
+
+    type PaymentRow =
+      (typeof company.companySubscriptions)[number]['paymentHistory'][number];
+    const mapPayment = (p: PaymentRow) => ({
+      id: p.id,
+      companySubscriptionId: p.companySubscriptionId,
+      periodStart: p.periodStart,
+      periodEnd: p.periodEnd,
+      amount: p.amount,
+      currencyCode: p.currencyCode,
+      epaycoRef: p.epaycoRef,
+      epaycoTransactionId: p.epaycoTransactionId,
+      responseCode: p.responseCode,
+      responseMessage: p.responseMessage,
+      franchise: p.franchise,
+      approvalCode: p.approvalCode,
+      createdAt: p.createdAt,
+    });
+
 
     return {
       company: {
@@ -404,6 +427,7 @@ export class AdminService {
         status: s.status?.code,
         isCurrent: s.isCurrent,
         contractId: s.contractId,
+        paymentHistory: s.paymentHistory.map(mapPayment),
       })),
       users: company.userCompanies.map((uc) => ({
         userId: uc.userId,
