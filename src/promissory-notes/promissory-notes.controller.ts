@@ -27,6 +27,7 @@ import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import type { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { DocuSealWebhookGuard } from './guards/docuseal-webhook.guard.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 // ── Spanish-message pipes reused across this controller ──
 const companyIdPipe = new ParseUUIDPipe({
@@ -41,6 +42,7 @@ const promissoryIdPipe = new ParseIntPipe({
 
 @ApiTags('Promissory Notes')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller()
 export class PromissoryNotesController {
   constructor(

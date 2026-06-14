@@ -28,9 +28,11 @@ import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 import { ExtractPdfCreateStudyDto } from './dto/extract-pdf-create-study.dto.js';
 import { CreditStudiesService } from '../credit-studies/credit-studies.service.js';
 import type { CreateCreditStudyDto } from '../credit-studies/dto/create-credit-study.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('AI Analyses')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/ai-analyses')
 export class AiAnalysesController {
   constructor(

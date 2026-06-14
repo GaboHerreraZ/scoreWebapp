@@ -154,6 +154,47 @@ export class EpaycoService {
     }
   }
 
+  /**
+   * Crea un plan recurrente en ePayco con monto personalizado por cliente
+   * (= estudios × precio consulta). Devuelve el id_plan para atar la suscripción.
+   * El idPlan debe ser único: usar un identificador derivado del cliente.
+   */
+  async createPlan(params: {
+    idPlan: string;
+    name: string;
+    description: string;
+    amount: number;
+    interval: 'month' | 'year';
+    currency?: string;
+  }): Promise<string> {
+    try {
+      const response = await this.epayco.plans.create({
+        id_plan: params.idPlan,
+        name: params.name,
+        description: params.description,
+        amount: params.amount,
+        currency: params.currency ?? 'cop',
+        interval: params.interval,
+        interval_count: 1,
+        trial_days: 0,
+      });
+
+      // ePayco devuelve el plan creado; el id es el que enviamos (id_plan).
+      const createdId = response?.id_plan ?? response?.data?.id_plan;
+      if (!createdId && response?.success === false) {
+        this.logger.error('ePayco plans.create falló', response);
+        throw new Error(response?.message ?? 'No se pudo crear el plan');
+      }
+
+      return (createdId as string) ?? params.idPlan;
+    } catch (error: any) {
+      this.logger.error(`Error creando plan en ePayco: ${error.message}`);
+      throw new BadRequestException(
+        'Error configurando el plan de pago. Por favor intenta de nuevo más tarde.',
+      );
+    }
+  }
+
   // ─── Subscriptions ────────────────────────────────────────
 
   async createSubscription(params: {

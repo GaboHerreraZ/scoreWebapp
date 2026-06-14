@@ -175,8 +175,7 @@ export class CompaniesRepository {
       }),
       this.prisma.subscription.findMany({
         where: { isActive: true },
-        orderBy: { price: 'asc' },
-        include: { dashboardLevel: true, supportLevel: true },
+        orderBy: { maxStudiesPerMonth: 'asc' },
       }),
     ]);
 
@@ -191,9 +190,7 @@ export class CompaniesRepository {
           where: { isCurrent: true },
           take: 1,
           include: {
-            subscription: {
-              include: { dashboardLevel: true, supportLevel: true },
-            },
+            subscription: true,
           },
         },
       },

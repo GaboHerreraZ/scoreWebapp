@@ -1,7 +1,29 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(cd \"/c/Users/User/Documents/Documentos Gabo/new project/webAppApi\" && rm -f check-discount-type.mjs && rm -f /c/tmp/check-discount-type.mjs && echo \"cleanup done\")",
+      "PowerShell(npx eslint \"src/admin/dto/onboard-client.dto.ts\" \"src/admin/admin.service.ts\" \"src/admin/admin.module.ts\" 2>&1)",
+      "PowerShell(npx eslint --fix \"src/admin/dto/onboard-client.dto.ts\" 2>&1)",
+      "PowerShell(npx eslint --fix \"src/admin/admin.service.ts\" 2>&1)",
+      "WebFetch(domain:epayco.com)",
+      "PowerShell(npx eslint \"src/admin/admin.service.ts\" \"src/company-subscriptions/onboarding-payment.controller.ts\" \"src/company-subscriptions/dto/pay-onboarding.dto.ts\" \"src/invitations/invitations.service.ts\" \"src/epayco/epayco.service.ts\" \"src/mail/mail.service.ts\" 2>&1)",
+      "PowerShell(npx eslint \"src/admin/admin.service.ts\" \"src/company-subscriptions/onboarding-payment.controller.ts\" \"src/company-subscriptions/dto/pay-onboarding.dto.ts\" \"src/invitations/invitations.service.ts\" \"src/mail/mail.service.ts\" 2>&1)",
+      "PowerShell(npx eslint --fix \"src/company-subscriptions/onboarding-payment.controller.ts\" 2>&1)",
+      "PowerShell(npx eslint \"src/company-subscriptions/company-subscriptions.service.ts\" \"src/company-subscriptions/company-subscriptions.repository.ts\" 2>&1)",
+      "Bash(find . -path ./node_modules -prune -o -name \"owner-welcome.html\" -print)",
+      "Bash(ls mail/templates/)",
+      "Bash(ls src/mail/templates/)",
+      "PowerShell(npm run prisma:generate)",
+      "PowerShell(npm run prisma:migrate:create -- --name drop_subscription_epayco_plan_id)",
+      "Bash(node -e \"const c=require\\('crypto'\\);for\\(let i=0;i<2;i++\\)console.log\\(c.randomBytes\\(24\\).toString\\('hex'\\)\\)\")",
+      "PowerShell($env:NODE_ENV=\"staging\"; $p = Start-Process -FilePath \"node\" -ArgumentList \"dist/main.js\" -PassThru -RedirectStandardError \"c:/tmp/nest-err.log\" -RedirectStandardOutput \"c:/tmp/nest-out.log\" -NoNewWindow; Start-Sleep -Seconds 8; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stdout ---\"; Get-Content \"c:/tmp/nest-out.log\" -Tail 15 -ErrorAction SilentlyContinue; \"--- stderr ---\"; Get-Content \"c:/tmp/nest-err.log\" -Tail 25 -ErrorAction SilentlyContinue)",
+      "PowerShell($p = Start-Process -FilePath \"npx\" -ArgumentList \"dotenv\",\"-e\",\".env.staging\",\"--\",\"node\",\"dist/src/main.js\" -PassThru -RedirectStandardError \"c:/tmp/nest-err.log\" -RedirectStandardOutput \"c:/tmp/nest-out.log\" -NoNewWindow; Start-Sleep -Seconds 12; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stdout \\(tail\\) ---\"; Get-Content \"c:/tmp/nest-out.log\" -Tail 12 -ErrorAction SilentlyContinue; \"--- stderr \\(tail\\) ---\"; Get-Content \"c:/tmp/nest-err.log\" -Tail 30 -ErrorAction SilentlyContinue)",
+      "PowerShell(\"--- stderr ---\")",
+      "PowerShell(\"--- stdout ---\")"
+    ],
+    "additionalDirectories": [
+      "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi"
     ]
   }
 }

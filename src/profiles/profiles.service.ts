@@ -81,23 +81,22 @@ export class ProfilesService {
 
     const userCompany = profile.userCompanies[0] ?? null;
 
+    // Beneficios que ahora son por defecto en todos los planes (Excel, dashboard
+    // avanzado, tema, notificaciones por correo). Ya no dependen del plan.
     let permissions = {
       canAddCreditStudy: false,
       canAddUser: false,
       canAddCustomer: false,
       canMakeAiAnalysis: false,
-      canExportExcel: false,
+      canExportExcel: true,
       subscriptionActive: false,
-      canEditTheme: false,
-      dashboardLevel: '',
-      supportLevel: '',
-      emailNotification: false,
+      canEditTheme: true,
+      emailNotification: true,
       subscriptionStatus: '',
       hasSubscription: false,
       canExtractPdf: false,
     };
 
-    let isFreeSubscription = true;
 
     if (userCompany) {
       const usageResult =
@@ -110,7 +109,6 @@ export class ProfilesService {
         (c) => c.isCurrent,
       );
 
-      isFreeSubscription = currentSubscription?.subscription.name === 'Gratis';
 
       const subscriptionActive =
         (currentSubscription &&
@@ -118,7 +116,7 @@ export class ProfilesService {
         false;
 
       if (usageResult) {
-        const { subscription, usage, effectiveLimits } = usageResult;
+        const { usage, effectiveLimits } = usageResult;
 
         const usersRemaining = effectiveLimits.maxUsers - usage.usersCount;
 
@@ -157,12 +155,11 @@ export class ProfilesService {
           canExtractPdf:
             subscriptionActive &&
             (extractPdfUnlimited || (extractPdfRemaining ?? 0) > 0),
-          canExportExcel: subscriptionActive && subscription.excelReports,
+          // Beneficios universales: ya no dependen del plan.
+          canExportExcel: true,
           subscriptionActive,
-          canEditTheme: subscription.themeCustomization,
-          dashboardLevel: subscription.dashboardLevel.code,
-          supportLevel: subscription.supportLevel.code,
-          emailNotification: subscription.emailNotifications,
+          canEditTheme: true,
+          emailNotification: true,
           subscriptionStatus: currentSubscription?.status.code ?? '',
           hasSubscription: true,
         };
@@ -184,7 +181,6 @@ export class ProfilesService {
       companyName: company.company.name,
       companyCity: company.company.city,
       companyNit: company.company.nit,
-      isFreeSubscription,
       permissions,
     };
   }

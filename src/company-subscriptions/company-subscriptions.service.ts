@@ -1,21 +1,18 @@
 import {
   Injectable,
-  Inject,
-  forwardRef,
   NotFoundException,
   ConflictException,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { CompanySubscriptionsRepository } from './company-subscriptions.repository.js';
 import { EpaycoService } from '../epayco/epayco.service.js';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
+import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { MailService } from '../mail/mail.service.js';
-import { SubscribeDto } from './dto/subscribe.dto.js';
-import { SubscribeFreeDto } from './dto/subscribe-free.dto.js';
 import { ChangePlanDto } from './dto/change-plan.dto.js';
+import { PayOnboardingDto } from './dto/pay-onboarding.dto.js';
 import { EpaycoConfirmationDto } from './dto/epayco-confirmation.dto.js';
 
 @Injectable()
@@ -25,125 +22,136 @@ export class CompanySubscriptionsService {
   constructor(
     private readonly repository: CompanySubscriptionsRepository,
     private readonly configService: ConfigService,
-    @Inject(forwardRef(() => EpaycoService))
     private readonly epaycoService: EpaycoService,
-    private readonly subscriptionsService: SubscriptionsService,
+    private readonly consultationPricesService: ConsultationPricesService,
     private readonly mailService: MailService,
   ) {}
 
-  // ─── Free Subscription Flow ───────────────────────────────
+  // ─── Cálculo de precio por consulta ───────────────────────
 
-  async subscribeFree(companyId: string, dto: SubscribeFreeDto) {
-    const companyExists = await this.repository.companyExists(companyId);
-    if (!companyExists) {
-      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
+  /**
+   * Calcula el precio total de un plan = nº de consultas incluidas
+   * (maxStudiesPerMonth) × precio unitario de la consulta vigente.
+   * Devuelve el total congelado y el id del ConsultationPrice usado, para
+   * guardarlos en la CompanySubscription. Un plan sin consultas (0/null) es
+   * gratis: total 0 y sin referencia de precio.
+   */
+  private async resolvePlanPrice(maxStudiesPerMonth: number | null): Promise<{
+    pricePaid: number;
+    consultationPriceId: string | null;
+  }> {
+    const studies = maxStudiesPerMonth ?? 0;
+    if (studies <= 0) {
+      return { pricePaid: 0, consultationPriceId: null };
     }
 
-    const subscription = await this.repository.findSubscriptionById(
-      dto.subscriptionId,
-    );
-    if (!subscription) {
-      throw new NotFoundException(
-        `Plan de suscripción con id=${dto.subscriptionId} no encontrado`,
-      );
-    }
-
-    if (subscription.price && subscription.price > 0) {
+    const consultationPrice =
+      await this.consultationPricesService.getActivePrice();
+    if (!consultationPrice) {
       throw new BadRequestException(
-        'Este endpoint es solo para planes gratuitos',
+        'No hay un precio de consulta activo configurado. Configure un ConsultationPrice antes de crear suscripciones pagas.',
       );
     }
 
-    const activeStatus = await this.repository.findParameterByTypeAndCode(
-      'subscription_status',
-      'active',
-    );
-    if (!activeStatus) {
-      throw new NotFoundException('Parámetro de estado "active" no encontrado');
-    }
-
-    const existingActive =
-      await this.repository.findActiveSubscriptionByCompanyId(
-        companyId,
-        activeStatus.id,
-      );
-    if (existingActive) {
-      throw new ConflictException('La empresa ya tiene una suscripción activa');
-    }
-
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    if (subscription.isMonthly) {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const companySubscription = await this.repository.create({
-      companyId,
-      subscriptionId: dto.subscriptionId,
-      statusId: activeStatus.id,
-      startDate,
-      endDate,
-      isCurrent: true,
-      paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
-      pricePaid: 0,
-      autoRenew: false,
-    });
-
-    this.logger.log(
-      `Empresa ${companyId} suscrita al plan gratuito "${subscription.name}"`,
-    );
-
-    return companySubscription;
+    return {
+      pricePaid: studies * consultationPrice.unitPrice,
+      consultationPriceId: consultationPrice.id,
+    };
   }
 
-  // ─── ePayco Subscription Flow ────────────────────────────
+  // ─── Pago de onboarding (checkout propio) ─────────────────
 
-  async subscribe(companyId: string, dto: SubscribeDto) {
-    // 1. Validar que la empresa existe
-    const company = await this.repository.findCompanyById(companyId);
-    if (!company) {
-      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
+  /**
+   * Carga el resumen de pago para la página de checkout propia. El link del
+   * correo trae companySubscriptionId + token; validamos el token y que aún
+   * esté pendiente de pago. No requiere sesión.
+   */
+  async getPaymentSummary(companySubscriptionId: string, token: string) {
+    const cs = await this.repository.findByIdWithDetails(companySubscriptionId);
+    if (!cs || !cs.paymentToken || cs.paymentToken !== token) {
+      throw new NotFoundException('Enlace de pago inválido o expirado');
     }
 
-    // 2. Validar que el plan existe y tiene epaycoPlanId
-    const subscription = await this.repository.findSubscriptionById(
-      dto.subscriptionId,
-    );
-
-    if (!subscription) {
-      throw new NotFoundException(
-        `Plan de suscripción con id=${dto.subscriptionId} no encontrado`,
-      );
-    }
-    if (!subscription.epaycoPlanId) {
-      throw new BadRequestException(
-        `El plan "${subscription.name}" no tiene configurado un plan en ePayco`,
-      );
-    }
-
-    // 3. Verificar que no tenga suscripción activa
-    const activeStatus = await this.repository.findParameterByTypeAndCode(
+    const pendingStatus = await this.repository.findParameterByTypeAndCode(
       'subscription_status',
-      'active',
+      'pending_payment',
     );
-    if (!activeStatus) {
-      throw new NotFoundException('Parámetro de estado "active" no encontrado');
+    const alreadyPaid = pendingStatus
+      ? cs.statusId !== pendingStatus.id
+      : false;
+
+    const studies =
+      cs.maxStudiesPerMonthOverride ?? cs.subscription.maxStudiesPerMonth ?? 0;
+
+    return {
+      companyName: cs.company.name,
+      planName: cs.subscription.name,
+      studiesPerMonth: studies,
+      maxUsers: cs.maxUsersOverride ?? cs.subscription.maxUsers,
+      amount: cs.pricePaid ?? 0,
+      currency: 'COP',
+      isMonthly: cs.subscription.isMonthly,
+      paymentFrequency: cs.subscription.isMonthly ? 'monthly' : 'annual',
+      startDate: cs.startDate,
+      endDate: cs.endDate,
+      alreadyPaid,
+    };
+  }
+
+  /**
+   * Procesa el pago inicial del onboarding: tokeniza la tarjeta, crea el
+   * cliente, crea un plan dinámico en ePayco con el monto personalizado y la
+   * suscripción recurrente. Marca la CompanySubscription como activa.
+   */
+  async payOnboarding(dto: PayOnboardingDto) {
+    const cs = await this.repository.findByIdWithDetails(
+      dto.companySubscriptionId,
+    );
+    if (!cs || !cs.paymentToken || cs.paymentToken !== dto.token) {
+      throw new NotFoundException('Enlace de pago inválido o expirado');
     }
 
-    const existingActive =
-      await this.repository.findActiveSubscriptionByCompanyId(
-        companyId,
-        activeStatus.id,
+    const [pendingStatus, activeStatus] = await Promise.all([
+      this.repository.findParameterByTypeAndCode(
+        'subscription_status',
+        'pending_payment',
+      ),
+      this.repository.findParameterByTypeAndCode(
+        'subscription_status',
+        'active',
+      ),
+    ]);
+    if (!pendingStatus || !activeStatus) {
+      throw new BadRequestException(
+        'Faltan parámetros de estado de suscripción (pending_payment / active)',
       );
-    if (existingActive) {
-      throw new ConflictException('La empresa ya tiene una suscripción activa');
+    }
+    if (cs.statusId !== pendingStatus.id) {
+      throw new ConflictException('Esta suscripción ya fue pagada');
     }
 
-    // 4. Guardar datos de facturación en la empresa
-    const { billing } = dto;
-    await this.repository.updateCompanyBilling(companyId, {
+    const amount = cs.pricePaid ?? 0;
+    if (amount <= 0) {
+      throw new BadRequestException(
+        'El monto de la suscripción no es válido para procesar el pago',
+      );
+    }
+
+    // Claim atómico: consume el paymentToken para que dos pagos concurrentes
+    // (doble clic / dos pestañas) no creen dos suscripciones ePayco. Sólo el
+    // primer request gana; el resto recibe el conflicto.
+    const claimed = await this.repository.claimPaymentToken(cs.id, dto.token);
+    if (!claimed) {
+      throw new ConflictException(
+        'Este pago ya está siendo procesado o la suscripción ya fue pagada.',
+      );
+    }
+
+    const { card, billing } = dto;
+
+    // 1. Guardar billing en la empresa ANTES de tocar ePayco (barato y reversible;
+    //    si algo en ePayco falla, no quedan cobros huérfanos por este paso).
+    await this.repository.updateCompanyBilling(cs.companyId, {
       billingName: billing.name,
       billingLastName: billing.lastName,
       billingDocTypeId: billing.docType,
@@ -155,81 +163,109 @@ export class CompanySubscriptionsService {
       billingPhone: billing.phone,
     });
 
-    // 5. Tokenizar tarjeta con ePayco
-    const { card } = dto;
-    const tokenCard = await this.epaycoService.createToken(card);
+    // Pasos en ePayco (tokenizar → cliente → plan → suscripción). Si algo falla
+    // ANTES de tener la suscripción creada, restauramos el paymentToken para que
+    // el cliente pueda reintentar con el mismo link (no perdió el acceso al pago).
+    let epaycoSubscriptionId: string;
+    let epaycoPlanId: string;
+    try {
+      // 2. Tokenizar tarjeta
+      const tokenCard = await this.epaycoService.createToken(card);
 
-    // 6. Obtener o crear cliente ePayco a nivel de empresa
-    let epaycoCustomerId = company.epaycoCustomerId ?? null;
+      // 3. Crear cliente ePayco (a nivel de empresa) o reutilizar
+      let epaycoCustomerId = cs.company.epaycoCustomerId ?? null;
+      if (!epaycoCustomerId) {
+        epaycoCustomerId = await this.epaycoService.createCustomer({
+          tokenCard,
+          name: billing.name,
+          lastName: billing.lastName,
+          email: billing.email,
+          city: billing.city,
+          address: billing.address,
+          phone: billing.phone,
+        });
+        await this.repository.setCompanyEpaycoCustomerId(
+          cs.companyId,
+          epaycoCustomerId,
+        );
+      } else {
+        await this.epaycoService.addNewToken(tokenCard, epaycoCustomerId);
+      }
 
-    if (!epaycoCustomerId) {
-      epaycoCustomerId = await this.epaycoService.createCustomer({
-        tokenCard,
-        name: billing.name,
-        lastName: billing.lastName,
-        email: billing.email,
-        city: billing.city,
-        address: billing.address,
-        phone: billing.phone,
+      // 4. Crear plan dinámico en ePayco con el monto personalizado. El id_plan
+      //    lleva un sufijo aleatorio para no colisionar si se reintenta un pago.
+      const interval = cs.subscription.isMonthly ? 'month' : 'year';
+      const idPlan = `cs_${cs.id}_${randomBytes(4).toString('hex')}`;
+      epaycoPlanId = await this.epaycoService.createPlan({
+        idPlan,
+        name: `${cs.subscription.name} - ${cs.company.name}`.slice(0, 90),
+        description: `Suscripción ${cs.subscription.name} (${interval}) para ${cs.company.name}`,
+        amount,
+        interval,
       });
-      await this.repository.setCompanyEpaycoCustomerId(
-        companyId,
-        epaycoCustomerId,
+
+      // 5. Crear la suscripción recurrente
+      epaycoSubscriptionId = await this.epaycoService.createSubscription({
+        idPlan: epaycoPlanId,
+        customer: epaycoCustomerId,
+        tokenCard,
+        docType: billing.docTypeCode,
+        docNumber: billing.docNumber,
+        urlConfirmation: `${this.configService.get<string>('BACKEND_PUBLIC_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
+      });
+    } catch (error) {
+      // Aún no hay cobro confirmado: devolvemos el token para permitir reintento.
+      await this.repository.restorePaymentToken(
+        cs.id,
+        dto.token,
+        pendingStatus.id,
       );
-    } else {
-      // Cliente ePayco ya existe → actualizar tarjeta default
-      await this.epaycoService.addNewToken(tokenCard, epaycoCustomerId);
+      throw error;
     }
 
-    // 7. Crear suscripción recurrente en ePayco
-    const epaycoSubscriptionId = await this.epaycoService.createSubscription({
-      idPlan: subscription.epaycoPlanId,
-      customer: epaycoCustomerId,
-      tokenCard,
-      docType: billing.docTypeCode,
-      docNumber: billing.docNumber,
-      urlConfirmation: `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
-    });
-
-    // 8. Calcular fechas
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    if (subscription.isMonthly) {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
+    // 6. Activar la suscripción y registrar el pago (atómico). Si falla, saga
+    //    compensatoria: cancelar la suscripción ePayco creada y restaurar el token.
+    let updated;
+    try {
+      updated = await this.repository.activateAfterPayment({
+        companySubscriptionId: cs.id,
+        activeStatusId: activeStatus.id,
+        epaycoPlanId,
+        epaycoSubscriptionId,
+        firstPayment: {
+          periodStart: cs.startDate,
+          periodEnd: cs.endDate,
+          amount,
+          currencyCode: 'COP',
+          responseCode: 200,
+          responseMessage: 'Pago inicial de onboarding procesado',
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Falló el commit en BD del pago de onboarding (empresa ${cs.companyId}); se cancela la suscripción ePayco creada.`,
+        error,
+      );
+      await this.safeCancelEpaycoSubscription(epaycoSubscriptionId);
+      await this.repository.restorePaymentToken(
+        cs.id,
+        dto.token,
+        pendingStatus.id,
+      );
+      throw new BadRequestException(
+        'Error guardando el pago. La operación fue revertida; por favor intenta de nuevo.',
+      );
     }
-
-    // 9. Crear company subscription activa
-    const companySubscription = await this.repository.create({
-      companyId,
-      subscriptionId: dto.subscriptionId,
-      statusId: activeStatus.id,
-      startDate,
-      endDate,
-      isCurrent: true,
-      paymentFrequency: subscription.isMonthly ? 'monthly' : 'annual',
-      pricePaid: subscription.price,
-      autoRenew: true,
-      epaycoSubscriptionId,
-    });
-
-    // 10. Registrar primer pago en historial
-    await this.repository.createPaymentHistory({
-      companySubscriptionId: companySubscription.id,
-      periodStart: startDate,
-      periodEnd: endDate,
-      amount: subscription.price ?? 0,
-      currencyCode: 'COP',
-      responseCode: 200,
-      responseMessage: 'Suscripción inicial creada exitosamente',
-    });
 
     this.logger.log(
-      `Empresa ${companyId} suscrita al plan "${subscription.name}" (ePayco subscription=${epaycoSubscriptionId})`,
+      `Empresa ${cs.companyId} pagó su suscripción de onboarding (ePayco subscription=${epaycoSubscriptionId})`,
     );
 
-    return companySubscription;
+    return {
+      paid: true,
+      companySubscriptionId: updated.id,
+      epaycoSubscriptionId,
+    };
   }
 
   // ─── Cancel Subscription ─────────────────────────────────
@@ -293,36 +329,12 @@ export class CompanySubscriptionsService {
   }
 
   async cancel(companyId: string) {
-    const { company, currentSubscription, activeStatus } =
+    // Cancela la suscripción activa. NO se crea ningún plan de reemplazo:
+    // sin suscripción activa la empresa pierde acceso al sistema.
+    const { company, currentSubscription } =
       await this.cancelCurrentSubscriptionInternal(companyId);
 
-    // Crear nueva suscripción gratuita
-    const freePlan = await this.subscriptionsService.findByName('Gratis');
-    if (!freePlan) {
-      throw new NotFoundException('Plan gratuito "Gratis" no encontrado');
-    }
-
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    if (freePlan.isMonthly) {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const freeSubscription = await this.repository.create({
-      companyId,
-      subscriptionId: freePlan.id,
-      statusId: activeStatus.id,
-      startDate,
-      endDate,
-      isCurrent: true,
-      paymentFrequency: freePlan.isMonthly ? 'monthly' : 'annual',
-      pricePaid: 0,
-      autoRenew: false,
-    });
-
-    // 6. Enviar email al administrador
+    // Notificar al administrador de la empresa
     const adminRole = await this.repository.findParameterByTypeAndCode(
       'user_company_role',
       'administrator',
@@ -355,10 +367,13 @@ export class CompanySubscriptionsService {
     }
 
     this.logger.log(
-      `Suscripción ${currentSubscription.id} cancelada para empresa ${companyId}; nueva suscripción gratuita ${freeSubscription.id}`,
+      `Suscripción ${currentSubscription.id} cancelada para empresa ${companyId}; la empresa queda sin suscripción activa`,
     );
 
-    return freeSubscription;
+    return {
+      cancelled: true,
+      subscriptionId: currentSubscription.id,
+    };
   }
 
   // ─── Change Plan ─────────────────────────────────────────
@@ -445,25 +460,8 @@ export class CompanySubscriptionsService {
       });
     }
 
-    const isNewFree = !newPlan.price || newPlan.price === 0;
-
-    // 6a. Branch: nuevo plan es Gratis → reusar cancel + crear Gratis
-    if (isNewFree) {
-      return this.changeToFreePlan(
-        companyId,
-        currentSubscription,
-        newPlan,
-        activeStatus.id,
-      );
-    }
-
-    // 6b. Branch: nuevo plan es pago
-    if (!newPlan.epaycoPlanId) {
-      throw new BadRequestException(
-        `El plan "${newPlan.name}" no tiene configurado un plan en ePayco`,
-      );
-    }
-
+    // El plan ePayco se crea dinámicamente con el monto calculado del nuevo
+    // nivel (no se requiere un plan preconfigurado en ePayco).
     return this.changeToPaidPlan(
       companyId,
       company,
@@ -472,49 +470,6 @@ export class CompanySubscriptionsService {
       activeStatus.id,
       dto,
     );
-  }
-
-  private async changeToFreePlan(
-    companyId: string,
-    currentSubscription: { id: string; epaycoSubscriptionId: string | null },
-    newPlan: { id: string; isMonthly: boolean; name: string },
-    activeStatusId: number,
-  ) {
-    // Cancela actual (incluye ePayco si aplica) y crea gratuita
-    await this.cancelCurrentSubscriptionInternal(companyId);
-
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    if (newPlan.isMonthly) {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const freeSubscription = await this.repository.create({
-      companyId,
-      subscriptionId: newPlan.id,
-      statusId: activeStatusId,
-      startDate,
-      endDate,
-      isCurrent: true,
-      paymentFrequency: newPlan.isMonthly ? 'monthly' : 'annual',
-      pricePaid: 0,
-      autoRenew: false,
-    });
-
-    this.logger.log(
-      `Empresa ${companyId} cambió al plan gratuito "${newPlan.name}"`,
-    );
-
-    await this.notifyPlanChanged(
-      companyId,
-      currentSubscription,
-      freeSubscription,
-      newPlan,
-    );
-
-    return freeSubscription;
   }
 
   private async changeToPaidPlan(
@@ -538,9 +493,8 @@ export class CompanySubscriptionsService {
     newPlan: {
       id: string;
       name: string;
-      price: number | null;
+      maxStudiesPerMonth: number | null;
       isMonthly: boolean;
-      epaycoPlanId: string | null;
     },
     activeStatusId: number,
     dto: ChangePlanDto,
@@ -628,16 +582,32 @@ export class CompanySubscriptionsService {
       );
     }
 
-    // Crear suscripción nueva en ePayco — punto crítico de falla
+    // Precio del nuevo nivel (= estudios × precio consulta vigente). Define el
+    // monto del plan dinámico que se cobrará en ePayco.
+    const { pricePaid, consultationPriceId } = await this.resolvePlanPrice(
+      newPlan.maxStudiesPerMonth,
+    );
+
+    // Crear plan dinámico + suscripción nueva en ePayco — punto crítico de falla.
+    const interval = newPlan.isMonthly ? 'month' : 'year';
+    let newEpaycoPlanId: string;
     let newEpaycoSubscriptionId: string;
     try {
+      newEpaycoPlanId = await this.epaycoService.createPlan({
+        idPlan: `cs_${currentSubscription.id}_${randomBytes(4).toString('hex')}`,
+        name: `${newPlan.name} - ${companyId}`.slice(0, 90),
+        description: `Cambio de plan a ${newPlan.name} (${interval})`,
+        amount: pricePaid,
+        interval,
+      });
+
       newEpaycoSubscriptionId = await this.epaycoService.createSubscription({
-        idPlan: newPlan.epaycoPlanId!,
+        idPlan: newEpaycoPlanId,
         customer: epaycoCustomerId,
         tokenCard,
         docType: billingDocTypeCode,
         docNumber: billingDocNumber,
-        urlConfirmation: `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
+        urlConfirmation: `${this.configService.get<string>('BACKEND_PUBLIC_URL', 'http://localhost:3000')}/api/webhooks/epayco`,
       });
     } catch (error) {
       // Falló el pago/suscripción ePayco → no tocamos BD, propagamos el error
@@ -683,14 +653,16 @@ export class CompanySubscriptionsService {
             endDate,
             isCurrent: true,
             paymentFrequency: newPlan.isMonthly ? 'monthly' : 'annual',
-            pricePaid: newPlan.price ?? 0,
+            pricePaid,
+            consultationPriceId,
             autoRenew: true,
+            epaycoPlanId: newEpaycoPlanId,
             epaycoSubscriptionId: newEpaycoSubscriptionId,
           },
           firstPayment: {
             periodStart: startDate,
             periodEnd: endDate,
-            amount: newPlan.price ?? 0,
+            amount: pricePaid,
             currencyCode: 'COP',
             responseCode: 200,
             responseMessage: 'Cambio de plan exitoso',
@@ -778,6 +750,44 @@ export class CompanySubscriptionsService {
 
   // ─── ePayco Webhook ──────────────────────────────────────
 
+  /**
+   * Destinatarios de notificación de una empresa: admin activo + correo de
+   * facturación, deduplicados (case-insensitive). Devuelve también un nombre
+   * legible para el saludo del correo.
+   */
+  private async resolveNotificationRecipients(
+    companyId: string,
+    billingEmail: string | null,
+    billingName: string | null,
+    billingLastName: string | null,
+  ): Promise<{ to: string[]; userName: string }> {
+    const adminRole = await this.repository.findParameterByTypeAndCode(
+      'user_company_role',
+      'administrator',
+    );
+    const admin = adminRole
+      ? await this.repository.findCompanyAdmin(companyId, adminRole.id)
+      : null;
+
+    const seen = new Set<string>();
+    const to: string[] = [];
+    const push = (email?: string | null) => {
+      if (!email) return;
+      const key = email.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      to.push(email);
+    };
+    push(admin?.email);
+    push(billingEmail);
+
+    const userName = admin
+      ? `${admin.name} ${admin.lastName ?? ''}`.trim()
+      : `${billingName ?? ''} ${billingLastName ?? ''}`.trim() || 'cliente';
+
+    return { to, userName };
+  }
+
   private validateEpaycoSignature(dto: EpaycoConfirmationDto): boolean {
     const pCustId = this.configService.get<string>('EPAYCO_P_CUST_ID');
     const pKey = this.configService.get<string>('EPAYCO_P_KEY');
@@ -842,7 +852,28 @@ export class CompanySubscriptionsService {
     const currentEndDate = new Date(companySubscription.endDate);
 
     if (responseCode === 1) {
-      // Cobro exitoso → renovar período
+      // El primer cobro corresponde al pago inicial ya registrado en
+      // payOnboarding (sin epaycoTransactionId): lo conciliamos adjuntándole los
+      // datos del webhook y NO extendemos el periodo (ya estaba cubierto). Sólo
+      // los cobros posteriores (renovaciones) extienden el periodo.
+      const initialPayment =
+        await this.repository.findUnreconciledInitialPayment(
+          companySubscription.id,
+        );
+      if (initialPayment) {
+        await this.repository.reconcileInitialPayment(initialPayment.id, {
+          epaycoRef: dto.x_ref_payco,
+          epaycoTransactionId: dto.x_transaction_id,
+          franchise: dto.x_franchise,
+          approvalCode: dto.x_approval_code,
+        });
+        this.logger.log(
+          `Pago inicial de onboarding conciliado para suscripción ${companySubscription.id} (ref=${dto.x_ref_payco})`,
+        );
+        return { received: true };
+      }
+
+      // Cobro exitoso (renovación) → extender período
       const subscription = companySubscription.subscription;
       const newEndDate = new Date(currentEndDate);
       if (subscription.isMonthly) {
@@ -903,6 +934,29 @@ export class CompanySubscriptionsService {
       this.logger.warn(
         `Suscripción ${companySubscription.id} rechazada (código=${responseCode}) empresa=${companySubscription.companyId}`,
       );
+
+      // Notificar al cliente (admin + facturación) el motivo del rechazo.
+      try {
+        const { to, userName } = await this.resolveNotificationRecipients(
+          companySubscription.companyId,
+          companySubscription.company.billingEmail,
+          companySubscription.company.billingName,
+          companySubscription.company.billingLastName,
+        );
+        await this.mailService.sendPaymentFailedEmail({
+          to,
+          userName,
+          companyName: companySubscription.company.name,
+          planName: companySubscription.subscription.name,
+          reason:
+            dto.x_response ||
+            'El banco rechazó el cobro recurrente de tu suscripción.',
+        });
+      } catch (error: any) {
+        this.logger.warn(
+          `Error enviando correo de pago rechazado (suscripción ${companySubscription.id}): ${error.message}`,
+        );
+      }
     } else if (responseCode === 3) {
       this.logger.log(
         `Suscripción ${companySubscription.id} pendiente de confirmación (ref=${dto.x_ref_payco})`,
