@@ -192,17 +192,23 @@ export class CompanySubscriptionsService {
         await this.epaycoService.addNewToken(tokenCard, epaycoCustomerId);
       }
 
-      // 4. Crear plan dinámico en ePayco con el monto personalizado. El id_plan
-      //    lleva un sufijo aleatorio para no colisionar si se reintenta un pago.
+      // 4. Resolver el plan ePayco. Plan estático (subscription.epaycoPlanId) →
+      //    reutilizamos su id_plan precreado, con el monto ya congelado. Plan
+      //    dinámico → creamos el plan con el monto personalizado; el id_plan lleva
+      //    un sufijo aleatorio para no colisionar si se reintenta un pago.
       const interval = cs.subscription.isMonthly ? 'month' : 'year';
-      const idPlan = `cs_${cs.id}_${randomBytes(4).toString('hex')}`;
-      epaycoPlanId = await this.epaycoService.createPlan({
-        idPlan,
-        name: `${cs.subscription.name} - ${cs.company.name}`.slice(0, 90),
-        description: `Suscripción ${cs.subscription.name} (${interval}) para ${cs.company.name}`,
-        amount,
-        interval,
-      });
+      if (cs.subscription.epaycoPlanId) {
+        epaycoPlanId = cs.subscription.epaycoPlanId;
+      } else {
+        const idPlan = `cs_${cs.id}_${randomBytes(4).toString('hex')}`;
+        epaycoPlanId = await this.epaycoService.createPlan({
+          idPlan,
+          name: `${cs.subscription.name} - ${cs.company.name}`.slice(0, 90),
+          description: `Suscripción ${cs.subscription.name} (${interval}) para ${cs.company.name}`,
+          amount,
+          interval,
+        });
+      }
 
       // 5. Crear la suscripción recurrente
       epaycoSubscriptionId = await this.epaycoService.createSubscription({
@@ -495,6 +501,7 @@ export class CompanySubscriptionsService {
       name: string;
       maxStudiesPerMonth: number | null;
       isMonthly: boolean;
+      epaycoPlanId: string | null;
     },
     activeStatusId: number,
     dto: ChangePlanDto,
@@ -588,18 +595,22 @@ export class CompanySubscriptionsService {
       newPlan.maxStudiesPerMonth,
     );
 
-    // Crear plan dinámico + suscripción nueva en ePayco — punto crítico de falla.
+    // Resolver plan ePayco + crear suscripción nueva — punto crítico de falla.
+    // Plan estático → reutilizamos su id_plan precreado; plan dinámico → lo creamos
+    // con el monto del nuevo nivel.
     const interval = newPlan.isMonthly ? 'month' : 'year';
     let newEpaycoPlanId: string;
     let newEpaycoSubscriptionId: string;
     try {
-      newEpaycoPlanId = await this.epaycoService.createPlan({
-        idPlan: `cs_${currentSubscription.id}_${randomBytes(4).toString('hex')}`,
-        name: `${newPlan.name} - ${companyId}`.slice(0, 90),
-        description: `Cambio de plan a ${newPlan.name} (${interval})`,
-        amount: pricePaid,
-        interval,
-      });
+      newEpaycoPlanId =
+        newPlan.epaycoPlanId ??
+        (await this.epaycoService.createPlan({
+          idPlan: `cs_${currentSubscription.id}_${randomBytes(4).toString('hex')}`,
+          name: `${newPlan.name} - ${companyId}`.slice(0, 90),
+          description: `Cambio de plan a ${newPlan.name} (${interval})`,
+          amount: pricePaid,
+          interval,
+        }));
 
       newEpaycoSubscriptionId = await this.epaycoService.createSubscription({
         idPlan: newEpaycoPlanId,
