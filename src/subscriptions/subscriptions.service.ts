@@ -32,35 +32,52 @@ export class SubscriptionsService {
    * en ePayco; si el ConsultationPrice cambia luego, el plan debe recrearse
    * (parte del flujo de versionado de ConsultationPrice, fuera de este alcance).
    */
-  private async createEpaycoPlan(dto: CreateSubscriptionDto): Promise<string> {
-    const studies = dto.maxStudiesPerMonth ?? 0;
+  /**
+   * Crea un plan recurrente en ePayco para un plan de catálogo, con el monto
+   * = maxStudiesPerMonth × unitPrice. Devuelve el id_plan a persistir. Recibe el
+   * unitPrice explícito para que el resync use el precio nuevo sin reconsultarlo.
+   */
+  private async createEpaycoPlan(
+    plan: {
+      name: string;
+      description?: string | null;
+      maxStudiesPerMonth?: number | null;
+      isMonthly?: boolean;
+    },
+    unitPrice: number,
+  ): Promise<string> {
+    const studies = plan.maxStudiesPerMonth ?? 0;
     if (studies <= 0) {
       throw new BadRequestException(
         'Un plan de ePayco requiere maxStudiesPerMonth mayor a 0 para calcular el monto a cobrar.',
       );
     }
 
+    const amount = studies * unitPrice;
+    // isMonthly por defecto es true (igual que la columna en BD).
+    const interval = plan.isMonthly === false ? 'year' : 'month';
+    // id_plan visible en el panel de ePayco: prefijo legible + sufijo único para
+    // no colisionar con planes anteriores del mismo nombre.
+    const idPlan = `plan_${this.slug(plan.name)}_${randomBytes(4).toString('hex')}`;
+
+    return this.epaycoService.createPlan({
+      idPlan,
+      name: plan.name.slice(0, 90),
+      description: (plan.description ?? plan.name).slice(0, 250),
+      amount,
+      interval,
+    });
+  }
+
+  /** Precio de consulta vigente o error si no hay ninguno configurado. */
+  private async requireActiveUnitPrice(): Promise<number> {
     const activePrice = await this.consultationPricesService.getActivePrice();
     if (!activePrice) {
       throw new BadRequestException(
         'No hay un precio de consulta activo configurado. Configure un ConsultationPrice antes de crear planes de ePayco.',
       );
     }
-
-    const amount = studies * activePrice.unitPrice;
-    // isMonthly por defecto es true (igual que la columna en BD).
-    const interval = dto.isMonthly === false ? 'year' : 'month';
-    // id_plan visible en el panel de ePayco: prefijo legible + sufijo único para
-    // no colisionar con planes anteriores del mismo nombre.
-    const idPlan = `plan_${this.slug(dto.name)}_${randomBytes(4).toString('hex')}`;
-
-    return this.epaycoService.createPlan({
-      idPlan,
-      name: dto.name.slice(0, 90),
-      description: (dto.description ?? dto.name).slice(0, 250),
-      amount,
-      interval,
-    });
+    return activePrice.unitPrice;
   }
 
   /** Normaliza un nombre a un slug seguro para el id_plan de ePayco. */
@@ -114,7 +131,7 @@ export class SubscriptionsService {
     // guardar su id_plan. Plan dinámico (isEpaycoPlan false/undefined): epaycoPlanId
     // queda null y el plan ePayco se crea por empresa en el onboarding.
     const epaycoPlanId = dto.isEpaycoPlan
-      ? await this.createEpaycoPlan(dto)
+      ? await this.createEpaycoPlan(dto, await this.requireActiveUnitPrice())
       : null;
 
     try {
@@ -146,9 +163,102 @@ export class SubscriptionsService {
     }
   }
 
-  async findAll() {
+  /**
+   * Recrea el catálogo de planes con un nuevo precio de consulta. Se invoca al
+   * crear un ConsultationPrice que entra vigente. Por cada plan actual
+   * (isCurrent=true) crea uno nuevo clonando sus límites pero con el monto
+   * recalculado: los que eran ePayco generan un plan nuevo en ePayco con el
+   * precio nuevo; los dinámicos se clonan solo en BD. Los planes viejos pasan a
+   * isCurrent=false (siguen isActive y sin cancelar en ePayco, para no romper los
+   * cobros recurrentes de las empresas que ya los usan).
+   *
+   * Best-effort: si crear un plan en ePayco falla, ese plan se omite y se sigue
+   * con los demás; el precio nuevo ya quedó guardado por el llamador.
+   */
+  async resyncPlansForNewPrice(unitPrice: number, adminId: string | null) {
+    const current = await this.repository.findCurrentActive();
+    if (current.length === 0) {
+      this.logger.log('Resync de planes: no hay planes vigentes que recrear.');
+      return { recreated: 0, skipped: 0 };
+    }
+
+    const newPlans: Array<{
+      name: string;
+      description: string | null;
+      isMonthly: boolean;
+      maxUsers: number;
+      maxCompanies: number;
+      maxCustomers: number | null;
+      maxStudiesPerMonth: number | null;
+      maxAiAnalysisPerMonth: number | null;
+      maxPdfExtractionsPerMonth: number | null;
+      isActive: boolean;
+      epaycoPlanId: string | null;
+      createdBy: string | null;
+    }> = [];
+    const replacedIds: string[] = [];
+    let skipped = 0;
+
+    for (const plan of current) {
+      let epaycoPlanId: string | null = null;
+      // Solo recreamos en ePayco los planes que ya eran de ePayco (tenían id_plan).
+      if (plan.epaycoPlanId) {
+        try {
+          epaycoPlanId = await this.createEpaycoPlan(plan, unitPrice);
+        } catch (error) {
+          this.logger.warn(
+            `Resync: no se pudo recrear en ePayco el plan "${plan.name}" (${plan.id}); se omite. ${error?.message ?? error}`,
+          );
+          skipped++;
+          continue;
+        }
+      }
+
+      newPlans.push({
+        name: plan.name,
+        description: plan.description,
+        isMonthly: plan.isMonthly,
+        maxUsers: plan.maxUsers,
+        maxCompanies: plan.maxCompanies,
+        maxCustomers: plan.maxCustomers,
+        maxStudiesPerMonth: plan.maxStudiesPerMonth,
+        maxAiAnalysisPerMonth: plan.maxAiAnalysisPerMonth,
+        maxPdfExtractionsPerMonth: plan.maxPdfExtractionsPerMonth,
+        isActive: true,
+        epaycoPlanId,
+        createdBy: adminId,
+      });
+      replacedIds.push(plan.id);
+    }
+
+    if (newPlans.length === 0) {
+      this.logger.warn(
+        'Resync de planes: ningún plan pudo recrearse; el catálogo vigente queda sin cambios.',
+      );
+      return { recreated: 0, skipped };
+    }
+
+    await this.repository.replaceCurrentCatalog({
+      oldPlanIds: replacedIds,
+      newPlans,
+    });
+
+    this.logger.log(
+      `Resync de planes: ${newPlans.length} plan(es) recreados con el nuevo precio (${skipped} omitidos).`,
+    );
+    return { recreated: newPlans.length, skipped };
+  }
+
+  /**
+   * Lista planes. Por defecto solo el catálogo vigente (lo que consume el
+   * onboarding). Con scope 'all' devuelve TODOS los planes —vigentes, legados y
+   * desactivados— para la vista de administración del portal.
+   */
+  async findAll(scope?: 'all') {
     const [subscriptions, activePrice] = await Promise.all([
-      this.repository.findAllActive(),
+      scope === 'all'
+        ? this.repository.findAllIncludingInactive()
+        : this.repository.findAllActive(),
       this.consultationPricesService.getActivePrice(),
     ]);
     const unitPrice = activePrice?.unitPrice ?? null;
@@ -217,7 +327,7 @@ export class SubscriptionsService {
     const hasCompanies = await this.repository.hasCompanies(id);
     if (hasCompanies) {
       throw new ConflictException(
-        'No se puede eliminar: esta suscripción tiene empresas asociadas',
+        'No se puede eliminar: alguna empresa tiene o tuvo esta suscripción (se conserva como histórico). Desactívela en su lugar.',
       );
     }
 
