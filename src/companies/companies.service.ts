@@ -275,14 +275,11 @@ export class CompaniesService {
             unlimited: effectiveLimits.maxPdfExtractionsPerMonth === null,
           },
         },
+        // Beneficios incluidos por defecto en todos los planes.
         features: {
-          dashboardLevel: subscription.dashboardLevel,
-          dashboardLevelId: subscription.dashboardLevelId,
-          excelReports: subscription.excelReports,
-          emailNotifications: subscription.emailNotifications,
-          themeCustomization: subscription.themeCustomization,
-          supportLevel: subscription.supportLevel,
-          supportLevelId: subscription.supportLevelId,
+          excelReports: true,
+          emailNotifications: true,
+          themeCustomization: true,
         },
       };
 

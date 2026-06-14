@@ -17,6 +17,7 @@ import { SupabaseService } from '../auth/supabase.service.js';
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
 import { numberToSpanishWords } from './utils/number-to-words.js';
+import { formatCOP } from '../common/utils/currency.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -871,7 +872,7 @@ export class PromissoryNotesService {
       promissoryId: params.promissoryNoteId.toString(),
       customerIdentificationType,
       priceDescription: params.amountInWords,
-      price: this.formatCOP(params.amount),
+      price: formatCOP(params.amount),
       paymentMethod: HARDCODED_PAYMENT_METHOD,
       paymentDay: HARDCODED_PAYMENT_DAY,
       paymentMonth: HARDCODED_PAYMENT_MONTH,
@@ -977,13 +978,5 @@ export class PromissoryNotesService {
     }
 
     return html;
-  }
-
-  private formatCOP(amount: number): string {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      maximumFractionDigits: 0,
-    }).format(amount);
   }
 }

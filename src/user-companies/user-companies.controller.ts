@@ -23,9 +23,11 @@ import { UserCompaniesService } from './user-companies.service.js';
 import { CreateUserCompanyDto } from './dto/create-user-company.dto.js';
 import { UpdateUserCompanyDto } from './dto/update-user-company.dto.js';
 import { FilterUserCompanyDto } from './dto/filter-user-company.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('User Companies')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/users')
 export class UserCompaniesController {
   constructor(private readonly userCompaniesService: UserCompaniesService) {}

@@ -25,9 +25,11 @@ import { CreditStudiesService } from './credit-studies.service.js';
 import { CreateCreditStudyDto } from './dto/create-credit-study.dto.js';
 import { UpdateCreditStudyDto } from './dto/update-credit-study.dto.js';
 import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Credit Studies')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/credit-studies')
 export class CreditStudiesController {
   constructor(private readonly creditStudiesService: CreditStudiesService) {}

@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DashboardRepository } from './dashboard.repository.js';
 import { FilterDashboardDto } from './dto/filter-dashboard.dto.js';
 
@@ -136,8 +132,6 @@ export class DashboardService {
   }
 
   async getAdvancedDashboard(companyId: string, filters: FilterDashboardDto) {
-    await this.assertAdvancedAccess(companyId);
-
     const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : undefined;
     const dateTo = filters.dateTo ? new Date(filters.dateTo) : undefined;
 
@@ -327,26 +321,6 @@ export class DashboardService {
     const previousFrom = new Date(effectiveFrom.getTime() - spanMs);
 
     return { previousFrom, previousTo };
-  }
-
-  private async assertAdvancedAccess(companyId: string): Promise<void> {
-    const company = await this.repository.getCompanySubscription(companyId);
-
-    if (!company) {
-      throw new NotFoundException(`Empresa con id=${companyId} no encontrada`);
-    }
-
-    const dashboardLevel =
-      company.companySubscriptions[0]?.subscription?.dashboardLevel;
-
-    if (
-      dashboardLevel?.code !== 'advanced' &&
-      dashboardLevel?.code !== 'premium'
-    ) {
-      throw new ForbiddenException(
-        'Su suscripción no incluye acceso al dashboard avanzado. Actualice a un plan avanzado o premium.',
-      );
-    }
   }
 
   private fillMonths(

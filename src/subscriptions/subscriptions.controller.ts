@@ -38,8 +38,9 @@ export class SubscriptionsController {
     status: 201,
     description: 'Subscription created successfully',
   })
-  create(@Body() dto: CreateSubscriptionDto) {
-    return this.subscriptionsService.create(dto);
+  create(@Body() dto: CreateSubscriptionDto, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.subscriptionsService.create(dto, userId);
   }
 
   @ApiBearerAuth()
