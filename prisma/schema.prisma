@@ -102,6 +102,11 @@ model Subscription {
   // con el monto congelado en el momento en que se creó el plan.
   epaycoPlanId              String?  @map("epayco_plan_id") @db.VarChar(255)
   isActive                  Boolean  @default(true) @map("is_active")
+  // Plan ofrecible en el catálogo vigente. Al cambiar el ConsultationPrice se
+  // recrean los planes con el precio nuevo (isCurrent=true) y los viejos pasan a
+  // isCurrent=false: dejan de ofrecerse en el onboarding, pero siguen isActive=true
+  // y sin cancelar en ePayco para no romper los cobros recurrentes de quien ya los tiene.
+  isCurrent                 Boolean  @default(true) @map("is_current")
   createdBy                 String?  @map("created_by") @db.Uuid
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")

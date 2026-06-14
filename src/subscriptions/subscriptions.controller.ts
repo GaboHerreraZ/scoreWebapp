@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Req,
   ParseUUIDPipe,
   HttpCode,
@@ -22,6 +23,7 @@ import { SubscriptionsService } from './subscriptions.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
+import { ListSubscriptionsDto } from './dto/list-subscriptions.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 
@@ -60,10 +62,13 @@ export class SubscriptionsController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'List all active subscriptions' })
-  @ApiResponse({ status: 200, description: 'List of all active subscriptions' })
-  findAll() {
-    return this.subscriptionsService.findAll();
+  @ApiOperation({
+    summary:
+      'List subscriptions (current catalog by default; scope=all for admin)',
+  })
+  @ApiResponse({ status: 200, description: 'List of subscriptions' })
+  findAll(@Query() query: ListSubscriptionsDto) {
+    return this.subscriptionsService.findAll(query.scope);
   }
 
   @Public()
