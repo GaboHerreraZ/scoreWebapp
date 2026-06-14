@@ -24,26 +24,25 @@ model Parameter {
   parent   Parameter?  @relation("ParameterHierarchy", fields: [parentId], references: [id])
   children Parameter[] @relation("ParameterHierarchy")
 
-  companiesBySector              Company[]     @relation("CompanySector")
-  customersByType                Customer[]    @relation("CustomerPersonType")
-  customersByEconomicActivity    Customer[]    @relation("CustomerEconomicActivity")
-  profilesByRole                 Profile[]     @relation("ProfileRole")
-  profilesByIdentificationType   Profile[]     @relation("ProfileIdentificationType")
-  userCompaniesByRole            UserCompany[] @relation("UserCompanyRole")
-  creditStudiesByStatus          CreditStudy[] @relation("CreditStudyStatus")
-  creditStudiesByIncomeStatement CreditStudy[] @relation("CreditStudyIncomeStatement")
-  companySubscriptionsByStatus   CompanySubscription[] @relation("CompanySubscriptionStatus")
-  subscriptionsBySupportLevel    Subscription[] @relation("SubscriptionSupportLevel")
-  subscriptionsByDashboardLevel  Subscription[] @relation("SubscriptionDashboardLevel")
-  aiAnalysesByType               AiAnalysis[]   @relation("AiAnalysisType")
-  invitationsByStatus            Invitation[]   @relation("InvitationStatus")
-  customersByIdentificationType          Customer[]     @relation("CustomerIdentificationType")
-  customersByLegalRepIdentificationType  Customer[]     @relation("CustomerLegalRepIdentificationType")
-  companiesByAccountType         Company[]      @relation("CompanyAccountType")
-  companiesByAccountBank         Company[]      @relation("CompanyAccountBank")
-  companiesByBillingDocType      Company[]      @relation("CompanyBillingDocType")
-  promissoryNotesByStatus        PromissoryNote[] @relation("PromissoryNoteStatus")
-  notificationsByType            Notification[]   @relation("NotificationType")
+  companiesBySector                     Company[]             @relation("CompanySector")
+  customersByType                       Customer[]            @relation("CustomerPersonType")
+  customersByEconomicActivity           Customer[]            @relation("CustomerEconomicActivity")
+  profilesByRole                        Profile[]             @relation("ProfileRole")
+  profilesByIdentificationType          Profile[]             @relation("ProfileIdentificationType")
+  userCompaniesByRole                   UserCompany[]         @relation("UserCompanyRole")
+  creditStudiesByStatus                 CreditStudy[]         @relation("CreditStudyStatus")
+  creditStudiesByIncomeStatement        CreditStudy[]         @relation("CreditStudyIncomeStatement")
+  companySubscriptionsByStatus          CompanySubscription[] @relation("CompanySubscriptionStatus")
+  aiAnalysesByType                      AiAnalysis[]          @relation("AiAnalysisType")
+  invitationsByStatus                   Invitation[]          @relation("InvitationStatus")
+  customersByIdentificationType         Customer[]            @relation("CustomerIdentificationType")
+  customersByLegalRepIdentificationType Customer[]            @relation("CustomerLegalRepIdentificationType")
+  companiesByAccountType                Company[]             @relation("CompanyAccountType")
+  companiesByAccountBank                Company[]             @relation("CompanyAccountBank")
+  companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
+  promissoryNotesByStatus               PromissoryNote[]      @relation("PromissoryNoteStatus")
+  notificationsByType                   Notification[]        @relation("NotificationType")
+  consultationPricesByDiscountType      ConsultationPrice[]   @relation("ConsultationPriceDiscountType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -52,32 +51,32 @@ model Parameter {
 // ─── Profile (extiende auth.users de Supabase) ─────────────
 
 model Profile {
-  id                    String   @id @db.Uuid
-  email                 String   @unique @db.VarChar(255)
-  name                  String?  @db.VarChar(150)
-  lastName              String?  @map("last_name") @db.VarChar(150)
-  phone                 String?  @db.VarChar(50)
-  roleId                Int?     @map("role_id")
-  position              String?  @db.VarChar(150)
-  identificationTypeId  Int?     @map("identification_type_id")
-  identificationNumber  String?  @map("identification_number") @db.VarChar(50)
-  metadata              Json?    @default("{}")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                   String   @id @db.Uuid
+  email                String   @unique @db.VarChar(255)
+  name                 String?  @db.VarChar(150)
+  lastName             String?  @map("last_name") @db.VarChar(150)
+  phone                String?  @db.VarChar(50)
+  roleId               Int?     @map("role_id")
+  position             String?  @db.VarChar(150)
+  identificationTypeId Int?     @map("identification_type_id")
+  identificationNumber String?  @map("identification_number") @db.VarChar(50)
+  metadata             Json?    @default("{}")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
-  role               Parameter?      @relation("ProfileRole", fields: [roleId], references: [id])
-  identificationType Parameter?      @relation("ProfileIdentificationType", fields: [identificationTypeId], references: [id])
-  userCompanies   UserCompany[]   @relation("UserCompanyUser")
-  invitedUsers    UserCompany[]   @relation("UserCompanyInvitedBy")
-  sentInvitations Invitation[]    @relation("InvitationInvitedBy")
-  createdCustomers Customer[]     @relation("CustomerCreatedBy")
-  updatedCustomers Customer[]     @relation("CustomerUpdatedBy")
-  createdStudies   CreditStudy[]  @relation("CreditStudyCreatedBy")
-  updatedStudies   CreditStudy[]  @relation("CreditStudyUpdatedBy")
-  aiAnalyses       AiAnalysis[]   @relation("AiAnalysisPerformedBy")
-  createdPromissoryNotes PromissoryNote[] @relation("PromissoryNoteCreatedBy")
-  createdNotifications   Notification[]   @relation("NotificationCreatedBy")
-  notificationReads      NotificationRead[] @relation("NotificationReadUser")
+  role                      Parameter?          @relation("ProfileRole", fields: [roleId], references: [id])
+  identificationType        Parameter?          @relation("ProfileIdentificationType", fields: [identificationTypeId], references: [id])
+  userCompanies             UserCompany[]       @relation("UserCompanyUser")
+  invitedUsers              UserCompany[]       @relation("UserCompanyInvitedBy")
+  sentInvitations           Invitation[]        @relation("InvitationInvitedBy")
+  createdCustomers          Customer[]          @relation("CustomerCreatedBy")
+  updatedCustomers          Customer[]          @relation("CustomerUpdatedBy")
+  createdStudies            CreditStudy[]       @relation("CreditStudyCreatedBy")
+  updatedStudies            CreditStudy[]       @relation("CreditStudyUpdatedBy")
+  aiAnalyses                AiAnalysis[]        @relation("AiAnalysisPerformedBy")
+  createdPromissoryNotes    PromissoryNote[]    @relation("PromissoryNoteCreatedBy")
+  createdNotifications      Notification[]      @relation("NotificationCreatedBy")
+  notificationReads         NotificationRead[]  @relation("NotificationReadUser")
 
   @@map("profiles")
 }
@@ -85,74 +84,103 @@ model Profile {
 // ─── Suscripción ────────────────────────────────────────────
 
 model Subscription {
-  id               String   @id @default(uuid()) @db.Uuid
-  name             String   @db.VarChar(150)
-  description      String?  @db.VarChar(500)
-  price            Float?   @map("price")
-  isMonthly        Boolean  @default(true) @map("is_monthly")
-  maxUsers         Int      @map("max_users")
-  maxCompanies     Int      @map("max_companies")
-  maxCustomers     Int?     @map("max_customers")
-  maxStudiesPerMonth Int?   @map("max_studies_per_month")
-  dashboardLevelId Int      @map("dashboard_level_id")
-  excelReports     Boolean  @default(false) @map("excel_reports")
-  emailNotifications Boolean @default(false) @map("email_notifications")
-  themeCustomization Boolean @default(false) @map("theme_customization")
-  supportLevelId          Int      @map("support_level_id")
-  maxAiAnalysisPerMonth      Int?     @map("max_ai_analysis_per_month")
-  maxPdfExtractionsPerMonth  Int?     @map("max_pdf_extractions_per_month")
-  epaycoPlanId               String?  @map("epayco_plan_id") @db.VarChar(100)
-  isActive                Boolean  @default(true) @map("is_active")
-  createdAt               DateTime @default(now()) @map("created_at")
-  updatedAt               DateTime @updatedAt @map("updated_at")
+  id                        String   @id @default(uuid()) @db.Uuid
+  name                      String   @db.VarChar(150)
+  description               String?  @db.VarChar(500)
+  isMonthly                 Boolean  @default(true) @map("is_monthly")
+  maxUsers                  Int      @map("max_users")
+  maxCompanies              Int      @map("max_companies")
+  maxCustomers              Int?     @map("max_customers")
+  // Nº de consultas (estudios) incluidas por mes. El precio del plan es derivado:
+  // maxStudiesPerMonth × unitPrice del ConsultationPrice vigente. 0/null = plan gratis.
+  maxStudiesPerMonth        Int?     @map("max_studies_per_month")
+  maxAiAnalysisPerMonth     Int?     @map("max_ai_analysis_per_month")
+  maxPdfExtractionsPerMonth Int?     @map("max_pdf_extractions_per_month")
+  isActive                  Boolean  @default(true) @map("is_active")
+  createdBy                 String?  @map("created_by") @db.Uuid
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
 
-  dashboardLevel       Parameter @relation("SubscriptionDashboardLevel", fields: [dashboardLevelId], references: [id])
-  supportLevel         Parameter @relation("SubscriptionSupportLevel", fields: [supportLevelId], references: [id])
+  createdByAdmin       PlatformAdmin?        @relation("SubscriptionCreatedBy", fields: [createdBy], references: [id])
   companySubscriptions CompanySubscription[]
 
   @@map("subscriptions")
 }
 
+// ─── Precio de la consulta (Creditia) — versionado en el tiempo ──
+// Cada registro fija el valor unitario de una consulta. Solo uno debe estar
+// activo a la vez. Para una promo temporal se crea un registro con hasDiscount
+// y validUntil; al vencer se desactiva y vuelve a regir el precio base.
+// CompanySubscription guarda el id del registro con el que se calculó su precio,
+// dejando ese precio congelado aunque el valor cambie después.
+
+model ConsultationPrice {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String    @db.VarChar(150)
+  // unitPrice = precio FINAL por consulta (ya con el descuento aplicado). Es el
+  // valor que se usa en el cálculo del plan. basePrice/discount* son informativos.
+  unitPrice     Float     @map("unit_price")
+  currencyCode  String    @default("COP") @map("currency_code") @db.VarChar(10)
+  hasDiscount    Boolean   @default(false) @map("has_discount")
+  basePrice      Float?    @map("base_price") // precio normal antes del descuento
+  discountTypeId Int?      @map("discount_type_id") // Parameter (type 'discount_type'): 'percentage' | 'fixed'
+  discountValue  Float?    @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
+  validFrom      DateTime  @map("valid_from") @db.Date
+  validUntil    DateTime? @map("valid_until") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  createdBy     String    @map("created_by") @db.Uuid
+  updatedBy     String?   @map("updated_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  createdByAdmin       PlatformAdmin         @relation("ConsultationPriceCreatedBy", fields: [createdBy], references: [id])
+  updatedByAdmin       PlatformAdmin?        @relation("ConsultationPriceUpdatedBy", fields: [updatedBy], references: [id])
+  discountType         Parameter?            @relation("ConsultationPriceDiscountType", fields: [discountTypeId], references: [id])
+  companySubscriptions CompanySubscription[]
+
+  @@map("consultation_prices")
+}
+
 // ─── Empresa ────────────────────────────────────────────────
 
 model Company {
-  id             String   @id @default(uuid()) @db.Uuid
-  name           String   @db.VarChar(255)
-  nit            String   @unique @db.VarChar(50)
-  sectorId       Int      @map("sector_id")
-  state          String   @db.VarChar(150)
-  city           String   @db.VarChar(150)
-  address        String   @db.VarChar(255)
-  accountTypeId  Int?     @map("account_type_id")
-  accountBankId  Int?     @map("account_bank_id")
-  accountNumber  String?  @map("account_number") @db.VarChar(50)
-  logoUrl             String?  @map("logo_url") @db.VarChar(500)
-  billingName         String?  @map("billing_name") @db.VarChar(150)
-  billingLastName     String?  @map("billing_last_name") @db.VarChar(150)
-  billingDocTypeId    Int?     @map("billing_doc_type_id")
-  billingDocNumber    String?  @map("billing_doc_number") @db.VarChar(50)
-  billingEmail        String?  @map("billing_email") @db.VarChar(255)
-  billingAddress      String?  @map("billing_address") @db.VarChar(255)
-  billingState        String?  @map("billing_state") @db.VarChar(150)
-  billingCity         String?  @map("billing_city") @db.VarChar(150)
-  billingPhone        String?  @map("billing_phone") @db.VarChar(50)
-  epaycoCustomerId    String?  @map("epayco_customer_id") @db.VarChar(100)
-  isActive            Boolean  @default(true) @map("is_active")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @db.VarChar(255)
+  nit              String   @unique @db.VarChar(50)
+  sectorId         Int      @map("sector_id")
+  state            String   @db.VarChar(150)
+  city             String   @db.VarChar(150)
+  address          String   @db.VarChar(255)
+  accountTypeId    Int?     @map("account_type_id")
+  accountBankId    Int?     @map("account_bank_id")
+  accountNumber    String?  @map("account_number") @db.VarChar(50)
+  logoUrl          String?  @map("logo_url") @db.VarChar(500)
+  billingName      String?  @map("billing_name") @db.VarChar(150)
+  billingLastName  String?  @map("billing_last_name") @db.VarChar(150)
+  billingDocTypeId Int?     @map("billing_doc_type_id")
+  billingDocNumber String?  @map("billing_doc_number") @db.VarChar(50)
+  billingEmail     String?  @map("billing_email") @db.VarChar(255)
+  billingAddress   String?  @map("billing_address") @db.VarChar(255)
+  billingState     String?  @map("billing_state") @db.VarChar(150)
+  billingCity      String?  @map("billing_city") @db.VarChar(150)
+  billingPhone     String?  @map("billing_phone") @db.VarChar(50)
+  epaycoCustomerId String?  @map("epayco_customer_id") @db.VarChar(100)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  sector         Parameter     @relation("CompanySector", fields: [sectorId], references: [id])
-  accountType    Parameter?    @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
-  accountBank    Parameter?    @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
-  billingDocType Parameter?    @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
+  sector               Parameter             @relation("CompanySector", fields: [sectorId], references: [id])
+  accountType          Parameter?            @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
+  accountBank          Parameter?            @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
+  billingDocType       Parameter?            @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
   companySubscriptions CompanySubscription[]
-  userCompanies UserCompany[]
-  invitations   Invitation[]
-  customers     Customer[]
-  creditStudies CreditStudy[]
-  aiAnalyses    AiAnalysis[]
-  promissoryNotes PromissoryNote[]
-  notifications   Notification[]
+  userCompanies        UserCompany[]
+  invitations          Invitation[]
+  customers            Customer[]
+  creditStudies        CreditStudy[]
+  aiAnalyses           AiAnalysis[]
+  promissoryNotes      PromissoryNote[]
+  notifications        Notification[]
 
   @@map("companies")
 }
@@ -160,31 +188,41 @@ model Company {
 // ─── Suscripción ↔ Empresa (historial) ──────────────────────
 
 model CompanySubscription {
-  id                String    @id @default(uuid()) @db.Uuid
-  companyId         String    @map("company_id") @db.Uuid
-  subscriptionId    String    @map("subscription_id") @db.Uuid
-  statusId          Int       @map("status_id")
-  startDate         DateTime  @map("start_date") @db.Date
-  endDate           DateTime  @map("end_date") @db.Date
-  isCurrent         Boolean   @default(true) @map("is_current")
-  paymentFrequency  String?   @map("payment_frequency") @db.VarChar(20)
-  pricePaid         Float?    @map("price_paid")
-  cancelledAt              DateTime? @map("cancelled_at")
-  autoRenew                Boolean   @default(false) @map("auto_renew")
-  epaycoSubscriptionId     String?   @map("epayco_subscription_id") @db.VarChar(100)
+  id                                String    @id @default(uuid()) @db.Uuid
+  companyId                         String    @map("company_id") @db.Uuid
+  subscriptionId                    String    @map("subscription_id") @db.Uuid
+  statusId                          Int       @map("status_id")
+  startDate                         DateTime  @map("start_date") @db.Date
+  endDate                           DateTime  @map("end_date") @db.Date
+  isCurrent                         Boolean   @default(true) @map("is_current")
+  paymentFrequency                  String?   @map("payment_frequency") @db.VarChar(20)
+  // Precio total congelado (pricePaid) y referencia al ConsultationPrice usado
+  // para calcularlo (= maxStudiesPerMonth × unitPrice). Inmune a cambios posteriores.
+  pricePaid                         Float?    @map("price_paid")
+  consultationPriceId               String?   @map("consultation_price_id") @db.Uuid
+  cancelledAt                       DateTime? @map("cancelled_at")
+  autoRenew                         Boolean   @default(false) @map("auto_renew")
+  // Plan dinámico creado en ePayco para ESTE cliente (monto personalizado =
+  // estudios × precio consulta). Distinto del epaycoPlanId de Subscription.
+  epaycoPlanId                      String?   @map("epayco_plan_id") @db.VarChar(100)
+  epaycoSubscriptionId              String?   @map("epayco_subscription_id") @db.VarChar(100)
+  // Secreto del link de pago enviado por correo (onboarding). Permite cargar el
+  // resumen y pagar sin auth; se invalida (null) una vez pagada la suscripción.
+  paymentToken                      String?   @map("payment_token") @db.VarChar(64)
   maxUsersOverride                  Int?      @map("max_users_override")
   maxCustomersOverride              Int?      @map("max_customers_override")
   maxStudiesPerMonthOverride        Int?      @map("max_studies_per_month_override")
   maxAiAnalysisPerMonthOverride     Int?      @map("max_ai_analysis_per_month_override")
   maxPdfExtractionsPerMonthOverride Int?      @map("max_pdf_extractions_per_month_override")
-  createdAt                DateTime  @default(now()) @map("created_at")
-  updatedAt                DateTime  @updatedAt @map("updated_at")
-  contractId               String?   @map("contract_id") @db.Uuid  // agrupa tramos del mismo contrato anual (cambios de nivel)
+  createdAt                         DateTime  @default(now()) @map("created_at")
+  updatedAt                         DateTime  @updatedAt @map("updated_at")
+  contractId                        String?   @map("contract_id") @db.Uuid // agrupa tramos del mismo contrato anual (cambios de nivel)
 
-  company        Company      @relation(fields: [companyId], references: [id])
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
-  status         Parameter    @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
-  paymentHistory PaymentHistory[]
+  company           Company            @relation(fields: [companyId], references: [id])
+  subscription      Subscription       @relation(fields: [subscriptionId], references: [id])
+  status            Parameter          @relation("CompanySubscriptionStatus", fields: [statusId], references: [id])
+  consultationPrice ConsultationPrice? @relation(fields: [consultationPriceId], references: [id])
+  paymentHistory    PaymentHistory[]
 
   @@map("company_subscriptions")
 }
@@ -198,25 +236,29 @@ model PlatformAdmin {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
+  createdSubscriptions      Subscription[]      @relation("SubscriptionCreatedBy")
+  createdConsultationPrices ConsultationPrice[] @relation("ConsultationPriceCreatedBy")
+  updatedConsultationPrices ConsultationPrice[] @relation("ConsultationPriceUpdatedBy")
+
   @@map("platform_admins")
 }
 
 // ─── Historial de pagos ─────────────────────────────────────
 
 model PaymentHistory {
-  id                      String   @id @default(uuid()) @db.Uuid
-  companySubscriptionId   String   @map("company_subscription_id") @db.Uuid
-  periodStart             DateTime @map("period_start") @db.Date
-  periodEnd               DateTime @map("period_end") @db.Date
-  amount                  Float
-  currencyCode            String   @default("COP") @map("currency_code") @db.VarChar(10)
-  epaycoRef               String?  @map("epayco_ref") @db.VarChar(100)
-  epaycoTransactionId     String?  @map("epayco_transaction_id") @db.VarChar(100)
-  responseCode            Int?     @map("response_code")
-  responseMessage         String?  @map("response_message") @db.VarChar(255)
-  franchise               String?  @db.VarChar(50)
-  approvalCode            String?  @map("approval_code") @db.VarChar(100)
-  createdAt               DateTime @default(now()) @map("created_at")
+  id                    String   @id @default(uuid()) @db.Uuid
+  companySubscriptionId String   @map("company_subscription_id") @db.Uuid
+  periodStart           DateTime @map("period_start") @db.Date
+  periodEnd             DateTime @map("period_end") @db.Date
+  amount                Float
+  currencyCode          String   @default("COP") @map("currency_code") @db.VarChar(10)
+  epaycoRef             String?  @map("epayco_ref") @db.VarChar(100)
+  epaycoTransactionId   String?  @map("epayco_transaction_id") @db.VarChar(100)
+  responseCode          Int?     @map("response_code")
+  responseMessage       String?  @map("response_message") @db.VarChar(255)
+  franchise             String?  @db.VarChar(50)
+  approvalCode          String?  @map("approval_code") @db.VarChar(100)
+  createdAt             DateTime @default(now()) @map("created_at")
 
   companySubscription CompanySubscription @relation(fields: [companySubscriptionId], references: [id])
 
@@ -237,10 +279,10 @@ model UserCompany {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  user          Profile    @relation("UserCompanyUser", fields: [userId], references: [id])
-  company       Company    @relation(fields: [companyId], references: [id])
-  role          Parameter  @relation("UserCompanyRole", fields: [roleId], references: [id])
-  invitedByUser Profile?   @relation("UserCompanyInvitedBy", fields: [invitedBy], references: [id])
+  user          Profile   @relation("UserCompanyUser", fields: [userId], references: [id])
+  company       Company   @relation(fields: [companyId], references: [id])
+  role          Parameter @relation("UserCompanyRole", fields: [roleId], references: [id])
+  invitedByUser Profile?  @relation("UserCompanyInvitedBy", fields: [invitedBy], references: [id])
 
   @@unique([userId, companyId])
   @@map("user_companies")
@@ -249,47 +291,47 @@ model UserCompany {
 // ─── Cliente (ficha propia por empresa) ─────────────────────
 
 model Customer {
-  id                    String   @id @default(uuid()) @db.Uuid
-  companyId             String   @map("company_id") @db.Uuid
-  personTypeId          Int      @map("person_type_id")
-  identificationTypeId  Int?     @map("identification_type_id")
-  businessName          String   @map("business_name") @db.VarChar(255)
-  identificationNumber  String   @map("identification_number") @db.VarChar(50)
-  legalRepName                    String?  @map("legal_rep_name") @db.VarChar(255)
-  legalRepId                      String?  @map("legal_rep_id") @db.VarChar(50)
-  legalRepIdentificationTypeId    Int?     @map("legal_rep_identification_type_id")
-  legalRepEmail                   String?  @map("legal_rep_email") @db.VarChar(255)
-  legalRepPhone                   String?  @map("legal_rep_phone") @db.VarChar(50)
-  economicActivityId              Int?     @map("economic_activity_id")
-  email                 String?  @db.VarChar(255)
-  phone                 String?  @db.VarChar(50)
-  secondaryPhone        String?  @map("secondary_phone") @db.VarChar(50)
-  city                  String?  @db.VarChar(150)
-  state                 String?  @db.VarChar(150)
-  address               String?  @db.VarChar(255)
-  seniority             Int?
-  commercialRef1Name    String?  @map("commercial_ref1_name") @db.VarChar(255)
-  commercialRef1Contact String?  @map("commercial_ref1_contact") @db.VarChar(255)
-  commercialRef1Phone   String?  @map("commercial_ref1_phone") @db.VarChar(50)
-  commercialRef2Name    String?  @map("commercial_ref2_name") @db.VarChar(255)
-  commercialRef2Contact String?  @map("commercial_ref2_contact") @db.VarChar(255)
-  commercialRef2Phone   String?  @map("commercial_ref2_phone") @db.VarChar(50)
-  observations          String?  @db.Text
-  createdBy             String   @map("created_by") @db.Uuid
-  updatedBy             String   @map("updated_by") @db.Uuid
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                           String   @id @default(uuid()) @db.Uuid
+  companyId                    String   @map("company_id") @db.Uuid
+  personTypeId                 Int      @map("person_type_id")
+  identificationTypeId         Int?     @map("identification_type_id")
+  businessName                 String   @map("business_name") @db.VarChar(255)
+  identificationNumber         String   @map("identification_number") @db.VarChar(50)
+  legalRepName                 String?  @map("legal_rep_name") @db.VarChar(255)
+  legalRepId                   String?  @map("legal_rep_id") @db.VarChar(50)
+  legalRepIdentificationTypeId Int?     @map("legal_rep_identification_type_id")
+  legalRepEmail                String?  @map("legal_rep_email") @db.VarChar(255)
+  legalRepPhone                String?  @map("legal_rep_phone") @db.VarChar(50)
+  economicActivityId           Int?     @map("economic_activity_id")
+  email                        String?  @db.VarChar(255)
+  phone                        String?  @db.VarChar(50)
+  secondaryPhone               String?  @map("secondary_phone") @db.VarChar(50)
+  city                         String?  @db.VarChar(150)
+  state                        String?  @db.VarChar(150)
+  address                      String?  @db.VarChar(255)
+  seniority                    Int?
+  commercialRef1Name           String?  @map("commercial_ref1_name") @db.VarChar(255)
+  commercialRef1Contact        String?  @map("commercial_ref1_contact") @db.VarChar(255)
+  commercialRef1Phone          String?  @map("commercial_ref1_phone") @db.VarChar(50)
+  commercialRef2Name           String?  @map("commercial_ref2_name") @db.VarChar(255)
+  commercialRef2Contact        String?  @map("commercial_ref2_contact") @db.VarChar(255)
+  commercialRef2Phone          String?  @map("commercial_ref2_phone") @db.VarChar(50)
+  observations                 String?  @db.Text
+  createdBy                    String   @map("created_by") @db.Uuid
+  updatedBy                    String   @map("updated_by") @db.Uuid
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
 
-  company            Company     @relation(fields: [companyId], references: [id])
-  personType         Parameter   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
-  identificationType            Parameter?  @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
-  legalRepIdentificationType    Parameter?  @relation("CustomerLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
-  economicActivity              Parameter?  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
-  createdByUser      Profile     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser      Profile     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
-  creditStudies      CreditStudy[]
-  aiAnalyses         AiAnalysis[]
-  promissoryNotes    PromissoryNote[]
+  company                    Company          @relation(fields: [companyId], references: [id])
+  personType                 Parameter        @relation("CustomerPersonType", fields: [personTypeId], references: [id])
+  identificationType         Parameter?       @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
+  legalRepIdentificationType Parameter?       @relation("CustomerLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
+  economicActivity           Parameter?       @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
+  createdByUser              Profile          @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser              Profile          @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
+  creditStudies              CreditStudy[]
+  aiAnalyses                 AiAnalysis[]
+  promissoryNotes            PromissoryNote[]
 
   @@map("customers")
 }
@@ -297,89 +339,85 @@ model Customer {
 // ─── Estudio de crédito ─────────────────────────────────────
 
 model CreditStudy {
-  id              String    @id @default(uuid()) @db.Uuid
-  customerId      String    @map("customer_id") @db.Uuid
-  companyId       String    @map("company_id") @db.Uuid
-  statusId        Int       @map("status_id")
-  studyDate       DateTime  @map("study_date") @db.Date
-  resolutionDate  DateTime? @map("resolution_date") @db.Date
-  createdBy       String    @map("created_by") @db.Uuid
-  updatedBy       String    @map("updated_by") @db.Uuid
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  notes           String?   @db.Text
+  id             String    @id @default(uuid()) @db.Uuid
+  customerId     String    @map("customer_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  statusId       Int       @map("status_id")
+  studyDate      DateTime  @map("study_date") @db.Date
+  resolutionDate DateTime? @map("resolution_date") @db.Date
+  createdBy      String    @map("created_by") @db.Uuid
+  updatedBy      String    @map("updated_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  notes          String?   @db.Text
 
   // ── Solicitud ──────────────────────────────────────────
-  requestedTerm              Int?      @map("requested_term")                    // Plazo solicitado
-  requestedCreditLine        Float?    @map("requested_credit_line")             // Cupo total solicitado
+  requestedTerm       Int?   @map("requested_term") // Plazo solicitado
+  requestedCreditLine Float? @map("requested_credit_line") // Cupo total solicitado
 
   // ── Balance General ────────────────────────────────────
-  balanceSheetDate            DateTime? @map("balance_sheet_date")                // Balance sheet date
-  cashAndEquivalents         Float?    @map("cash_and_equivalents")              // Efectivo y equivalentes
-  accountsReceivable1        Float?    @map("accounts_receivable_1")             // Cuentas por cobrar 1
-  accountsReceivable2        Float?    @map("accounts_receivable_2")             // Cuentas por cobrar 2
-  inventories1               Float?    @map("inventories_1")                     // Inventarios 1
-  inventories2               Float?    @map("inventories_2")                     // Inventarios 2
-  totalCurrentAssets         Float?    @map("total_current_assets")              // Total activo corriente
-  fixedAssetsProperty        Float?    @map("fixed_assets_property")             // Activos fijos / propiedad
-  totalNonCurrentAssets      Float?    @map("total_non_current_assets")          // Total activo no corriente
-  totalAssets                Float?    @map("total_assets")                      // Total activo
-  shortTermFinancialLiabilities Float? @map("short_term_financial_liabilities")  // Obligaciones financieras CP
-  suppliers1                 Float?    @map("suppliers_1")                       // Proveedores 1
-  suppliers2                 Float?    @map("suppliers_2")                       // Proveedores 2
-  totalCurrentLiabilities    Float?    @map("total_current_liabilities")         // Total pasivo corriente
-  longTermFinancialLiabilities Float?  @map("long_term_financial_liabilities")   // Obligaciones financieras LP
-  totalNonCurrentLiabilities Float?    @map("total_non_current_liabilities")     // Total pasivo no corriente
-  totalLiabilities           Float?    @map("total_liabilities")                 // Total pasivo
-  retainedEarnings           Float?    @map("retained_earnings")                 // Ganancias acumuladas
-  equity                     Float?    @map("equity")                            // Patrimonio
+  balanceSheetDate              DateTime? @map("balance_sheet_date") // Balance sheet date
+  cashAndEquivalents            Float?    @map("cash_and_equivalents") // Efectivo y equivalentes
+  accountsReceivable1           Float?    @map("accounts_receivable_1") // Cuentas por cobrar 1
+  accountsReceivable2           Float?    @map("accounts_receivable_2") // Cuentas por cobrar 2
+  inventories1                  Float?    @map("inventories_1") // Inventarios 1
+  inventories2                  Float?    @map("inventories_2") // Inventarios 2
+  totalCurrentAssets            Float?    @map("total_current_assets") // Total activo corriente
+  fixedAssetsProperty           Float?    @map("fixed_assets_property") // Activos fijos / propiedad
+  totalNonCurrentAssets         Float?    @map("total_non_current_assets") // Total activo no corriente
+  totalAssets                   Float?    @map("total_assets") // Total activo
+  shortTermFinancialLiabilities Float?    @map("short_term_financial_liabilities") // Obligaciones financieras CP
+  suppliers1                    Float?    @map("suppliers_1") // Proveedores 1
+  suppliers2                    Float?    @map("suppliers_2") // Proveedores 2
+  totalCurrentLiabilities       Float?    @map("total_current_liabilities") // Total pasivo corriente
+  longTermFinancialLiabilities  Float?    @map("long_term_financial_liabilities") // Obligaciones financieras LP
+  totalNonCurrentLiabilities    Float?    @map("total_non_current_liabilities") // Total pasivo no corriente
+  totalLiabilities              Float?    @map("total_liabilities") // Total pasivo
+  retainedEarnings              Float?    @map("retained_earnings") // Ganancias acumuladas
+  equity                        Float?    @map("equity") // Patrimonio
 
   // ── Estado de Resultados ───────────────────────────────
-  incomeStatementId          Int?      @map("income_statement_id")               // Estado de resultados (ID parámetro)
-  ordinaryActivityRevenue    Float?    @map("ordinary_activity_revenue")          // Ingresos actividades ordinarias
-  costOfSales                Float?    @map("cost_of_sales")                     // Costo de ventas
-  grossProfit                Float?    @map("gross_profit")                      // Utilidad bruta
-  administrativeExpenses     Float?    @map("administrative_expenses")            // Gastos de administración
-  sellingExpenses            Float?    @map("selling_expenses")                  // Gastos de ventas
-  depreciation               Float?    @map("depreciation")                       // Depreciación
-  amortization               Float?    @map("amortization")                       // Amortización
-  financialExpenses          Float?    @map("financial_expenses")                // Gastos financieros
-  taxes                      Float?    @map("taxes")                             // Impuestos
-  netIncome                  Float?    @map("net_income")                        // Utilidad neta
+  incomeStatementId       Int?   @map("income_statement_id") // Estado de resultados (ID parámetro)
+  ordinaryActivityRevenue Float? @map("ordinary_activity_revenue") // Ingresos actividades ordinarias
+  costOfSales             Float? @map("cost_of_sales") // Costo de ventas
+  grossProfit             Float? @map("gross_profit") // Utilidad bruta
+  administrativeExpenses  Float? @map("administrative_expenses") // Gastos de administración
+  sellingExpenses         Float? @map("selling_expenses") // Gastos de ventas
+  depreciation            Float? @map("depreciation") // Depreciación
+  amortization            Float? @map("amortization") // Amortización
+  financialExpenses       Float? @map("financial_expenses") // Gastos financieros
+  taxes                   Float? @map("taxes") // Impuestos
+  netIncome               Float? @map("net_income") // Utilidad neta
 
   // ── Indicadores calculados ─────────────────────────────
-  stabilityFactor            Float?    @map("stability_factor")                  // Factor de estabilidad
-  ebitda                     Float?    @map("ebitda")                            // EBITDA
-  adjustedEbitda             Float?    @map("adjusted_ebitda")                   // EBITDA ajustado
-  currentDebtService         Float?    @map("current_debt_service")              // Servicio de deuda actual
-  annualPaymentCapacity      Float?    @map("annual_payment_capacity")           // Capacidad de pago anual
-  monthlyPaymentCapacity     Float?    @map("monthly_payment_capacity")          // Capacidad de pago mensual
-  accountsReceivableTurnover Float?    @map("accounts_receivable_turnover")      // Rotación de cartera
-  inventoryTurnover          Float?    @map("inventory_turnover")                // Rotación de inventarios
-  suppliersTurnover          Float?    @map("suppliers_turnover")                // Rotación de proveedores
-  paymentTimeSuppliers       Float?    @map("payment_time_suppliers")            // Tiempo de pago a proveedores (dias)
-  accountsPayableTurnover    Float?    @map("accounts_payable_turnover")         // Rotacion de cuentas por pagar
+  stabilityFactor            Float? @map("stability_factor") // Factor de estabilidad
+  ebitda                     Float? @map("ebitda") // EBITDA
+  adjustedEbitda             Float? @map("adjusted_ebitda") // EBITDA ajustado
+  currentDebtService         Float? @map("current_debt_service") // Servicio de deuda actual
+  annualPaymentCapacity      Float? @map("annual_payment_capacity") // Capacidad de pago anual
+  monthlyPaymentCapacity     Float? @map("monthly_payment_capacity") // Capacidad de pago mensual
+  accountsReceivableTurnover Float? @map("accounts_receivable_turnover") // Rotación de cartera
+  inventoryTurnover          Float? @map("inventory_turnover") // Rotación de inventarios
+  suppliersTurnover          Float? @map("suppliers_turnover") // Rotación de proveedores
+  paymentTimeSuppliers       Float? @map("payment_time_suppliers") // Tiempo de pago a proveedores (dias)
+  accountsPayableTurnover    Float? @map("accounts_payable_turnover") // Rotacion de cuentas por pagar
 
   // ── Viabilidad ────────────────────────────────────────
-  recommendedTerm            Int?      @map("recommended_term")                  // Plazo recomendado (días)
-  recommendedCreditLine      Float?    @map("recommended_credit_line")           // Cupo recomendado ($)
-  viabilityScore             Int?      @map("viability_score")                   // Score 0-100
-  viabilityStatus            String?   @map("viability_status")                  // 'approved' | 'conditional' | 'rejected'
-  viabilityConditions        Json?     @map("viability_conditions")              // JSON con dimensiones, alertas y resumen
-  reliabilityFlags           Json?     @map("reliability_flags")                 // Red flags de fiabilidad de los EEFF (detectadas por IA al extraer el PDF)
+  recommendedTerm       Int?    @map("recommended_term") // Plazo recomendado (días)
+  recommendedCreditLine Float?  @map("recommended_credit_line") // Cupo recomendado ($)
+  viabilityScore        Int?    @map("viability_score") // Score 0-100
+  viabilityStatus       String? @map("viability_status") // 'approved' | 'conditional' | 'rejected'
+  viabilityConditions   Json?   @map("viability_conditions") // JSON con dimensiones, alertas y resumen
+  reliabilityFlags      Json?   @map("reliability_flags") // Red flags de fiabilidad de los EEFF (detectadas por IA al extraer el PDF)
 
-
-
-
-
-  customer         Customer      @relation(fields: [customerId], references: [id])
-  company          Company       @relation(fields: [companyId], references: [id])
-  status           Parameter     @relation("CreditStudyStatus", fields: [statusId], references: [id])
-  incomeStatement  Parameter?    @relation("CreditStudyIncomeStatement", fields: [incomeStatementId], references: [id])
-  createdByUser    Profile       @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser    Profile       @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
-  aiAnalyses       AiAnalysis[]
-  promissoryNotes  PromissoryNote[]
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  company         Company          @relation(fields: [companyId], references: [id])
+  status          Parameter        @relation("CreditStudyStatus", fields: [statusId], references: [id])
+  incomeStatement Parameter?       @relation("CreditStudyIncomeStatement", fields: [incomeStatementId], references: [id])
+  createdByUser   Profile          @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser   Profile          @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
+  aiAnalyses      AiAnalysis[]
+  promissoryNotes PromissoryNote[]
 
   @@map("credit_studies")
 }
@@ -387,31 +425,34 @@ model CreditStudy {
 // ─── Análisis de IA ──────────────────────────────────────────
 
 model AiAnalysis {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @map("company_id") @db.Uuid
-  customerId        String?  @map("customer_id") @db.Uuid
-  creditStudyId     String?  @map("credit_study_id") @db.Uuid
-  typeId            Int      @map("type_id")
-  performedBy       String   @map("performed_by") @db.Uuid
-  prompt            String   @db.Text
-  pdfFile           Bytes?   @map("pdf_file")
-  result            String?  @db.Text
-  model             String   @db.VarChar(100)
-  promptTokens      Int?     @map("prompt_tokens")
-  completionTokens  Int?     @map("completion_tokens")
-  totalTokens       Int?     @map("total_tokens")
-  estimatedCostUsd  Float?   @map("estimated_cost_usd")
-  durationMs        Int?     @map("duration_ms")
-  status            String   @default("success") @db.VarChar(20) // 'success' | 'error'
-  errorMessage      String?  @map("error_message") @db.Text
-  createdAt         DateTime @default(now()) @map("created_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  customerId       String?  @map("customer_id") @db.Uuid
+  creditStudyId    String?  @map("credit_study_id") @db.Uuid
+  typeId           Int      @map("type_id")
+  performedBy      String   @map("performed_by") @db.Uuid
+  prompt           String   @db.Text
+  pdfFile          Bytes?   @map("pdf_file")
+  result           String?  @db.Text
+  model            String   @db.VarChar(100)
+  promptTokens     Int?     @map("prompt_tokens")
+  completionTokens Int?     @map("completion_tokens")
+  totalTokens      Int?     @map("total_tokens")
+  estimatedCostUsd Float?   @map("estimated_cost_usd")
+  durationMs       Int?     @map("duration_ms")
+  status           String   @default("success") @db.VarChar(20) // 'success' | 'error'
+  errorMessage     String?  @map("error_message") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  type         Parameter   @relation("AiAnalysisType", fields: [typeId], references: [id])
-  company      Company     @relation(fields: [companyId], references: [id])
-  customer     Customer?    @relation(fields: [customerId], references: [id])
-  creditStudy  CreditStudy? @relation(fields: [creditStudyId], references: [id])
-  performedByUser Profile  @relation("AiAnalysisPerformedBy", fields: [performedBy], references: [id])
+  type            Parameter    @relation("AiAnalysisType", fields: [typeId], references: [id])
+  company         Company      @relation(fields: [companyId], references: [id])
+  customer        Customer?    @relation(fields: [customerId], references: [id])
+  creditStudy     CreditStudy? @relation(fields: [creditStudyId], references: [id])
+  performedByUser Profile      @relation("AiAnalysisPerformedBy", fields: [performedBy], references: [id])
 
+  // Soporta el conteo de consumo por ciclo (companyId + typeId + createdAt)
+  // usado en getUsage y en los chequeos de límite de plan.
+  @@index([companyId, typeId, createdAt])
   @@map("ai_analyses")
 }
 
@@ -443,33 +484,33 @@ model Invitation {
 // ─── Pagaré (Promissory Note) ───────────────────────────────
 
 model PromissoryNote {
-  id              Int       @id @default(autoincrement())
-  companyId       String    @map("company_id") @db.Uuid
-  creditStudyId   String    @map("credit_study_id") @db.Uuid
-  customerId      String    @map("customer_id") @db.Uuid
-  createdBy       String    @map("created_by") @db.Uuid
-  statusId        Int       @map("status_id")
+  id            Int    @id @default(autoincrement())
+  companyId     String @map("company_id") @db.Uuid
+  creditStudyId String @map("credit_study_id") @db.Uuid
+  customerId    String @map("customer_id") @db.Uuid
+  createdBy     String @map("created_by") @db.Uuid
+  statusId      Int    @map("status_id")
 
   // ── Datos económicos del pagaré (snapshot) ──────────
-  amount          Float
-  amountInWords   String    @map("amount_in_words") @db.VarChar(500)
+  amount        Float
+  amountInWords String @map("amount_in_words") @db.VarChar(500)
 
   // ── Datos DocuSeal ─────────────────────────────────
-  docusealSubmissionId  Int?      @map("docuseal_submission_id")
-  docusealSubmitterId   Int?      @map("docuseal_submitter_id")
-  docusealSubmitterUuid String?   @map("docuseal_submitter_uuid") @db.VarChar(100)
-  docusealSlug          String?   @map("docuseal_slug") @db.VarChar(100)
-  signingUrl            String?   @map("signing_url") @db.VarChar(500)
-  signedDocumentUrl     String?   @map("signed_document_url") @db.VarChar(500)
-  signedFileStoragePath String?   @map("signed_file_storage_path") @db.VarChar(500)
+  docusealSubmissionId  Int?    @map("docuseal_submission_id")
+  docusealSubmitterId   Int?    @map("docuseal_submitter_id")
+  docusealSubmitterUuid String? @map("docuseal_submitter_uuid") @db.VarChar(100)
+  docusealSlug          String? @map("docuseal_slug") @db.VarChar(100)
+  signingUrl            String? @map("signing_url") @db.VarChar(500)
+  signedDocumentUrl     String? @map("signed_document_url") @db.VarChar(500)
+  signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500)
 
   // ── Auditoría de firma ─────────────────────────────
-  sentAt          DateTime? @map("sent_at")
-  signedAt        DateTime? @map("signed_at")
-  declinedAt      DateTime? @map("declined_at")
+  sentAt     DateTime? @map("sent_at")
+  signedAt   DateTime? @map("signed_at")
+  declinedAt DateTime? @map("declined_at")
 
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   company       Company     @relation(fields: [companyId], references: [id])
   creditStudy   CreditStudy @relation(fields: [creditStudyId], references: [id])

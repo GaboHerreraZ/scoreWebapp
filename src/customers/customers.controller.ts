@@ -26,9 +26,11 @@ import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { FilterCustomerDto } from './dto/filter-customer.dto.js';
 import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/customers')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}

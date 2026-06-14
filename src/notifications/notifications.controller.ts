@@ -19,9 +19,11 @@ import {
 import type { Request } from 'express';
 import { NotificationsService } from './notifications.service.js';
 import { FilterNotificationDto } from './dto/filter-notification.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

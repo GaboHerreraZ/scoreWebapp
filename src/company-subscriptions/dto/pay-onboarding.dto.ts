@@ -1,13 +1,12 @@
 import {
   IsString,
   IsUUID,
-  IsOptional,
   IsEmail,
   MaxLength,
   ValidateNested,
   IsNumber,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 class CardDto {
@@ -55,7 +54,7 @@ class BillingDto {
   @MaxLength(10)
   docTypeCode: string;
 
-  @ApiProperty({ example: 1, description: '1' })
+  @ApiProperty({ example: 1 })
   @IsNumber()
   docType: number;
 
@@ -64,7 +63,7 @@ class BillingDto {
   @MaxLength(50)
   docNumber: string;
 
-  @ApiProperty({ example: 'herzar_620@hotmail.com', maxLength: 255 })
+  @ApiProperty({ example: 'cliente@empresa.com', maxLength: 255 })
   @IsEmail()
   @MaxLength(255)
   email: string;
@@ -90,13 +89,20 @@ class BillingDto {
   phone: string;
 }
 
-export class SubscribeDto {
-  @ApiProperty({
-    example: 'uuid-del-plan',
-    description: 'ID of the subscription plan in your DB',
-  })
+/**
+ * Pago inicial del onboarding desde la página de checkout propia. El link del
+ * correo trae companySubscriptionId + token (paymentToken), que autorizan el
+ * pago sin sesión. La tarjeta se tokeniza y se crea la suscripción recurrente.
+ */
+export class PayOnboardingDto {
+  @ApiProperty({ description: 'ID de la CompanySubscription a pagar' })
   @IsUUID()
-  subscriptionId: string;
+  companySubscriptionId: string;
+
+  @ApiProperty({ description: 'Token de pago recibido en el link del correo' })
+  @IsString()
+  @MaxLength(64)
+  token: string;
 
   @ApiProperty({ type: CardDto })
   @ValidateNested()

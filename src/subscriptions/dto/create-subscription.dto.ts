@@ -3,7 +3,6 @@ import {
   IsOptional,
   IsBoolean,
   IsInt,
-  IsNumber,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -24,16 +23,6 @@ export class CreateSubscriptionDto {
   @IsString()
   @MaxLength(500)
   description?: string;
-
-  @ApiPropertyOptional({
-    example: 149900,
-    description: 'Subscription price in COP',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  price?: number;
 
   @ApiPropertyOptional({
     example: true,
@@ -86,54 +75,15 @@ export class CreateSubscriptionDto {
   @Min(0)
   maxAiAnalysisPerMonth?: number;
 
-  @ApiProperty({
-    example: 1,
-    description: 'Dashboard level parameter ID (DASHBOARD_LEVEL)',
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Maximum PDF extractions per month. Null = unlimited',
   })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  dashboardLevelId: number;
-
-  @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
-  excelReports?: boolean;
-
-  @ApiPropertyOptional({
-    default: false,
-    description: 'Enable email notifications (in addition to in-app)',
-  })
-  @IsOptional()
-  @IsBoolean()
-  emailNotifications?: boolean;
-
-  @ApiPropertyOptional({
-    default: false,
-    description: 'Allow theme customization',
-  })
-  @IsOptional()
-  @IsBoolean()
-  themeCustomization?: boolean;
-
-  @ApiProperty({
-    example: 1,
-    description: 'Support level parameter ID (SUPPORT_LEVEL)',
-  })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  supportLevelId: number;
-
-  @ApiPropertyOptional({
-    example: 'plan_abc123',
-    description: 'ID of the plan created in ePayco for recurring billing',
-    maxLength: 100,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  epaycoPlanId?: string;
+  @Min(0)
+  maxPdfExtractionsPerMonth?: number;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

@@ -8,8 +8,10 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { MailService } from '../mail/mail.service.js';
+import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { OnboardClientDto } from './dto/onboard-client.dto.js';
 import { ChangeTierDto } from './dto/change-tier.dto.js';
+import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
 
 @Injectable()
 export class AdminService {
@@ -17,6 +19,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly parametersRepository: ParametersRepository,
     private readonly mailService: MailService,
+    private readonly consultationPricesService: ConsultationPricesService,
   ) {}
 
   /** Resuelve un parámetro por type+code o lanza error claro. */
@@ -58,19 +61,35 @@ export class AdminService {
       );
     }
 
+    // Precio por consulta vigente: el pricePaid se calcula como
+    // studiesPerMonth × unitPrice, y guardamos el id del precio usado.
+    const consultationPrice =
+      await this.consultationPricesService.getActivePrice();
+    if (!consultationPrice) {
+      throw new BadRequestException(
+        'No hay un precio de consulta activo configurado. Configure un ConsultationPrice antes de dar de alta clientes.',
+      );
+    }
+    const pricePaid =
+      dto.subscription.studiesPerMonth * consultationPrice.unitPrice;
+
     const existingProfile = await this.prisma.profile.findFirst({
       where: { email: dto.owner.email },
     });
 
-    const [activeSubStatus, pendingInvStatus, adminRole] = await Promise.all([
-      this.getParam('subscription_status', 'active'),
-      this.getParam('invitation_status', 'pending'),
-      this.getParam('user_company_role', 'administrator'),
-    ]);
+    const [pendingPaymentStatus, pendingInvStatus, adminRole] =
+      await Promise.all([
+        this.getParam('subscription_status', 'pending_payment'),
+        this.getParam('invitation_status', 'pending'),
+        this.getParam('user_company_role', 'administrator'),
+      ]);
 
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
+
+    // Secreto del link de pago (independiente del token de invitación).
+    const paymentToken = randomBytes(32).toString('hex');
 
     const newContractId = crypto.randomUUID();
 
@@ -93,17 +112,20 @@ export class AdminService {
         },
       });
 
-      // 2. Suscripción (plan elegido + nivel configurado)
+      // 2. Suscripción (plan elegido + nivel configurado).
+      // Nace en pending_payment: se activa cuando el cliente paga (checkout propio).
       const subscription = await tx.companySubscription.create({
         data: {
           companyId: company.id,
           subscriptionId,
-          statusId: activeSubStatus.id,
+          statusId: pendingPaymentStatus.id,
           startDate: new Date(dto.subscription.startDate),
           endDate: new Date(dto.subscription.endDate),
           isCurrent: true,
           autoRenew: false,
-          pricePaid: dto.subscription.pricePaid,
+          pricePaid,
+          consultationPriceId: consultationPrice.id,
+          paymentToken,
           maxStudiesPerMonthOverride: dto.subscription.studiesPerMonth,
           maxUsersOverride: dto.subscription.maxUsers,
           maxCustomersOverride: dto.subscription.maxCustomers,
@@ -147,12 +169,21 @@ export class AdminService {
     });
 
     // Envío de email de bienvenida al owner fuera de la transacción (best effort).
+    // Incluye el link de pago (companySubscriptionId + paymentToken) y los datos
+    // del plan para que el correo muestre qué se contrata y cuánto se paga.
     this.mailService
       .sendOwnerWelcomeEmail({
         to: dto.owner.email,
         invitationId: result.invitation.id,
         token,
         companyName: result.company.name,
+        companySubscriptionId: result.subscription.id,
+        paymentToken,
+        planName: plan.name,
+        studiesPerMonth: dto.subscription.studiesPerMonth,
+        maxUsers: dto.subscription.maxUsers,
+        amount: pricePaid,
+        isMonthly: plan.isMonthly,
       })
       .catch(() => {});
 
@@ -198,6 +229,16 @@ export class AdminService {
       this.getParam('subscription_status', 'superseded'),
     ]);
 
+    // El nuevo nivel cambia el precio: recalculamos con el precio vigente.
+    const consultationPrice =
+      await this.consultationPricesService.getActivePrice();
+    if (!consultationPrice) {
+      throw new BadRequestException(
+        'No hay un precio de consulta activo configurado. Configure un ConsultationPrice antes de cambiar el nivel.',
+      );
+    }
+    const pricePaid = dto.studiesPerMonth * consultationPrice.unitPrice;
+
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -221,6 +262,8 @@ export class AdminService {
           endDate: current.endDate,
           isCurrent: true,
           autoRenew: current.autoRenew,
+          pricePaid,
+          consultationPriceId: consultationPrice.id,
           maxStudiesPerMonthOverride: dto.studiesPerMonth,
           contractId: current.contractId,
         },
@@ -239,7 +282,11 @@ export class AdminService {
   }
 
   /** Listado cross-tenant de empresas con su nivel vigente y vigencia. */
-  async listCompanies(params: { page: number; limit: number; search?: string }) {
+  async listCompanies(params: {
+    page: number;
+    limit: number;
+    search?: string;
+  }) {
     const { page, limit, search } = params;
     const skip = (page - 1) * limit;
 
@@ -308,7 +355,7 @@ export class AdminService {
           include: { subscription: { select: { name: true } }, status: true },
         },
         userCompanies: {
-          include: { role: true },
+          include: { role: true, user: true },
         },
       },
     });
@@ -346,6 +393,10 @@ export class AdminService {
       tiers: company.companySubscriptions.map((s) => ({
         id: s.id,
         studiesPerMonth: s.maxStudiesPerMonthOverride,
+        maxUsers: s.maxUsersOverride,
+        maxCustomers: s.maxCustomersOverride,
+        maxAiAnalysisPerMonth: s.maxAiAnalysisPerMonthOverride,
+        maxPdfExtractionsPerMonth: s.maxPdfExtractionsPerMonthOverride,
         startDate: s.startDate,
         endDate: s.endDate,
         status: s.status?.code,
@@ -356,14 +407,24 @@ export class AdminService {
         userId: uc.userId,
         role: uc.role?.code,
         isActive: uc.isActive,
+        invitedBy: uc.invitedBy,
+        joinedAt: uc.joinedAt,
+        name: uc.user.name,
+        email: uc.user.email
       })),
     };
   }
 
-  /** Consumo del ciclo actual (estudios usados / cupo vigente). */
+  /**
+   * Consumo del ciclo actual por recurso: estudios, análisis de IA, extracciones
+   * de PDF (todos relativos al ciclo mensual vigente) y customers (límite total
+   * acumulado, no por ciclo). Cada recurso reporta used/max/remaining; max=null
+   * significa ilimitado (remaining queda en null).
+   */
   async getUsage(companyId: string) {
     const current = await this.prisma.companySubscription.findFirst({
       where: { companyId, isCurrent: true },
+      include: { subscription: true },
     });
     if (!current) {
       throw new NotFoundException(
@@ -371,82 +432,224 @@ export class AdminService {
       );
     }
 
-    const cap = current.maxStudiesPerMonthOverride ?? 0;
-    const cycleStart = this.currentCycleStart(current.startDate);
+    // Límites efectivos: override del tramo vigente o, si no hay, el del plan.
+    const maxStudies =
+      current.maxStudiesPerMonthOverride ??
+      current.subscription.maxStudiesPerMonth;
+    const maxAiAnalysis =
+      current.maxAiAnalysisPerMonthOverride ??
+      current.subscription.maxAiAnalysisPerMonth;
+    const maxPdfExtractions =
+      current.maxPdfExtractionsPerMonthOverride ??
+      current.subscription.maxPdfExtractionsPerMonth;
+    const maxCustomers =
+      current.maxCustomersOverride ?? current.subscription.maxCustomers;
 
-    const used = await this.prisma.creditStudy.count({
-      where: { companyId, createdAt: { gte: cycleStart } },
+    const { cycleStart, cycleEnd } = getCurrentCycleWindow(current.startDate);
+
+    // Tipos de AiAnalysis para contar análisis vs extracciones por separado.
+    const [analysisType, extractionType] = await Promise.all([
+      this.parametersRepository.findByCode('creditReview'),
+      this.parametersRepository.findByCode('financialStatementsPdfUpload'),
+    ]);
+
+    // Tipos de AiAnalysis a contar (los que existan como parámetro).
+    const aiTypeIds = [analysisType?.id, extractionType?.id].filter(
+      (id): id is number => id != null,
+    );
+
+    const [studiesUsed, aiByType, customersTotal] = await Promise.all([
+      this.prisma.creditStudy.count({
+        where: { companyId, createdAt: { gte: cycleStart, lt: cycleEnd } },
+      }),
+      // Una sola query agrupada cuenta análisis y extracciones por typeId; el
+      // conteo lo hace la BD (devuelve una fila por tipo, no las filas crudas).
+      aiTypeIds.length > 0
+        ? this.prisma.aiAnalysis.groupBy({
+            by: ['typeId'],
+            where: {
+              companyId,
+              typeId: { in: aiTypeIds },
+              createdAt: { gte: cycleStart, lt: cycleEnd },
+            },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+      this.prisma.customer.count({ where: { companyId } }),
+    ]);
+
+    const usageByType = new Map(
+      aiByType.map((row) => [row.typeId, row._count._all]),
+    );
+    const aiAnalysisUsed = analysisType
+      ? (usageByType.get(analysisType.id) ?? 0)
+      : 0;
+    const pdfExtractionUsed = extractionType
+      ? (usageByType.get(extractionType.id) ?? 0)
+      : 0;
+
+    const cycleResource = (used: number, max: number | null) => ({
+      usedThisCycle: used,
+      maxPerMonth: max,
+      remaining: max != null ? Math.max(0, max - used) : null,
     });
 
     return {
-      studiesPerMonth: cap,
-      usedThisCycle: used,
-      remaining: Math.max(0, cap - used),
       cycleStart,
+      cycleEnd,
+      studies: cycleResource(studiesUsed, maxStudies),
+      aiAnalysis: cycleResource(aiAnalysisUsed, maxAiAnalysis),
+      pdfExtraction: cycleResource(pdfExtractionUsed, maxPdfExtractions),
+      customers: {
+        total: customersTotal,
+        max: maxCustomers,
+        remaining:
+          maxCustomers != null
+            ? Math.max(0, maxCustomers - customersTotal)
+            : null,
+      },
     };
   }
 
-  /** Resumen del contrato: total anual comprometido (mes completo al nivel nuevo). */
-  async getContractSummary(companyId: string) {
+  /**
+   * Actividad del ciclo vigente para el equipo de soporte: lista (no conteo) de
+   * lo creado en el ciclo actual — estudios, análisis de IA, extracciones de PDF
+   * y customers — con solo los campos relevantes (quién, cuándo, customer). NO
+   * devuelve el detalle completo de cada registro.
+   */
+  async getCycleActivity(companyId: string) {
     const current = await this.prisma.companySubscription.findFirst({
       where: { companyId, isCurrent: true },
+      include: { subscription: true },
     });
-    if (!current?.contractId) {
+    if (!current) {
       throw new NotFoundException(
-        'La empresa no tiene un contrato vigente con tramos.',
+        'La empresa no tiene una suscripción vigente.',
       );
     }
 
-    const tiers = await this.prisma.companySubscription.findMany({
-      where: { contractId: current.contractId },
-      orderBy: { startDate: 'asc' },
+    const { cycleStart, cycleEnd } = getCurrentCycleWindow(current.startDate);
+    const inCycle = { gte: cycleStart, lt: cycleEnd };
+
+    const [analysisType, extractionType] = await Promise.all([
+      this.parametersRepository.findByCode('creditReview'),
+      this.parametersRepository.findByCode('financialStatementsPdfUpload'),
+    ]);
+
+    // Selección compacta del autor (Profile) reutilizada en cada recurso.
+    const authorSelect = {
+      select: { id: true, name: true, lastName: true, email: true },
+    } as const;
+    const customerSelect = {
+      select: { id: true, businessName: true },
+    } as const;
+
+    const aiTypeFilter = [analysisType?.id, extractionType?.id].filter(
+      (id): id is number => id != null,
+    );
+
+    const [studies, aiAnalyses, customers] = await Promise.all([
+      this.prisma.creditStudy.findMany({
+        where: { companyId, createdAt: inCycle },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          studyDate: true,
+          createdAt: true,
+          status: { select: { code: true, label: true } },
+          customer: customerSelect,
+          createdByUser: authorSelect,
+        },
+      }),
+      this.prisma.aiAnalysis.findMany({
+        where: {
+          companyId,
+          typeId: { in: aiTypeFilter },
+          createdAt: inCycle,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          type: { select: { id: true, code: true, label: true } },
+          customer: customerSelect,
+          performedByUser: authorSelect,
+        },
+      }),
+      this.prisma.customer.findMany({
+        where: { companyId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          businessName: true,
+          identificationNumber: true,
+          createdAt: true,
+          createdByUser: authorSelect,
+        },
+      }),
+    ]);
+
+    // Nombre legible de un Profile (autor) o null si no viene.
+    const fullName = (
+      user: { name: string | null; lastName: string | null } | null,
+    ) => (user ? `${user.name ?? ''} ${user.lastName ?? ''}`.trim() || null : null);
+
+    const mapStudy = (s: (typeof studies)[number]) => ({
+      id: s.id,
+      studyDate: s.studyDate,
+      createdAt: s.createdAt,
+      status: s.status?.label ?? null,
+      customerName: s.customer?.businessName ?? null,
+      createdByName: fullName(s.createdByUser),
+      createdByEmail: s.createdByUser?.email ?? null,
     });
 
-    let totalCommitted = 0;
-    const breakdown = tiers.map((t) => {
-      const months = this.monthsBetweenCeil(t.startDate, t.endDate);
-      const level = t.maxStudiesPerMonthOverride ?? 0;
-      const subtotal = months * level;
-      totalCommitted += subtotal;
-      return {
-        studiesPerMonth: level,
-        startDate: t.startDate,
-        endDate: t.endDate,
-        months,
-        subtotal,
-      };
+    const mapAnalysis = (a: (typeof aiAnalyses)[number]) => ({
+      id: a.id,
+      status: a.status,
+      createdAt: a.createdAt,
+      type: a.type?.label ?? null,
+      customerName: a.customer?.businessName ?? null,
+      performedByName: fullName(a.performedByUser),
+      performedByEmail: a.performedByUser?.email ?? null,
     });
+
+    const mapCustomer = (c: (typeof customers)[number]) => ({
+      id: c.id,
+      businessName: c.businessName,
+      identificationNumber: c.identificationNumber,
+      createdAt: c.createdAt,
+      createdByName: fullName(c.createdByUser),
+      createdByEmail: c.createdByUser?.email ?? null,
+    });
+
+    // Separar IA vs extracción de PDF (ambas viven en ai_analyses, distinguidas
+    // por el tipo) para que soporte las vea en bloques distintos.
+    const aiAnalysis = analysisType
+      ? aiAnalyses.filter((a) => a.type.id === analysisType.id).map(mapAnalysis)
+      : [];
+    const pdfExtraction = extractionType
+      ? aiAnalyses.filter((a) => a.type.id === extractionType.id).map(mapAnalysis)
+      : [];
+
+    // customers trae el total de la empresa; los del ciclo se derivan filtrando
+    // por createdAt dentro de la ventana (sin una query extra).
+    const customersThisCycle = customers.filter(
+      (c) => c.createdAt >= cycleStart && c.createdAt < cycleEnd,
+    );
 
     return {
-      contractId: current.contractId,
-      totalCommitted,
-      breakdown,
+      cycleStart,
+      cycleEnd,
+      studies: studies.map(mapStudy),
+      aiAnalysis,
+      pdfExtraction,
+      customers: {
+        total: customers.map(mapCustomer),
+        createdThisCycle: customersThisCycle.map(mapCustomer),
+      },
     };
   }
 
-  /** Inicio del ciclo mensual vigente, relativo a la fecha de inicio de la suscripción. */
-  private currentCycleStart(startDate: Date): Date {
-    const now = new Date();
-    const start = new Date(startDate);
-    // Avanzar mes a mes desde startDate hasta el ciclo que contiene "now".
-    const cursor = new Date(start);
-    while (true) {
-      const nextCycle = new Date(cursor);
-      nextCycle.setMonth(nextCycle.getMonth() + 1);
-      if (nextCycle > now) break;
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-    return cursor;
-  }
-
-  /** Meses entre dos fechas, redondeando hacia arriba (mes completo al nivel nuevo). */
-  private monthsBetweenCeil(from: Date, to: Date): number {
-    const f = new Date(from);
-    const t = new Date(to);
-    let months =
-      (t.getFullYear() - f.getFullYear()) * 12 +
-      (t.getMonth() - f.getMonth());
-    if (t.getDate() > f.getDate()) months += 1; // fracción de mes cuenta completa
-    return Math.max(1, months);
-  }
 }

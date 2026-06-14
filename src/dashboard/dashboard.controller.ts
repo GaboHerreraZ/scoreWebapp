@@ -7,9 +7,11 @@ import {
 } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service.js';
 import { FilterDashboardDto } from './dto/filter-dashboard.dto.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth()
+@CompanyScoped()
 @Controller('companies/:companyId/dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}

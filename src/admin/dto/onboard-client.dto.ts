@@ -5,7 +5,6 @@ import {
   IsEmail,
   IsUUID,
   IsDateString,
-  IsNumber,
   Min,
   ValidateNested,
   IsObject,
@@ -75,7 +74,8 @@ class OnboardCompanyDto {
 class OnboardSubscriptionDto {
   @ApiProperty({
     example: '3f7b1c2e-6d9a-4f41-9c52-2e8c5a7b9d13',
-    description: 'UUID del plan a asignar (ej. el plan PRO), elegido en el portal',
+    description:
+      'UUID del plan a asignar (ej. el plan PRO), elegido en el portal',
   })
   @IsUUID()
   subscriptionId: string;
@@ -104,28 +104,25 @@ class OnboardSubscriptionDto {
   @Min(1)
   maxAiAnalysisPerMonth: number;
 
-  @ApiProperty({ example: 15, description: 'Máximo de extracciones de PDF al mes' })
+  @ApiProperty({
+    example: 15,
+    description: 'Máximo de extracciones de PDF al mes',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   maxPdfExtractionsPerMonth: number;
 
-  @ApiProperty({ example: '2026-06-08', description: 'Inicio del contrato anual' })
+  @ApiProperty({
+    example: '2026-06-08',
+    description: 'Inicio del contrato anual',
+  })
   @IsDateString()
   startDate: string;
 
   @ApiProperty({ example: '2027-06-08', description: 'Fin del contrato anual' })
   @IsDateString()
   endDate: string;
-
-  @ApiPropertyOptional({
-    example: 420000,
-    description: 'Precio pactado (referencia/trazabilidad; el cobro es por fuera)',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  pricePaid?: number;
 }
 
 class OnboardOwnerDto {

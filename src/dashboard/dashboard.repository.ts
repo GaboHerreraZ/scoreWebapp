@@ -438,22 +438,4 @@ export class DashboardRepository {
     );
   }
 
-  async getCompanySubscription(companyId: string) {
-    return this.prisma.company.findUnique({
-      where: { id: companyId },
-      select: {
-        companySubscriptions: {
-          where: { isCurrent: true },
-          take: 1,
-          select: {
-            subscription: {
-              select: {
-                dashboardLevel: true,
-              },
-            },
-          },
-        },
-      },
-    });
-  }
 }

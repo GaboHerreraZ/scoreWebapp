@@ -163,6 +163,22 @@ export class InvitationsRepository {
     return param?.id ?? null;
   }
 
+  /**
+   * True si la suscripción vigente de la empresa está pendiente de pago.
+   * Bloquea la activación de la cuenta hasta que se complete el pago inicial.
+   */
+  async isCompanyPendingPayment(companyId: string): Promise<boolean> {
+    const pendingStatus = await this.prisma.parameter.findFirst({
+      where: { type: 'subscription_status', code: 'pending_payment' },
+    });
+    if (!pendingStatus) return false;
+
+    const count = await this.prisma.companySubscription.count({
+      where: { companyId, isCurrent: true, statusId: pendingStatus.id },
+    });
+    return count > 0;
+  }
+
   async getRoleId(code: string): Promise<number | null> {
     const param = await this.prisma.parameter.findFirst({
       where: { type: 'user_company_role', code },

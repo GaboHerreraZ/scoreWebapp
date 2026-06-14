@@ -11,6 +11,7 @@ import { CreditStudiesModule } from './credit-studies/credit-studies.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
+import { ConsultationPricesModule } from './consultation-prices/consultation-prices.module.js';
 import { CompanySubscriptionsModule } from './company-subscriptions/company-subscriptions.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
@@ -21,6 +22,7 @@ import { EpaycoModule } from './epayco/epayco.module.js';
 import { ExcelModule } from './common/excel/excel.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
+import { JobsModule } from './jobs/jobs.module.js';
 
 @Module({
   imports: [
@@ -36,6 +38,7 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
     ProfilesModule,
     UserCompaniesModule,
     SubscriptionsModule,
+    ConsultationPricesModule,
     CompanySubscriptionsModule,
     DashboardModule,
     AiAnalysesModule,
@@ -44,6 +47,7 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
     NotificationsModule,
     EpaycoModule,
     AdminModule,
+    JobsModule,
   ],
   providers: [
     {

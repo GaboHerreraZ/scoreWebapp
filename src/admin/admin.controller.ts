@@ -70,14 +70,17 @@ export class AdminController {
     return this.adminService.getUsage(companyId);
   }
 
-  @Get('companies/:companyId/contract-summary')
+  @Get('companies/:companyId/cycle-activity')
   @ApiOperation({
-    summary: 'Resumen del contrato anual (total comprometido por tramos)',
+    summary:
+      'Actividad del ciclo actual para soporte: estudios, análisis IA, extracciones PDF y customers creados (campos resumidos)',
   })
-  @ApiResponse({ status: 200, description: 'Resumen del contrato' })
-  getContractSummary(@Param('companyId', ParseUUIDPipe) companyId: string) {
-    return this.adminService.getContractSummary(companyId);
+  @ApiResponse({ status: 200, description: 'Listado resumido de lo creado en el ciclo' })
+  @ApiResponse({ status: 404, description: 'La empresa no tiene suscripción vigente' })
+  getCycleActivity(@Param('companyId', ParseUUIDPipe) companyId: string) {
+    return this.adminService.getCycleActivity(companyId);
   }
+
 
   @Post('companies/:companyId/subscription/change-tier')
   @ApiOperation({

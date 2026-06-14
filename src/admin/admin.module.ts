@@ -4,9 +4,15 @@ import { AdminService } from './admin.service.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { ParametersModule } from '../parameters/parameters.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { ConsultationPricesModule } from '../consultation-prices/consultation-prices.module.js';
 
 @Module({
-  imports: [PrismaModule, ParametersModule, MailModule],
+  imports: [
+    PrismaModule,
+    ParametersModule,
+    MailModule,
+    ConsultationPricesModule,
+  ],
   controllers: [AdminController],
   providers: [AdminService],
 })

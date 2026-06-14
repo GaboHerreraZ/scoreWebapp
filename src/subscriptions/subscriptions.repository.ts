@@ -7,8 +7,7 @@ export class SubscriptionsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly defaultInclude = {
-    dashboardLevel: true,
-    supportLevel: true,
+    createdByAdmin: true,
     companySubscriptions: { include: { company: true, status: true } },
   } as const;
 
@@ -22,8 +21,8 @@ export class SubscriptionsRepository {
   async findAllActive() {
     return this.prisma.subscription.findMany({
       where: { isActive: true },
-      orderBy: { price: 'asc' },
-      include: { dashboardLevel: true, supportLevel: true },
+      orderBy: { maxStudiesPerMonth: 'asc' },
+      include: { createdByAdmin: true },
     });
   }
 
@@ -57,5 +56,10 @@ export class SubscriptionsRepository {
       where: { subscriptionId: id, isCurrent: true },
     });
     return count > 0;
+  }
+
+  /** Resuelve el PlatformAdmin (PK) a partir del userId de Supabase. */
+  async findPlatformAdminByUserId(userId: string) {
+    return this.prisma.platformAdmin.findUnique({ where: { userId } });
   }
 }

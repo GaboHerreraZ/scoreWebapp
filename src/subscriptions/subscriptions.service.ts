@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { SubscriptionsRepository } from './subscriptions.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 import { OnboardingSetupDto } from './dto/onboarding-setup.dto.js';
@@ -15,34 +16,73 @@ export class SubscriptionsService {
   constructor(
     private readonly repository: SubscriptionsRepository,
     private readonly prisma: PrismaService,
+    private readonly consultationPricesService: ConsultationPricesService,
   ) {}
 
-  async create(dto: CreateSubscriptionDto) {
-    return this.repository.create({
+  /**
+   * Aplana la relación createdByAdmin a un campo plano createdByEmail,
+   * conservando createdBy (el id) y omitiendo el objeto anidado.
+   */
+  private withCreatedByEmail<
+    T extends { createdByAdmin?: { email: string } | null },
+  >(subscription: T) {
+    const { createdByAdmin, ...rest } = subscription;
+    return {
+      ...rest,
+      createdByEmail: createdByAdmin?.email ?? null,
+    };
+  }
+
+  /**
+   * Agrega el precio derivado del plan: maxStudiesPerMonth × unitPrice del
+   * ConsultationPrice vigente. Para mostrar en el front sin recalcular.
+   * - unitPrice: precio por consulta vigente (null si no hay precio activo).
+   * - price: total del plan (0 si el plan no incluye consultas).
+   */
+  private withPrice<T extends { maxStudiesPerMonth?: number | null }>(
+    subscription: T,
+    unitPrice: number | null,
+  ) {
+    const studies = subscription.maxStudiesPerMonth ?? 0;
+    return {
+      ...subscription,
+      unitPrice,
+      price: unitPrice !== null ? studies * unitPrice : null,
+    };
+  }
+
+  async create(dto: CreateSubscriptionDto, userId: string) {
+    // El plan lo crea un admin del portal: resolvemos su PK desde el userId Supabase.
+    const admin = await this.repository.findPlatformAdminByUserId(userId);
+
+    const subscription = await this.repository.create({
       name: dto.name,
       description: dto.description,
-      price: dto.price,
       isMonthly: dto.isMonthly,
       maxUsers: dto.maxUsers,
       maxCompanies: dto.maxCompanies,
       maxCustomers: dto.maxCustomers,
       maxStudiesPerMonth: dto.maxStudiesPerMonth,
       maxAiAnalysisPerMonth: dto.maxAiAnalysisPerMonth,
-      dashboardLevelId: dto.dashboardLevelId,
-      excelReports: dto.excelReports,
-      emailNotifications: dto.emailNotifications,
-      themeCustomization: dto.themeCustomization,
-      supportLevelId: dto.supportLevelId,
-      epaycoPlanId: dto.epaycoPlanId,
+      maxPdfExtractionsPerMonth: dto.maxPdfExtractionsPerMonth,
       isActive: dto.isActive,
+      createdBy: admin?.id ?? null,
     });
+
+    return this.withCreatedByEmail(subscription);
   }
 
   async findAll() {
-    const subscriptions = await this.repository.findAllActive();
+    const [subscriptions, activePrice] = await Promise.all([
+      this.repository.findAllActive(),
+      this.consultationPricesService.getActivePrice(),
+    ]);
+    const unitPrice = activePrice?.unitPrice ?? null;
 
     return {
-      data: subscriptions,
+      data: subscriptions.map((s) =>
+        this.withPrice(this.withCreatedByEmail(s), unitPrice),
+      ),
     };
   }
 
@@ -55,7 +95,11 @@ export class SubscriptionsService {
     if (!subscription) {
       throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
     }
-    return subscription;
+    const activePrice = await this.consultationPricesService.getActivePrice();
+    return this.withPrice(
+      this.withCreatedByEmail(subscription),
+      activePrice?.unitPrice ?? null,
+    );
   }
 
   async update(id: string, dto: UpdateSubscriptionDto) {
@@ -64,24 +108,20 @@ export class SubscriptionsService {
       throw new NotFoundException(`Suscripción con id=${id} no encontrada`);
     }
 
-    return this.repository.update(id, {
+    const subscription = await this.repository.update(id, {
       name: dto.name,
       description: dto.description,
-      price: dto.price,
       isMonthly: dto.isMonthly,
       maxUsers: dto.maxUsers,
       maxCompanies: dto.maxCompanies,
       maxCustomers: dto.maxCustomers,
       maxStudiesPerMonth: dto.maxStudiesPerMonth,
       maxAiAnalysisPerMonth: dto.maxAiAnalysisPerMonth,
-      dashboardLevelId: dto.dashboardLevelId,
-      excelReports: dto.excelReports,
-      emailNotifications: dto.emailNotifications,
-      themeCustomization: dto.themeCustomization,
-      supportLevelId: dto.supportLevelId,
-      epaycoPlanId: dto.epaycoPlanId,
+      maxPdfExtractionsPerMonth: dto.maxPdfExtractionsPerMonth,
       isActive: dto.isActive,
     });
+
+    return this.withCreatedByEmail(subscription);
   }
 
   async remove(id: string) {

@@ -71,19 +71,7 @@ export class ProfilesRepository {
                       select: {
                         id: true,
                         name: true,
-                        dashboardLevel: {
-                          select: {
-                            id: true,
-                            code: true,
-                          },
-                        },
                         isActive: true,
-                        supportLevel: {
-                          select: {
-                            id: true,
-                            code: true,
-                          },
-                        },
                       },
                     },
                   },

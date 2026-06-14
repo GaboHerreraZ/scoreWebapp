@@ -350,6 +350,17 @@ export class InvitationsService {
       );
     }
 
+    // Bloquear la activación si la suscripción de la empresa aún no se ha pagado.
+    // El cliente debe completar el pago (link del correo) antes de activar.
+    const pendingPayment = await this.repository.isCompanyPendingPayment(
+      invitation.companyId,
+    );
+    if (pendingPayment) {
+      throw new ForbiddenException(
+        'Debes completar el pago de tu suscripción antes de activar tu cuenta.',
+      );
+    }
+
     // Verificar que no exista ya un profile con este userId
     const profileExists = await this.repository.profileExistsById(userId);
     if (profileExists) {
