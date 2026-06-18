@@ -4,7 +4,6 @@ import { Resend } from 'resend';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { formatCOP } from '../common/utils/currency.js';
 
 @Injectable()
 export class MailService {
@@ -62,64 +61,6 @@ export class MailService {
       from: 'Creditia <notificaciones@creditia.co>',
       to,
       subject: `${invitedByName} te ha invitado a colaborar en ${companyName}`,
-      html,
-    });
-  }
-
-  /**
-   * Correo de bienvenida al dueño (owner) de una empresa recién dada de alta
-   * desde el portal admin. Usa la MISMA URL de invitación que sendInvitationEmail
-   * (mismo flujo de aceptación en el front), pero con un mensaje de bienvenida.
-   */
-  async sendOwnerWelcomeEmail(params: {
-    to: string;
-    invitationId: string;
-    token: string;
-    companyName: string;
-    companySubscriptionId: string;
-    paymentToken: string;
-    planName: string;
-    studiesPerMonth: number;
-    maxUsers: number;
-    amount: number;
-    isMonthly: boolean;
-  }) {
-    const {
-      to,
-      invitationId,
-      token,
-      companyName,
-      companySubscriptionId,
-      paymentToken,
-      planName,
-      studiesPerMonth,
-      maxUsers,
-      amount,
-      isMonthly,
-    } = params;
-
-    const invitationUrl = `${this.frontendUrl}/invitacion?email=${encodeURIComponent(to)}&invitationId=${invitationId}&token=${token}`;
-    // Link a la página de checkout propia (resumen + formulario de tarjeta).
-    const paymentUrl = `${this.frontendUrl}/pago-suscripcion?cs=${companySubscriptionId}&token=${paymentToken}`;
-
-    const formattedAmount = formatCOP(amount);
-
-    const html = this.loadTemplate('owner-welcome', {
-      companyName,
-      invitationUrl,
-      paymentUrl,
-      planName,
-      studiesPerMonth: studiesPerMonth.toString(),
-      maxUsers: maxUsers.toString(),
-      amount: formattedAmount,
-      billingCycle: isMonthly ? 'mensual' : 'anual',
-      logoUrl: this.logoUrl,
-    });
-
-    await this.resend.emails.send({
-      from: 'Creditia <notificaciones@creditia.co>',
-      to,
-      subject: `Bienvenido a Creditia — activa el acceso de ${companyName}`,
       html,
     });
   }

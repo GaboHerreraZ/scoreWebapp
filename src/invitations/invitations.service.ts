@@ -68,27 +68,8 @@ export class InvitationsService {
       );
     }
 
-    // Validar límite de suscripción (usuarios activos + invitaciones pendientes)
-    const maxUsers = await this.repository.getCompanyMaxUsers(companyId);
-    if (maxUsers === null) {
-      throw new BadRequestException(
-        'Esta empresa no tiene una suscripción activa',
-      );
-    }
-
-    const [activeUsersCount, pendingInvitationsCount] = await Promise.all([
-      this.repository.getCompanyActiveUsersCount(companyId),
-      this.repository.getCompanyPendingInvitationsCount(
-        companyId,
-        pendingStatusId,
-      ),
-    ]);
-
-    if (activeUsersCount + pendingInvitationsCount >= maxUsers) {
-      throw new ForbiddenException(
-        `La empresa ha alcanzado el número máximo de usuarios permitidos por su suscripción (${maxUsers}). Actualice su plan para invitar más usuarios.`,
-      );
-    }
+    // En el modelo de bolsas no hay tope de usuarios por plan: cualquier empresa
+    // puede invitar colaboradores sin límite.
 
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
@@ -350,16 +331,8 @@ export class InvitationsService {
       );
     }
 
-    // Bloquear la activación si la suscripción de la empresa aún no se ha pagado.
-    // El cliente debe completar el pago (link del correo) antes de activar.
-    const pendingPayment = await this.repository.isCompanyPendingPayment(
-      invitation.companyId,
-    );
-    if (pendingPayment) {
-      throw new ForbiddenException(
-        'Debes completar el pago de tu suscripción antes de activar tu cuenta.',
-      );
-    }
+    // En el modelo de bolsas la activación de la cuenta no depende de un pago
+    // previo: la empresa entra y compra créditos cuando los necesite.
 
     // Verificar que no exista ya un profile con este userId
     const profileExists = await this.repository.profileExistsById(userId);
@@ -399,20 +372,7 @@ export class InvitationsService {
       assignedRoleId = auxiliarRoleId;
     }
 
-    // Re-validar límite de suscripción
-    const maxUsers = await this.repository.getCompanyMaxUsers(
-      invitation.companyId,
-    );
-    if (maxUsers !== null) {
-      const activeUsersCount = await this.repository.getCompanyActiveUsersCount(
-        invitation.companyId,
-      );
-      if (activeUsersCount >= maxUsers) {
-        throw new ForbiddenException(
-          'La empresa ha alcanzado el número máximo de usuarios permitidos por su suscripción. No se puede aceptar la invitación en este momento.',
-        );
-      }
-    }
+    // Sin tope de usuarios por plan en el modelo de bolsas.
 
     return this.repository.acceptInvitationAndRegister({
       invitationId,
@@ -559,21 +519,7 @@ export class InvitationsService {
         );
       }
 
-      // Re-validar límite de suscripción al momento de aceptar
-      const maxUsers = await this.repository.getCompanyMaxUsers(
-        invitation.companyId,
-      );
-      if (maxUsers !== null) {
-        const activeUsersCount =
-          await this.repository.getCompanyActiveUsersCount(
-            invitation.companyId,
-          );
-        if (activeUsersCount >= maxUsers) {
-          throw new ForbiddenException(
-            'La empresa ha alcanzado el número máximo de usuarios permitidos por su suscripción. No se puede aceptar la invitación en este momento.',
-          );
-        }
-      }
+      // Sin tope de usuarios por plan en el modelo de bolsas.
 
       return this.repository.acceptInvitation(
         id,

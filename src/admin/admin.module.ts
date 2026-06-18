@@ -3,16 +3,10 @@ import { AdminController } from './admin.controller.js';
 import { AdminService } from './admin.service.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { ParametersModule } from '../parameters/parameters.module.js';
-import { MailModule } from '../mail/mail.module.js';
-import { ConsultationPricesModule } from '../consultation-prices/consultation-prices.module.js';
+import { AnalysisPacksModule } from '../analysis-packs/analysis-packs.module.js';
 
 @Module({
-  imports: [
-    PrismaModule,
-    ParametersModule,
-    MailModule,
-    ConsultationPricesModule,
-  ],
+  imports: [PrismaModule, ParametersModule, AnalysisPacksModule],
   controllers: [AdminController],
   providers: [AdminService],
 })

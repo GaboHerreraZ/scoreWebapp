@@ -71,21 +71,6 @@ export class CompaniesController {
     return this.companiesService.findById(id);
   }
 
-  @Get(':id/subscription-details')
-  @ApiOperation({
-    summary:
-      'Get available plans, subscription usage and payment history for a company',
-  })
-  @ApiResponse({
-    status: 200,
-    description:
-      'Returns availablePlans, subscriptionUsage and paymentHistory objects',
-  })
-  @ApiResponse({ status: 404, description: 'Company not found' })
-  getSubscriptionDetails(@Param('id', ParseUUIDPipe) id: string) {
-    return this.companiesService.getSubscriptionDetails(id);
-  }
-
   @Get(':id/customers')
   @ApiOperation({ summary: 'List customers of a company' })
   @ApiResponse({

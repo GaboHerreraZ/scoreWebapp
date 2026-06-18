@@ -1,20 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { getCurrentCycleWindow } from '../common/utils/billing-cycle.js';
-import { getEffectiveLimits } from '../common/utils/plan-limits.js';
 
 @Injectable()
 export class CompaniesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  private readonly subscriptionInclude = {
-    companySubscriptions: {
-      where: { isCurrent: true },
-      take: 1,
-      include: { subscription: true, status: true },
-    },
-  };
+  // Se conserva como objeto vacío para no tocar los 8 includes que lo
+  // spread-ean; el modelo de bolsas no anexa datos de suscripción a Company.
+  private readonly subscriptionInclude = {};
 
   async create(data: Prisma.CompanyUncheckedCreateInput) {
     return this.prisma.company.create({
@@ -150,134 +144,15 @@ export class CompaniesRepository {
   }
 
   async hasRelatedRecords(id: string): Promise<boolean> {
-    const [userCompanies, customers, creditStudies, companySubscriptions] =
+    const [userCompanies, customers, creditStudies, analysisPacks] =
       await Promise.all([
         this.prisma.userCompany.count({ where: { companyId: id } }),
         this.prisma.customer.count({ where: { companyId: id } }),
         this.prisma.creditStudy.count({ where: { companyId: id } }),
-        this.prisma.companySubscription.count({ where: { companyId: id } }),
+        this.prisma.analysisPack.count({ where: { companyId: id } }),
       ]);
 
-    return userCompanies + customers + creditStudies + companySubscriptions > 0;
-  }
-
-  async getAvailablePlans(companyId: string) {
-    const [company, plans] = await Promise.all([
-      this.prisma.company.findUnique({
-        where: { id: companyId },
-        include: {
-          companySubscriptions: {
-            where: { isCurrent: true },
-            take: 1,
-            select: { subscriptionId: true },
-          },
-        },
-      }),
-      this.prisma.subscription.findMany({
-        where: { isActive: true },
-        orderBy: { maxStudiesPerMonth: 'asc' },
-      }),
-    ]);
-
-    return { company, plans };
-  }
-
-  async getSubscriptionWithUsage(companyId: string) {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
-      include: {
-        companySubscriptions: {
-          where: { isCurrent: true },
-          take: 1,
-          include: {
-            subscription: true,
-          },
-        },
-      },
-    });
-
-    if (!company) return null;
-
-    const currentCompanySubscription = company.companySubscriptions[0];
-    if (!currentCompanySubscription) return null;
-
-    const subscription = currentCompanySubscription.subscription;
-
-    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
-      currentCompanySubscription.startDate,
-    );
-
-    const effectiveLimits = getEffectiveLimits(
-      currentCompanySubscription,
-      subscription,
-    );
-
-    // Get parameter IDs for AI analysis types
-    const [estudioCreditoParam, cargaPdfParam] = await Promise.all([
-      this.prisma.parameter.findFirst({ where: { code: 'creditReview' } }),
-      this.prisma.parameter.findFirst({
-        where: { code: 'financialStatementsPdfUpload' },
-      }),
-    ]);
-
-    const [
-      usersCount,
-      customersCount,
-      studiesThisMonth,
-      aiAnalysesThisMonth,
-      pdfExtractionsThisMonth,
-    ] = await Promise.all([
-      this.prisma.userCompany.count({
-        where: { companyId, isActive: true },
-      }),
-      this.prisma.customer.count({
-        where: { companyId },
-      }),
-      this.prisma.creditStudy.count({
-        where: {
-          companyId,
-          createdAt: { gte: cycleStart, lt: cycleEnd },
-        },
-      }),
-      this.prisma.aiAnalysis.count({
-        where: {
-          companyId,
-          status: 'success',
-          createdAt: { gte: cycleStart, lt: cycleEnd },
-          ...(estudioCreditoParam ? { typeId: estudioCreditoParam.id } : {}),
-        },
-      }),
-      this.prisma.aiAnalysis.count({
-        where: {
-          companyId,
-          status: 'success',
-          createdAt: { gte: cycleStart, lt: cycleEnd },
-          ...(cargaPdfParam ? { typeId: cargaPdfParam.id } : {}),
-        },
-      }),
-    ]);
-
-    return {
-      company,
-      subscription,
-      companySubscription: currentCompanySubscription,
-      effectiveLimits,
-      cycle: { cycleStart, cycleEnd },
-      usage: {
-        usersCount,
-        customersCount,
-        studiesThisMonth,
-        aiAnalysesThisMonth,
-        pdfExtractionsThisMonth,
-      },
-    };
-  }
-
-  async findPaymentHistoryByCompanyId(companyId: string) {
-    return this.prisma.paymentHistory.findMany({
-      where: { companySubscription: { companyId } },
-      orderBy: { createdAt: 'desc' },
-    });
+    return userCompanies + customers + creditStudies + analysisPacks > 0;
   }
 
   async getRoleId(code: string): Promise<number | null> {
