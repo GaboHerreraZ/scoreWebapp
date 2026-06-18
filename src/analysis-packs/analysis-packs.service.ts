@@ -362,7 +362,29 @@ export class AnalysisPacksService {
    * firma, idempotencia por transacción, y activa la bolsa si el pago fue
    * aceptado (cod_response=1). El id de la bolsa viaja en x_extra1.
    */
-  async handleConfirmation(dto: PackConfirmationDto) {
+  async handleConfirmation(raw: PackConfirmationDto) {
+    // El webhook lee el payload CRUDO (sin DTO/transform), así que ePayco manda
+    // varios campos como número (x_ref_payco, x_amount, x_cod_response...). Las
+    // columnas y la firma esperan string: normalizamos a string lo que venga.
+    const str = (v: unknown): string | undefined =>
+      v === undefined || v === null ? undefined : String(v);
+    const dto: PackConfirmationDto = {
+      ...raw,
+      x_ref_payco: str(raw.x_ref_payco),
+      x_transaction_id: str(raw.x_transaction_id),
+      x_amount: str(raw.x_amount),
+      x_currency_code: str(raw.x_currency_code),
+      x_signature: str(raw.x_signature),
+      x_cod_response: str(raw.x_cod_response),
+      x_approval_code: str(raw.x_approval_code),
+      x_franchise: str(raw.x_franchise),
+      x_cardnumber: str(raw.x_cardnumber),
+      x_transaction_date: str(raw.x_transaction_date),
+      x_response_reason_text: str(raw.x_response_reason_text),
+      x_test_request: str(raw.x_test_request),
+      x_extra1: str(raw.x_extra1),
+    };
+
     this.logger.log(
       `Webhook pack recibido: ref=${dto.x_ref_payco}, cod_response=${dto.x_cod_response}, extra1=${dto.x_extra1}`,
     );
