@@ -53,6 +53,26 @@ export class PackConfirmationDto {
   @IsString()
   x_franchise?: string;
 
+  @ApiPropertyOptional({ description: 'Tarjeta enmascarada (457562***0326)' })
+  @IsOptional()
+  @IsString()
+  x_cardnumber?: string;
+
+  @ApiPropertyOptional({ description: 'Fecha/hora real del cobro' })
+  @IsOptional()
+  @IsString()
+  x_transaction_date?: string;
+
+  @ApiPropertyOptional({ description: 'Motivo detallado (00-Aprobada, etc.)' })
+  @IsOptional()
+  @IsString()
+  x_response_reason_text?: string;
+
+  @ApiPropertyOptional({ description: 'TRUE si es transacción de prueba' })
+  @IsOptional()
+  @IsString()
+  x_test_request?: string;
+
   @ApiPropertyOptional({ description: 'Invoice / reference propia' })
   @IsOptional()
   @IsString()

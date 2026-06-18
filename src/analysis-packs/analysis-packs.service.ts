@@ -100,22 +100,43 @@ export class AnalysisPacksService {
 
     const paymentToken = randomBytes(32).toString('hex');
 
-    // 1. Crear la bolsa en pending_payment con el precio CONGELADO. La sesión de
-    //    ePayco se crea DESPUÉS, solo si la bolsa quedó guardada OK.
-    const pack = await this.repository.create({
-      companyId,
-      packOfferingId: offering.id,
-      quantityPurchased: offering.quantity,
-      quantityConsumed: 0,
-      startDate,
-      endDate,
-      unitPricePaid: pricing.unitPrice,
-      totalPaid: pricing.total,
-      currencyCode: activePrice.currencyCode,
-      consultationPriceId: activePrice.id,
-      statusId: pendingStatus.id,
-      paymentToken,
-    });
+    // 1. La bolsa en pending_payment con el precio CONGELADO. La sesión de ePayco
+    //    se crea DESPUÉS, solo si la bolsa quedó guardada OK.
+    //    Reintento de pago: si ya existe una bolsa pendiente de esta empresa para
+    //    esta misma oferta, se REUTILIZA (recongelando el precio vigente) en vez
+    //    de crear otra huérfana. Las pendientes de otras ofertas no se tocan.
+    const existingPending =
+      await this.repository.findPendingByCompanyAndOffering(
+        companyId,
+        offering.id,
+        pendingStatus.id,
+      );
+
+    const pack = existingPending
+      ? await this.repository.refreshPendingPurchase(existingPending.id, {
+          quantityPurchased: offering.quantity,
+          startDate,
+          endDate,
+          unitPricePaid: pricing.unitPrice,
+          totalPaid: pricing.total,
+          currencyCode: activePrice.currencyCode,
+          consultationPriceId: activePrice.id,
+          paymentToken,
+        })
+      : await this.repository.create({
+          companyId,
+          packOfferingId: offering.id,
+          quantityPurchased: offering.quantity,
+          quantityConsumed: 0,
+          startDate,
+          endDate,
+          unitPricePaid: pricing.unitPrice,
+          totalPaid: pricing.total,
+          currencyCode: activePrice.currencyCode,
+          consultationPriceId: activePrice.id,
+          statusId: pendingStatus.id,
+          paymentToken,
+        });
 
     // invoice = referencia única propia que ePayco devuelve en la confirmación.
     const invoice = `PACK-${pack.id}`;
@@ -403,6 +424,21 @@ export class AnalysisPacksService {
 
     const responseCode = parseInt(dto.x_cod_response ?? '0', 10);
 
+    // Datos del comprobante (franquicia, tarjeta enmascarada, aprobación, fecha
+    // real del cobro, motivo y marca de prueba) para recibo y conciliación.
+    const parsedPaidAt = dto.x_transaction_date
+      ? new Date(dto.x_transaction_date.replace(' ', 'T'))
+      : null;
+    const receipt = {
+      epaycoFranchise: dto.x_franchise ?? null,
+      epaycoCardLast4: dto.x_cardnumber ?? null,
+      epaycoApprovalCode: dto.x_approval_code ?? null,
+      epaycoResponseReason: dto.x_response_reason_text ?? null,
+      paidAt:
+        parsedPaidAt && !isNaN(parsedPaidAt.getTime()) ? parsedPaidAt : null,
+      isTest: dto.x_test_request?.toUpperCase() === 'TRUE',
+    };
+
     if (responseCode === 1) {
       // Pago aceptado → activar la bolsa (claim atómico pending → active).
       const activated = await this.repository.activateAfterConfirmation({
@@ -411,6 +447,7 @@ export class AnalysisPacksService {
         activeStatusId: activeStatus.id,
         epaycoRef: dto.x_ref_payco,
         epaycoTransactionId: dto.x_transaction_id,
+        receipt,
       });
       this.logger.log(
         activated
@@ -425,6 +462,7 @@ export class AnalysisPacksService {
         cancelledStatus.id,
         dto.x_ref_payco,
         dto.x_transaction_id,
+        receipt,
       );
       this.logger.warn(
         `Pago de bolsa ${pack.id} rechazado/fallido (código=${responseCode}, ref=${dto.x_ref_payco})`,
