@@ -6,11 +6,15 @@ export interface CycleWindow {
   cycleEnd: Date;
 }
 
+/**
+ * Ventana de facturación de 30 días que contiene `now`, anclada a `startDate`.
+ * Cálculo genérico de ciclos (sin dependencia del modelo de suscripciones).
+ */
 export function getCurrentCycleWindow(
-  subscriptionStartDate: Date,
+  startDate: Date,
   now: Date = new Date(),
 ): CycleWindow {
-  const start = new Date(subscriptionStartDate);
+  const start = new Date(startDate);
   const elapsedMs = now.getTime() - start.getTime();
 
   if (elapsedMs < 0) {

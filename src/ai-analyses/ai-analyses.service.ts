@@ -63,29 +63,8 @@ export class AiAnalysesService {
       );
     }
 
-    // 4. Check subscription AI analysis limits
-    const companySub = await this.repository.findCurrentSubscription(companyId);
-    if (!companySub) {
-      throw new BadRequestException(
-        'La empresa no tiene una suscripcion activa',
-      );
-    }
-
-    const maxAnalyses =
-      companySub.maxAiAnalysisPerMonthOverride ??
-      companySub.subscription.maxAiAnalysisPerMonth;
-    if (maxAnalyses != null && maxAnalyses > 0) {
-      const usageThisMonth = await this.repository.countCurrentCycleByType(
-        companyId,
-        typeId,
-        companySub.startDate,
-      );
-      if (usageThisMonth >= maxAnalyses) {
-        throw new BadRequestException(
-          `Limite de analisis IA alcanzado para este ciclo (${maxAnalyses}). Actualice su suscripcion para obtener mas analisis.`,
-        );
-      }
-    }
+    // 4. El IA va incluido en el estudio: el crédito ya se consumió al crear el
+    //    CreditStudy (modelo de bolsas). No hay límite adicional por suscripción.
 
     // 5. Build the prompt
     const customer = study.customer;
@@ -207,34 +186,12 @@ export class AiAnalysesService {
     // 1. Get extraction type parameter
     const typeId = await this.getTypeId('financialStatementsPdfUpload');
 
-    // 2. Check subscription PDF extraction limits
-    const companySub = await this.repository.findCurrentSubscription(companyId);
-    if (!companySub) {
-      throw new BadRequestException(
-        'La empresa no tiene una suscripcion activa',
-      );
-    }
-
-    const maxExtractions =
-      companySub.maxPdfExtractionsPerMonthOverride ??
-      companySub.subscription.maxPdfExtractionsPerMonth;
-
-    if (maxExtractions == null || maxExtractions <= 0) {
-      throw new BadRequestException(
-        'Su plan de suscripcion no incluye extraccion de PDF. Actualice su plan para usar esta funcionalidad.',
-      );
-    }
-
-    const usageThisMonth = await this.repository.countCurrentCycleByType(
-      companyId,
-      typeId,
-      companySub.startDate,
-    );
-    if (usageThisMonth >= maxExtractions) {
-      throw new BadRequestException(
-        `Limite de extracciones PDF alcanzado para este ciclo (${maxExtractions}). Actualice su suscripcion para obtener mas extracciones.`,
-      );
-    }
+    // 2. La extracción va incluida en el crédito del estudio (modelo de bolsas):
+    //    el cobro ocurre al crear el CreditStudy en createFromExtraction, que
+    //    consume 1 crédito (sin saldo → 409). No hay límite por suscripción.
+    //    NOTA: la extracción IA corre antes de crear el estudio; si el estudio
+    //    falla por falta de crédito, esta extracción no quedó cobrada (borde
+    //    menor a revisar en el refactor del flujo de extracción).
 
     // 3. Call Claude AI to extract data from PDF
     try {

@@ -12,7 +12,7 @@ import { ConsultationPricesService } from '../consultation-prices/consultation-p
 import { OnboardClientDto } from './dto/onboard-client.dto.js';
 import { ChangeTierDto } from './dto/change-tier.dto.js';
 import { MarkEinvoiceDto } from './dto/mark-einvoice.dto.js';
-import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
+import { getCurrentCycleWindow } from '../common/utils/billing-cycle.js';
 
 @Injectable()
 export class AdminService {

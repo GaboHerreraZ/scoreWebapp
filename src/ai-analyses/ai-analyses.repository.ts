@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
+import { getCurrentCycleWindow } from '../common/utils/billing-cycle.js';
 
 @Injectable()
 export class AiAnalysesRepository {
