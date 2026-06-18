@@ -13,6 +13,7 @@ import { getMonthsFromPeriod } from '../common/enums/income-statement-period.enu
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
+import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
 
 interface ViabilityDimension {
   score?: number;
@@ -49,6 +50,7 @@ export class CreditStudiesService {
     private readonly parametersRepository: ParametersRepository,
     private readonly notificationsService: NotificationsService,
     private readonly excelService: ExcelService,
+    private readonly analysisPacksService: AnalysisPacksService,
   ) {}
 
   async create(companyId: string, userId: string, dto: CreateCreditStudyDto) {
@@ -64,15 +66,27 @@ export class CreditStudiesService {
 
     const newStatus = await this.parametersRepository.findByCode('inReview');
 
-    return this.repository.create({
-      ...rest,
-      customerId,
+    // Consume 1 crédito de una bolsa vigente y crea el estudio en la misma
+    // transacción (FIFO + lock anti doble-venta). Sin saldo → 409.
+    return this.analysisPacksService.consumeCreditForStudy({
       companyId,
-      studyDate: new Date(studyDate),
-      resolutionDate: resolutionDate ? new Date(resolutionDate) : undefined,
-      createdBy: userId,
-      updatedBy: userId,
-      statusId: newStatus!.id,
+      consumedBy: userId,
+      createStudy: (tx) =>
+        this.repository.create(
+          {
+            ...rest,
+            customerId,
+            companyId,
+            studyDate: new Date(studyDate),
+            resolutionDate: resolutionDate
+              ? new Date(resolutionDate)
+              : undefined,
+            createdBy: userId,
+            updatedBy: userId,
+            statusId: newStatus!.id,
+          },
+          tx,
+        ),
     });
   }
 
@@ -107,19 +121,30 @@ export class CreditStudiesService {
 
     const newStatus = await this.parametersRepository.findByCode('inReview');
 
-    return this.repository.create({
-      ...rest,
-      customerId,
+    // Igual que create(): un estudio desde extracción también consume 1 crédito.
+    return this.analysisPacksService.consumeCreditForStudy({
       companyId,
-      studyDate: new Date(studyDate),
-      resolutionDate: resolutionDate ? new Date(resolutionDate) : undefined,
-      createdBy: userId,
-      updatedBy: userId,
-      statusId: newStatus!.id,
-      reliabilityFlags:
-        reliabilityFlags && reliabilityFlags.length > 0
-          ? (reliabilityFlags as unknown as Prisma.InputJsonValue)
-          : undefined,
+      consumedBy: userId,
+      createStudy: (tx) =>
+        this.repository.create(
+          {
+            ...rest,
+            customerId,
+            companyId,
+            studyDate: new Date(studyDate),
+            resolutionDate: resolutionDate
+              ? new Date(resolutionDate)
+              : undefined,
+            createdBy: userId,
+            updatedBy: userId,
+            statusId: newStatus!.id,
+            reliabilityFlags:
+              reliabilityFlags && reliabilityFlags.length > 0
+                ? (reliabilityFlags as unknown as Prisma.InputJsonValue)
+                : undefined,
+          },
+          tx,
+        ),
     });
   }
 

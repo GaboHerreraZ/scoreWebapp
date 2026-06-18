@@ -6,8 +6,12 @@ import { Prisma } from '../../generated/prisma/client.js';
 export class CreditStudiesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.CreditStudyUncheckedCreateInput) {
-    return this.prisma.creditStudy.create({
+  async create(
+    data: Prisma.CreditStudyUncheckedCreateInput,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const client = tx ?? this.prisma;
+    return client.creditStudy.create({
       data,
       include: { customer: true, status: true },
     });

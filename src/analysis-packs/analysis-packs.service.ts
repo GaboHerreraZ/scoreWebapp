@@ -16,6 +16,7 @@ import {
   calculatePackPrice,
   type DiscountTypeCode,
 } from '../common/utils/pack-pricing.js';
+import { Prisma } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class AnalysisPacksService {
@@ -137,6 +138,42 @@ export class AnalysisPacksService {
       },
       validity: { startDate, endDate },
     };
+  }
+
+  /**
+   * Consume 1 crédito de la empresa creando el CreditStudy asociado, de forma
+   * atómica (lock FIFO anti doble-venta). Resuelve los parámetros de estado y
+   * delega la transacción al repositorio. Lanza NoCreditsAvailableError (409)
+   * si la empresa no tiene saldo vigente.
+   *
+   * @param createStudy callback que crea el estudio con el cliente transaccional.
+   */
+  async consumeCreditForStudy<T extends { id: string }>(params: {
+    companyId: string;
+    consumedBy: string;
+    createStudy: (tx: Prisma.TransactionClient) => Promise<T>;
+  }): Promise<T> {
+    const [activeStatus, depletedStatus] = await Promise.all([
+      this.repository.findParameterByTypeAndCode(
+        'analysis_pack_status',
+        'active',
+      ),
+      this.repository.findParameterByTypeAndCode(
+        'analysis_pack_status',
+        'depleted',
+      ),
+    ]);
+    if (!activeStatus || !depletedStatus) {
+      throw new BadRequestException('Faltan parámetros de estado de bolsa');
+    }
+
+    return this.repository.consumeCreditForStudy({
+      companyId: params.companyId,
+      consumedBy: params.consumedBy,
+      activeStatusId: activeStatus.id,
+      depletedStatusId: depletedStatus.id,
+      createStudy: params.createStudy,
+    });
   }
 
   /** Bolsas de una empresa (historial). */
