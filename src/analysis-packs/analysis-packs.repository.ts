@@ -11,6 +11,16 @@ export class NoCreditsAvailableError extends ConflictException {
   }
 }
 
+/** Datos del comprobante de pago extraídos de la confirmación de ePayco. */
+export interface EpaycoReceipt {
+  epaycoFranchise?: string | null;
+  epaycoCardLast4?: string | null;
+  epaycoApprovalCode?: string | null;
+  epaycoResponseReason?: string | null;
+  paidAt?: Date | null;
+  isTest?: boolean;
+}
+
 @Injectable()
 export class AnalysisPacksRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -53,6 +63,47 @@ export class AnalysisPacksRepository {
 
   async create(data: Prisma.AnalysisPackUncheckedCreateInput) {
     return this.prisma.analysisPack.create({
+      data,
+      include: this.defaultInclude,
+    });
+  }
+
+  /**
+   * Bolsa pendiente de pago de una empresa para una oferta concreta. Sirve para
+   * reutilizarla en un reintento de pago (mismo carrito) en vez de crear otra
+   * bolsa huérfana. La más reciente primero.
+   */
+  async findPendingByCompanyAndOffering(
+    companyId: string,
+    packOfferingId: string,
+    pendingStatusId: number,
+  ) {
+    return this.prisma.analysisPack.findFirst({
+      where: { companyId, packOfferingId, statusId: pendingStatusId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Reutiliza una bolsa pendiente en un reintento: recongela el precio vigente,
+   * refresca vigencia y deja lista una nueva sesión de ePayco (sessionId se
+   * setea aparte). Solo aplica sobre bolsas en pending_payment.
+   */
+  async refreshPendingPurchase(
+    id: string,
+    data: {
+      quantityPurchased: number;
+      startDate: Date;
+      endDate: Date;
+      unitPricePaid: number;
+      totalPaid: number;
+      currencyCode: string;
+      consultationPriceId: string;
+      paymentToken: string;
+    },
+  ) {
+    return this.prisma.analysisPack.update({
+      where: { id },
       data,
       include: this.defaultInclude,
     });
@@ -131,6 +182,7 @@ export class AnalysisPacksRepository {
     activeStatusId: number;
     epaycoRef?: string;
     epaycoTransactionId?: string;
+    receipt?: EpaycoReceipt;
   }): Promise<boolean> {
     const result = await this.prisma.analysisPack.updateMany({
       where: { id: params.packId, statusId: params.pendingStatusId },
@@ -139,6 +191,7 @@ export class AnalysisPacksRepository {
         epaycoRef: params.epaycoRef,
         epaycoTransactionId: params.epaycoTransactionId,
         paymentToken: null,
+        ...params.receipt,
       },
     });
     return result.count > 0;
@@ -151,6 +204,7 @@ export class AnalysisPacksRepository {
     cancelledStatusId: number,
     epaycoRef?: string,
     epaycoTransactionId?: string,
+    receipt?: EpaycoReceipt,
   ): Promise<boolean> {
     const result = await this.prisma.analysisPack.updateMany({
       where: { id: packId, statusId: pendingStatusId },
@@ -158,6 +212,7 @@ export class AnalysisPacksRepository {
         statusId: cancelledStatusId,
         epaycoRef,
         epaycoTransactionId,
+        ...receipt,
       },
     });
     return result.count > 0;
