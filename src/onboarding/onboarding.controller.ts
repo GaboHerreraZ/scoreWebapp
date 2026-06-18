@@ -1,4 +1,12 @@
-import { Controller, Post, Body, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Req,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -29,5 +37,19 @@ export class OnboardingController {
     const userId = (req as any).user.id as string;
     const email = (req as any).user.email as string;
     return this.onboardingService.onboard(userId, email, dto);
+  }
+
+  @Get(':profileId')
+  @ApiOperation({
+    summary:
+      'Data de onboarding guardada (profile + company + billing) de un perfil, para reintentar el pago sin reingresar datos.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'profileId, companyId, profile, company y billing',
+  })
+  @ApiResponse({ status: 404, description: 'Perfil o empresa no encontrados' })
+  getOnboardingData(@Param('profileId', ParseUUIDPipe) profileId: string) {
+    return this.onboardingService.getOnboardingData(profileId);
   }
 }
