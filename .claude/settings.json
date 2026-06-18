@@ -45,7 +45,27 @@
       "PowerShell(npx tsc --noEmit 2>&1)",
       "PowerShell($env:CI=\"1\"; npm run prisma:migrate:create -- --name add_einvoice_to_payment_history 2>&1 | Select-Object -Last 25)",
       "WebFetch(domain:docs.railway.com)",
-      "WebFetch(domain:railway.com)"
+      "WebFetch(domain:railway.com)",
+      "Bash(git tag -a subscriptions-model-snapshot -m ' *)",
+      "Bash(git tag *)",
+      "Bash(git rev-list *)",
+      "PowerShell(npx prisma --version 2>&1)",
+      "PowerShell(nvm list 2>&1)",
+      "PowerShell(node --version 2>&1)",
+      "PowerShell($env:CI=\"1\"; npm run prisma:migrate:create -- --name add_analysis_packs 2>&1 | Select-Object -Last 25)",
+      "PowerShell(npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url $env:DATABASE_URL_DUMMY --script 2>&1)",
+      "PowerShell(npx dotenv -e .env.staging -- npx prisma migrate diff --from-config-datasource prisma.config.ts --to-schema ./prisma/schema.prisma --script 2>&1)",
+      "PowerShell(npx dotenv -e .env.staging -- node -e \"const{PrismaClient}=require\\('./generated/prisma'\\);const p=new PrismaClient\\(\\);\\(async\\(\\)=>{const s=await p.parameter.findMany\\({where:{type:'analysis_pack_status'},select:{code:true,label:true,sortOrder:true},orderBy:{sortOrder:'asc'}}\\);console.log\\('analysis_pack_status:',JSON.stringify\\(s\\)\\);const o=await p.packOffering.count\\(\\);const a=await p.analysisPack.count\\(\\);const c=await p.analysisConsumption.count\\(\\);console.log\\('counts -> offerings:',o,'packs:',a,'consumptions:',c\\);await p.$disconnect\\(\\);}\\)\\(\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(1\\)}\\)\" 2>&1 | Select-Object -Last 10)",
+      "PowerShell(npx dotenv -e .env.staging -- node verify-packs.mjs 2>&1)",
+      "PowerShell($envContent = Get-Content .env.staging -ErrorAction SilentlyContinue | Where-Object { $_ -match '^DIRECT_URL=' }; if \\($envContent\\) { \"DIRECT_URL found in .env.staging\" } else { \"no DIRECT_URL\" }; \\(Get-Command psql -ErrorAction SilentlyContinue\\).Source)",
+      "Bash(git stash *)",
+      "Bash(git status *)",
+      "PowerShell(cd \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; $env:PORT=\"3077\"; $p = Start-Process -FilePath \"npx.cmd\" -ArgumentList \"dotenv\",\"-e\",\".env.staging\",\"--\",\"node\",\"dist/src/main.js\" -PassThru -RedirectStandardError \"c:/tmp/packs-err.log\" -RedirectStandardOutput \"c:/tmp/packs-out.log\" -NoNewWindow; Start-Sleep -Seconds 14; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stdout \\(tail\\) ---\"; Get-Content \"c:/tmp/packs-out.log\" -Tail 6 -ErrorAction SilentlyContinue; \"--- stderr \\(tail\\) ---\"; Get-Content \"c:/tmp/packs-err.log\" -Tail 20 -ErrorAction SilentlyContinue)",
+      "PowerShell(npm run build 2>&1 | Select-Object -Last 5; if \\($?\\) { cd \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; $env:PORT=\"3078\"; $p = Start-Process -FilePath \"npx.cmd\" -ArgumentList \"dotenv\",\"-e\",\".env.staging\",\"--\",\"node\",\"dist/src/main.js\" -PassThru -RedirectStandardError \"c:/tmp/ap-err.log\" -RedirectStandardOutput \"c:/tmp/ap-out.log\" -NoNewWindow; Start-Sleep -Seconds 14; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stderr \\(tail\\) ---\"; Get-Content \"c:/tmp/ap-err.log\" -Tail 25 -ErrorAction SilentlyContinue })",
+      "PowerShell(npm run build 2>&1 | Select-Object -Last 5; if \\($?\\) { cd \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; $env:PORT=\"3079\"; $p = Start-Process -FilePath \"npx.cmd\" -ArgumentList \"dotenv\",\"-e\",\".env.staging\",\"--\",\"node\",\"dist/src/main.js\" -PassThru -RedirectStandardError \"c:/tmp/gate-err.log\" -RedirectStandardOutput \"c:/tmp/gate-out.log\" -NoNewWindow; Start-Sleep -Seconds 14; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stderr \\(tail\\) ---\"; Get-Content \"c:/tmp/gate-err.log\" -Tail 30 -ErrorAction SilentlyContinue })",
+      "Bash(git rm *)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-String -Pattern \"error TS\" | Where-Object { $_ -notmatch \"app.e2e-spec\" } | Select-Object -First 40)",
+      "PowerShell(npm run build 2>&1 | Select-Object -Last 6; if \\($?\\) { cd \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; $env:PORT=\"3080\"; $p = Start-Process -FilePath \"npx.cmd\" -ArgumentList \"dotenv\",\"-e\",\".env.staging\",\"--\",\"node\",\"dist/src/main.js\" -PassThru -RedirectStandardError \"c:/tmp/del-err.log\" -RedirectStandardOutput \"c:/tmp/del-out.log\" -NoNewWindow; Start-Sleep -Seconds 14; if \\(-not $p.HasExited\\) { \"STARTED OK \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"EXITED early \\(code $\\($p.ExitCode\\)\\)\" }; \"--- stderr \\(tail\\) ---\"; Get-Content \"c:/tmp/del-err.log\" -Tail 30 -ErrorAction SilentlyContinue })"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi"

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
-import { getEffectiveLimits } from '../common/utils/subscription-limits.js';
+import { getCurrentCycleWindow } from '../common/utils/billing-cycle.js';
+import { getEffectiveLimits } from '../common/utils/plan-limits.js';
 
 @Injectable()
 export class CompaniesRepository {
