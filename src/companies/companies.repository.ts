@@ -10,36 +10,6 @@ export class CompaniesRepository {
   // spread-ean; el modelo de bolsas no anexa datos de suscripción a Company.
   private readonly subscriptionInclude = {};
 
-  async create(data: Prisma.CompanyUncheckedCreateInput) {
-    return this.prisma.company.create({
-      data,
-      include: { ...this.subscriptionInclude, sector: true },
-    });
-  }
-
-  async createWithUserCompany(
-    companyData: Prisma.CompanyUncheckedCreateInput,
-    userCompanyData: { userId: string; roleId: number },
-  ) {
-    return this.prisma.$transaction(async (tx) => {
-      const company = await tx.company.create({
-        data: companyData,
-        include: { ...this.subscriptionInclude, sector: true },
-      });
-
-      await tx.userCompany.create({
-        data: {
-          userId: userCompanyData.userId,
-          companyId: company.id,
-          roleId: userCompanyData.roleId,
-          joinedAt: new Date(),
-        },
-      });
-
-      return company;
-    });
-  }
-
   async findAll(params: {
     skip: number;
     take: number;
@@ -153,13 +123,6 @@ export class CompaniesRepository {
       ]);
 
     return userCompanies + customers + creditStudies + analysisPacks > 0;
-  }
-
-  async getRoleId(code: string): Promise<number | null> {
-    const param = await this.prisma.parameter.findFirst({
-      where: { type: 'user_company_role', code },
-    });
-    return param?.id ?? null;
   }
 
   async findCustomersByCompanyId(params: {

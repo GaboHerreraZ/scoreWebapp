@@ -2,11 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
 import { CompaniesRepository } from './companies.repository.js';
 import { SupabaseService } from '../auth/supabase.service.js';
-import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -20,33 +18,6 @@ export class CompaniesService {
     private readonly repository: CompaniesRepository,
     private readonly supabaseService: SupabaseService,
   ) {}
-
-  async create(dto: CreateCompanyDto, userId: string) {
-    const existing = await this.repository.findByNit(dto.nit);
-    if (existing) {
-      throw new ConflictException(`Ya existe una empresa con NIT "${dto.nit}"`);
-    }
-
-    const adminRoleId = await this.repository.getRoleId('administrator');
-    if (!adminRoleId) {
-      throw new BadRequestException(
-        'Parámetro de rol "administrador" no encontrado',
-      );
-    }
-
-    return this.repository.createWithUserCompany(
-      {
-        name: dto.name,
-        nit: dto.nit,
-        sectorId: dto.sectorId,
-        state: dto.state,
-        city: dto.city,
-        address: dto.address,
-        isActive: dto.isActive,
-      },
-      { userId, roleId: adminRoleId },
-    );
-  }
 
   async findAll(filters: FilterCompanyDto) {
     const page = filters.page ?? 1;
