@@ -318,14 +318,21 @@ export class EpaycoService {
   }): Promise<string> {
     const token = await this.getApifyToken();
 
+    // Mismo flag que el SDK: en modo prueba la transacción se procesa con
+    // tarjetas de test (sin cobro real) y aparece en la vista de Pruebas del
+    // dashboard de ePayco. Debe ir en la sesión, no basta con el SDK.
+    const isTest =
+      this.configService.get<string>('EPAYCO_TEST', 'true') === 'true';
+
     const body: Record<string, unknown> = {
       checkout_version: '2',
       name: params.name,
       description: params.description,
       currency: (params.currency ?? 'COP').toUpperCase(),
-      amount: String(params.amount),
+      amount: params.amount, // ePayco v2 exige number (entre 5000 y 8000000)
       country: 'CO',
       lang: 'es',
+      test: isTest,
       invoice: params.invoice,
       response: params.responseUrl ?? '',
       confirmation: params.confirmationUrl,
