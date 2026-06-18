@@ -101,11 +101,11 @@ export class ConsultationPricesService {
   async remove(id: string) {
     await this.findById(id);
 
-    // No se borra si alguna suscripción se calculó con este precio (auditoría).
-    const inUse = await this.repository.countCompanySubscriptions(id);
+    // No se borra si alguna bolsa se compró con este precio (auditoría).
+    const inUse = await this.repository.countAnalysisPacks(id);
     if (inUse > 0) {
       throw new ConflictException(
-        'No se puede eliminar: hay suscripciones calculadas con este precio. Desactívelo en su lugar.',
+        'No se puede eliminar: hay bolsas compradas con este precio. Desactívelo en su lugar.',
       );
     }
 

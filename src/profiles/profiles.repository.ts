@@ -53,29 +53,6 @@ export class ProfilesRepository {
                 city: true,
                 nit: true,
                 name: true,
-                companySubscriptions: {
-                  where: { isCurrent: true },
-                  take: 1,
-                  select: {
-                    startDate: true,
-                    endDate: true,
-                    isCurrent: true,
-                    status: {
-                      select: {
-                        code: true,
-                        label: true,
-                        id: true,
-                      },
-                    },
-                    subscription: {
-                      select: {
-                        id: true,
-                        name: true,
-                        isActive: true,
-                      },
-                    },
-                  },
-                },
               },
             },
           },

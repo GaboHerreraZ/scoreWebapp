@@ -4,22 +4,39 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ProfilesRepository } from './profiles.repository.js';
-import { CompaniesRepository } from '../companies/companies.repository.js';
+import { AnalysisPacksRepository } from '../analysis-packs/analysis-packs.repository.js';
+import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { CreateProfileDto } from './dto/create-profile.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { FilterProfileDto } from './dto/filter-profile.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
-const ADMIN_ROLE_CODE = 'administrator';
-const ACTIVE_STATUS_CODE = 'active';
-
 @Injectable()
 export class ProfilesService {
   constructor(
     private readonly repository: ProfilesRepository,
-    private readonly companiesRepository: CompaniesRepository,
+    private readonly analysisPacksRepository: AnalysisPacksRepository,
+    private readonly parametersRepository: ParametersRepository,
   ) {}
+
+  /** Créditos disponibles de una empresa (bolsas activas y vigentes con saldo). */
+  private async getAvailableCredits(companyId: string): Promise<number> {
+    const activeStatus = await this.parametersRepository.findByTypeAndCode(
+      'analysis_pack_status',
+      'active',
+    );
+    if (!activeStatus) return 0;
+
+    const packs = await this.analysisPacksRepository.findActivePacksWithBalance(
+      companyId,
+      activeStatus.id,
+    );
+    return packs.reduce(
+      (sum, p) => sum + (p.quantityPurchased - p.quantityConsumed),
+      0,
+    );
+  }
 
   async create(dto: CreateProfileDto) {
     const existing = await this.repository.findByEmail(dto.email);
@@ -81,91 +98,41 @@ export class ProfilesService {
 
     const userCompany = profile.userCompanies[0] ?? null;
 
-    // Beneficios que ahora son por defecto en todos los planes (Excel, dashboard
-    // avanzado, tema, notificaciones por correo). Ya no dependen del plan.
+    // Permisos en el modelo de bolsas: las acciones que consumen un crédito
+    // (crear estudio, y por extensión el IA/extracción que cuelgan de él)
+    // requieren saldo disponible. El resto (usuarios, customers, exportar) ya no
+    // tiene tope por plan.
     let permissions = {
       canAddCreditStudy: false,
-      canAddUser: false,
-      canAddCustomer: false,
+      canAddUser: true,
+      canAddCustomer: true,
       canMakeAiAnalysis: false,
       canExportExcel: true,
-      subscriptionActive: false,
+      hasCredits: false,
+      availableCredits: 0,
       canEditTheme: true,
       emailNotification: true,
-      subscriptionStatus: '',
-      hasSubscription: false,
       canExtractPdf: false,
     };
 
-
     if (userCompany) {
-      const usageResult =
-        await this.companiesRepository.getSubscriptionWithUsage(
-          userCompany.companyId,
-        );
-
-      const isAdmin = userCompany.role?.code === ADMIN_ROLE_CODE;
-      const currentSubscription = userCompany.company.companySubscriptions.find(
-        (c) => c.isCurrent,
+      const availableCredits = await this.getAvailableCredits(
+        userCompany.companyId,
       );
+      const hasCredits = availableCredits > 0;
 
-
-      const subscriptionActive =
-        (currentSubscription &&
-          currentSubscription.status.code === ACTIVE_STATUS_CODE) ??
-        false;
-
-      if (usageResult) {
-        const { usage, effectiveLimits } = usageResult;
-
-        const usersRemaining = effectiveLimits.maxUsers - usage.usersCount;
-
-        const creditStudiesRemaining =
-          (effectiveLimits.maxStudiesPerMonth ?? 0) - usage.studiesThisMonth;
-
-        const customersUnlimited = effectiveLimits.maxCustomers === null;
-
-        const customersRemaining = customersUnlimited
-          ? null
-          : (effectiveLimits.maxCustomers ?? 0) - usage.customersCount;
-
-        const aiUnlimited = effectiveLimits.maxAiAnalysisPerMonth === null;
-
-        const aiRemaining = aiUnlimited
-          ? null
-          : (effectiveLimits.maxAiAnalysisPerMonth ?? 0) -
-            usage.aiAnalysesThisMonth;
-
-        const extractPdfUnlimited =
-          effectiveLimits.maxPdfExtractionsPerMonth === null;
-
-        const extractPdfRemaining = extractPdfUnlimited
-          ? null
-          : (effectiveLimits.maxPdfExtractionsPerMonth ?? 0) -
-            usage.pdfExtractionsThisMonth;
-
-        permissions = {
-          canAddCreditStudy: subscriptionActive && creditStudiesRemaining > 0,
-          canAddUser: subscriptionActive && isAdmin && usersRemaining > 0,
-          canAddCustomer:
-            subscriptionActive &&
-            (customersUnlimited || (customersRemaining ?? 0) > 0),
-          canMakeAiAnalysis:
-            subscriptionActive && (aiUnlimited || (aiRemaining ?? 0) > 0),
-          canExtractPdf:
-            subscriptionActive &&
-            (extractPdfUnlimited || (extractPdfRemaining ?? 0) > 0),
-          // Beneficios universales: ya no dependen del plan.
-          canExportExcel: true,
-          subscriptionActive,
-          canEditTheme: true,
-          emailNotification: true,
-          subscriptionStatus: currentSubscription?.status.code ?? '',
-          hasSubscription: true,
-        };
-      } else {
-        permissions = { ...permissions, subscriptionActive };
-      }
+      permissions = {
+        canAddCreditStudy: hasCredits,
+        canMakeAiAnalysis: hasCredits,
+        canExtractPdf: hasCredits,
+        canAddUser: true,
+        canAddCustomer: true,
+        canExportExcel: true,
+        hasCredits,
+        availableCredits,
+        canEditTheme: true,
+        emailNotification: true,
+      };
     }
 
     const { userCompanies, ...rest } = profile;

@@ -157,13 +157,6 @@ export class AiAnalysesController {
     return this.aiAnalysesService.findAll(companyId, filters);
   }
 
-  @Get('usage')
-  @ApiOperation({ summary: 'Get AI analysis usage for the current month' })
-  @ApiResponse({ status: 200, description: 'Current month AI usage stats' })
-  getUsage(@Param('companyId', ParseUUIDPipe) companyId: string) {
-    return this.aiAnalysesService.getUsage(companyId);
-  }
-
   @Get(':id/pdf')
   @ApiOperation({ summary: 'Download the PDF file stored for an AI analysis' })
   @ApiResponse({ status: 200, description: 'PDF file returned' })

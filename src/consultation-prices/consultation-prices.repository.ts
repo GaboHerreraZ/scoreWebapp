@@ -99,9 +99,9 @@ export class ConsultationPricesRepository {
     return this.prisma.consultationPrice.delete({ where: { id } });
   }
 
-  /** Nº de suscripciones atadas a este precio (impide borrado si > 0). */
-  async countCompanySubscriptions(id: string): Promise<number> {
-    return this.prisma.companySubscription.count({
+  /** Nº de bolsas compradas con este precio (impide borrado si > 0). */
+  async countAnalysisPacks(id: string): Promise<number> {
+    return this.prisma.analysisPack.count({
       where: { consultationPriceId: id },
     });
   }

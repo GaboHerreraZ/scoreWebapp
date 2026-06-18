@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { getCurrentCycleWindow } from '../common/utils/billing-cycle.js';
 
 @Injectable()
 export class AiAnalysesRepository {
@@ -85,49 +84,6 @@ export class AiAnalysesRepository {
         id: true,
         pdfFile: true,
       },
-    });
-  }
-
-  async countCurrentCycle(
-    companyId: string,
-    subscriptionStartDate: Date,
-  ): Promise<number> {
-    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
-      subscriptionStartDate,
-    );
-
-    return this.prisma.aiAnalysis.count({
-      where: {
-        companyId,
-        status: 'success',
-        createdAt: { gte: cycleStart, lt: cycleEnd },
-      },
-    });
-  }
-
-  async countCurrentCycleByType(
-    companyId: string,
-    typeId: number,
-    subscriptionStartDate: Date,
-  ): Promise<number> {
-    const { cycleStart, cycleEnd } = getCurrentCycleWindow(
-      subscriptionStartDate,
-    );
-
-    return this.prisma.aiAnalysis.count({
-      where: {
-        companyId,
-        typeId,
-        status: 'success',
-        createdAt: { gte: cycleStart, lt: cycleEnd },
-      },
-    });
-  }
-
-  async findCurrentSubscription(companyId: string) {
-    return this.prisma.companySubscription.findFirst({
-      where: { companyId, isCurrent: true },
-      include: { subscription: true },
     });
   }
 
