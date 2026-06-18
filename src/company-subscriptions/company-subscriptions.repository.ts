@@ -41,6 +41,10 @@ export class CompanySubscriptionsRepository {
     });
   }
 
+  async findParameterById(id: number) {
+    return this.prisma.parameter.findUnique({ where: { id } });
+  }
+
   async findParameterByTypeAndCode(type: string, code: string) {
     return this.prisma.parameter.findUnique({
       where: { type_code: { type, code } },
@@ -228,31 +232,52 @@ export class CompanySubscriptionsRepository {
   }
 
   /**
-   * Activa una suscripción tras el pago de onboarding y registra el primer pago
-   * en una única transacción. Si falla, no deja la suscripción medio-activada.
+   * Guarda los IDs de ePayco en la suscripción de onboarding SIN activarla: queda
+   * en pending_payment hasta que el webhook confirme el primer cobro. Así nunca
+   * hay acceso sin cobro confirmado. No crea payment history (lo crea el webhook
+   * al activar).
    */
-  async activateAfterPayment(params: {
+  async saveEpaycoIdsPending(params: {
     companySubscriptionId: string;
-    activeStatusId: number;
     epaycoPlanId: string;
     epaycoSubscriptionId: string;
+  }) {
+    return this.prisma.companySubscription.update({
+      where: { id: params.companySubscriptionId },
+      data: {
+        epaycoPlanId: params.epaycoPlanId,
+        epaycoSubscriptionId: params.epaycoSubscriptionId,
+        autoRenew: true,
+      },
+      include: this.defaultInclude,
+    });
+  }
+
+  /**
+   * Activa una suscripción tras confirmarse el primer cobro por webhook y registra
+   * el pago inicial, en una única transacción. Idempotente vía el guard de estado:
+   * solo activa si sigue en pending_payment.
+   */
+  async activateAfterConfirmation(params: {
+    companySubscriptionId: string;
+    pendingStatusId: number;
+    activeStatusId: number;
     firstPayment: Omit<
       Prisma.PaymentHistoryUncheckedCreateInput,
       'companySubscriptionId'
     >;
-  }) {
+  }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.companySubscription.update({
-        where: { id: params.companySubscriptionId },
-        data: {
-          statusId: params.activeStatusId,
-          epaycoPlanId: params.epaycoPlanId,
-          epaycoSubscriptionId: params.epaycoSubscriptionId,
-          autoRenew: true,
-          paymentToken: null, // invalida el link una vez pagado
+      // Guard atómico: solo activa si aún está pendiente. Si dos webhooks llegan
+      // a la vez, solo el primero pasa de pending→active y crea el pago.
+      const { count } = await tx.companySubscription.updateMany({
+        where: {
+          id: params.companySubscriptionId,
+          statusId: params.pendingStatusId,
         },
-        include: this.defaultInclude,
+        data: { statusId: params.activeStatusId, paymentToken: null },
       });
+      if (count !== 1) return false;
 
       await tx.paymentHistory.create({
         data: {
@@ -260,8 +285,26 @@ export class CompanySubscriptionsRepository {
           companySubscriptionId: params.companySubscriptionId,
         },
       });
+      return true;
+    });
+  }
 
-      return updated;
+  /**
+   * Prepara una suscripción de onboarding para reintento tras un cobro inicial
+   * rechazado: emite un paymentToken nuevo (link nuevo) y limpia los IDs de la
+   * suscripción ePayco cancelada, manteniéndola en pending_payment. El cliente
+   * reingresa una tarjeta nueva con el link y payOnboarding crea una suscripción
+   * ePayco limpia (sin duplicar la anterior, que ya se canceló).
+   */
+  async resetForRetry(id: string, newPaymentToken: string) {
+    return this.prisma.companySubscription.update({
+      where: { id },
+      data: {
+        paymentToken: newPaymentToken,
+        epaycoSubscriptionId: null,
+        epaycoPlanId: null,
+      },
+      include: this.defaultInclude,
     });
   }
 
@@ -276,33 +319,5 @@ export class CompanySubscriptionsRepository {
       where: { epaycoTransactionId },
     });
     return count > 0;
-  }
-
-  /**
-   * El pago inicial de onboarding se registra en payOnboarding SIN
-   * epaycoTransactionId (aún no hay webhook). Devuelve ese registro pendiente
-   * de conciliar, si existe, para el primer cobro que llegue por webhook.
-   */
-  async findUnreconciledInitialPayment(companySubscriptionId: string) {
-    return this.prisma.paymentHistory.findFirst({
-      where: { companySubscriptionId, epaycoTransactionId: null },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  /** Adjunta los datos del webhook al pago inicial (lo concilia). */
-  async reconcileInitialPayment(
-    paymentHistoryId: string,
-    data: {
-      epaycoRef?: string;
-      epaycoTransactionId?: string;
-      franchise?: string;
-      approvalCode?: string;
-    },
-  ) {
-    return this.prisma.paymentHistory.update({
-      where: { id: paymentHistoryId },
-      data,
-    });
   }
 }

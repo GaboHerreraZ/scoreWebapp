@@ -203,15 +203,22 @@ export class MailService {
     companyName: string;
     planName: string;
     reason: string;
+    // Link para reingresar tarjeta. En el cobro inicial es el link de checkout con
+    // un paymentToken nuevo; en renovación, el ingreso a la plataforma. Si se omite,
+    // se usa la URL de la plataforma por defecto.
+    retryUrl?: string;
   }) {
     const { to, userName, companyName, planName, reason } = params;
     if (to.length === 0) return;
+
+    const retryUrl = params.retryUrl ?? this.frontendUrl;
 
     const html = this.loadTemplate('payment-failed', {
       userName,
       companyName,
       planName,
       reason,
+      retryUrl,
       logoUrl: this.logoUrl,
     });
 

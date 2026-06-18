@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Query,
@@ -20,6 +21,7 @@ import { AdminGuard } from '../common/auth/admin.guard.js';
 import { AdminService } from './admin.service.js';
 import { OnboardClientDto } from './dto/onboard-client.dto.js';
 import { ChangeTierDto } from './dto/change-tier.dto.js';
+import { MarkEinvoiceDto } from './dto/mark-einvoice.dto.js';
 
 @ApiTags('Admin Portal')
 @ApiBearerAuth()
@@ -93,5 +95,19 @@ export class AdminController {
     @Body() dto: ChangeTierDto,
   ) {
     return this.adminService.changeTier(companyId, dto);
+  }
+
+  @Patch('payments/:paymentId/einvoice')
+  @ApiOperation({
+    summary:
+      'Marcar el envío de la factura electrónica de un cobro (manual). sent=false para revertir a pendiente.',
+  })
+  @ApiResponse({ status: 200, description: 'Estado de facturación actualizado' })
+  @ApiResponse({ status: 404, description: 'Cobro no encontrado' })
+  markEinvoice(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Body() dto: MarkEinvoiceDto,
+  ) {
+    return this.adminService.markEinvoice(paymentId, dto);
   }
 }
