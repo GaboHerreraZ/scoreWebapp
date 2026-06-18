@@ -252,50 +252,113 @@ export class EpaycoService {
     }
   }
 
-  // ─── Checkout onepage (pago único) ────────────────────────
+  // ─── Smart Checkout v2 (sesión de pago único) ─────────────
+
+  private readonly APIFY_BASE = 'https://apify.epayco.co';
 
   /**
-   * Construye los parámetros del checkout onepage de ePayco para un pago ÚNICO.
-   * El front los pasa al widget (ePayco.checkout.open). NO se procesan tarjetas
-   * en el backend: el cliente paga en la página de ePayco.
-   *
-   * La referencia propia viaja en `invoice` y en `x_extra1` (id del recurso a
-   * confirmar), que el webhook de confirmación recibe de vuelta. El checkout no
-   * va firmado (la integridad se valida en la confirmación, no aquí); se exponen
-   * solo datos públicos (public key, p_cust_id).
+   * Obtiene un token de acceso a la API Apify de ePayco (Smart Checkout v2).
+   * Login con Basic Auth (PUBLIC_KEY:PRIVATE_KEY) → devuelve un JWT efímero que
+   * autoriza la creación de la sesión de pago.
    */
-  buildCheckoutData(params: {
+  private async getApifyToken(): Promise<string> {
+    const publicKey = this.configService.get<string>('EPAYCO_PUBLIC_KEY');
+    const privateKey = this.configService.get<string>('EPAYCO_PRIVATE_KEY');
+    const basic = Buffer.from(`${publicKey}:${privateKey}`).toString('base64');
+
+    try {
+      const res = await fetch(`${this.APIFY_BASE}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${basic}`,
+        },
+      });
+      const json: any = await res.json();
+      if (!res.ok || !json?.token) {
+        this.logger.error('ePayco login (apify) no retornó token', json);
+        throw new Error('No se obtuvo token de ePayco');
+      }
+      return json.token as string;
+    } catch (error: any) {
+      this.logger.error(`Error autenticando con ePayco: ${error.message}`);
+      throw new BadRequestException(
+        'Error iniciando el pago. Por favor intenta de nuevo más tarde.',
+      );
+    }
+  }
+
+  /**
+   * Crea una sesión de Smart Checkout v2 para un pago ÚNICO. Devuelve el
+   * sessionId que el front pasa a ePayco.checkout.configure({ sessionId }).
+   *
+   * La referencia propia viaja en `invoice` y en `extras.extra1` (id del recurso
+   * a confirmar), que el webhook de confirmación recibe de vuelta. El backend NO
+   * procesa tarjetas: el cliente paga en el checkout de ePayco.
+   */
+  async createCheckoutSession(params: {
     invoice: string;
     amount: number;
     name: string;
     description: string;
     currency?: string;
+    confirmationUrl: string;
+    responseUrl?: string;
     extra1?: string;
     extra2?: string;
     extra3?: string;
-    responseUrl?: string;
-    confirmationUrl: string;
-    email?: string;
-  }) {
-    return {
-      key: this.configService.get<string>('EPAYCO_PUBLIC_KEY'),
-      test: this.configService.get<string>('EPAYCO_TEST', 'true') === 'true',
-      external: false,
+    billing?: {
+      email?: string;
+      name?: string;
+      address?: string;
+      typeDoc?: string;
+      numberDoc?: string;
+      mobilePhone?: string;
+    };
+  }): Promise<string> {
+    const token = await this.getApifyToken();
+
+    const body: Record<string, unknown> = {
+      checkout_version: '2',
       name: params.name,
       description: params.description,
-      invoice: params.invoice,
-      currency: (params.currency ?? 'cop').toLowerCase(),
+      currency: (params.currency ?? 'COP').toUpperCase(),
       amount: String(params.amount),
-      country: 'co',
+      country: 'CO',
       lang: 'es',
+      invoice: params.invoice,
       response: params.responseUrl ?? '',
       confirmation: params.confirmationUrl,
-      method_confirmation: 'POST',
-      extra1: params.extra1 ?? '',
-      extra2: params.extra2 ?? '',
-      extra3: params.extra3 ?? '',
-      email_billing: params.email ?? '',
+      extras: {
+        extra1: params.extra1 ?? '',
+        extra2: params.extra2 ?? '',
+        extra3: params.extra3 ?? '',
+      },
     };
+    if (params.billing) body.billing = params.billing;
+
+    try {
+      const res = await fetch(`${this.APIFY_BASE}/payment/session/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const json: any = await res.json();
+      const sessionId = json?.data?.sessionId;
+      if (!res.ok || !json?.success || !sessionId) {
+        this.logger.error('ePayco session/create falló', json);
+        throw new Error(json?.textResponse ?? 'No se obtuvo sessionId');
+      }
+      return sessionId as string;
+    } catch (error: any) {
+      this.logger.error(`Error creando sesión de pago ePayco: ${error.message}`);
+      throw new BadRequestException(
+        'Error iniciando el pago. Por favor intenta de nuevo más tarde.',
+      );
+    }
   }
 
   /**

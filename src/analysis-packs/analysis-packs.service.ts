@@ -86,8 +86,17 @@ export class AnalysisPacksService {
       );
     }
 
+    // Datos de facturación de la empresa (ya capturados en el onboarding) para
+    // el billing de la sesión de ePayco. Email + nombre son lo mínimo útil.
+    const company = await this.repository.findCompanyBilling(companyId);
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
     const paymentToken = randomBytes(32).toString('hex');
 
+    // 1. Crear la bolsa en pending_payment con el precio CONGELADO. La sesión de
+    //    ePayco se crea DESPUÉS, solo si la bolsa quedó guardada OK.
     const pack = await this.repository.create({
       companyId,
       packOfferingId: offering.id,
@@ -109,8 +118,18 @@ export class AnalysisPacksService {
       'BACKEND_PUBLIC_URL',
       'http://localhost:3000',
     );
+    const frontendUrl = this.configService.get<string>(
+      'FRONTEND_URL',
+      'http://localhost:4200',
+    );
 
-    const checkout = this.epaycoService.buildCheckoutData({
+    const billingName = [company.billingName, company.billingLastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    // 2. Crear la sesión de Smart Checkout v2. El sessionId va al front.
+    const sessionId = await this.epaycoService.createCheckoutSession({
       invoice,
       amount: pricing.total,
       name: offering.name,
@@ -118,16 +137,27 @@ export class AnalysisPacksService {
       currency: activePrice.currencyCode,
       extra1: pack.id, // el webhook lo recibe para identificar la bolsa
       confirmationUrl: `${backendUrl}/api/webhooks/epayco/packs`,
+      responseUrl: `${frontendUrl}/pago/resultado`,
+      billing: {
+        email: company.billingEmail ?? undefined,
+        name: billingName || company.name,
+        address: company.billingAddress ?? undefined,
+        numberDoc: company.billingDocNumber ?? undefined,
+        mobilePhone: company.billingPhone ?? undefined,
+      },
     });
 
+    // 3. Guardar el sessionId en la bolsa (trazabilidad del intento de pago).
+    await this.repository.setEpaycoSessionId(pack.id, sessionId);
+
     this.logger.log(
-      `Empresa ${companyId} inició compra de pack ${pack.id} (oferta ${offering.id}, total ${pricing.total} ${activePrice.currencyCode})`,
+      `Empresa ${companyId} inició compra de pack ${pack.id} (oferta ${offering.id}, total ${pricing.total} ${activePrice.currencyCode}, session ${sessionId})`,
     );
 
     return {
       analysisPackId: pack.id,
       invoice,
-      checkout,
+      sessionId,
       pricing: {
         quantity: offering.quantity,
         unitPrice: pricing.unitPrice,
