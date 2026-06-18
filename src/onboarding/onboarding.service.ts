@@ -56,6 +56,7 @@ export class OnboardingService {
           name: dto.profile.name,
           lastName: dto.profile.lastName,
           phone: dto.profile.phone,
+          roleId: adminRole.id, // dueño que se autorregistra = administrator
           identificationTypeId: dto.profile.identificationTypeId,
           identificationNumber: dto.profile.identificationNumber,
           position: dto.profile.position,
@@ -64,6 +65,7 @@ export class OnboardingService {
           name: dto.profile.name,
           lastName: dto.profile.lastName,
           phone: dto.profile.phone,
+          roleId: adminRole.id,
           identificationTypeId: dto.profile.identificationTypeId,
           identificationNumber: dto.profile.identificationNumber,
           position: dto.profile.position,
