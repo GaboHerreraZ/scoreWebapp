@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
@@ -108,6 +109,70 @@ export class OnboardingService {
       profileId: result.profile.id,
       companyId: result.company.id,
       userCompanyId: result.userCompany.id,
+    };
+  }
+
+  /**
+   * Reconstruye la data de onboarding (profile + company + billing) de un usuario
+   * a partir de su profileId. Pensado para reintentar el pago tras un fallo: el
+   * front repinta estos datos ya guardados y vuelve a lanzar el purchase sin que
+   * el usuario reingrese nada. Devuelve la misma forma del DTO de onboarding,
+   * más profileId/companyId para armar la llamada al purchase.
+   */
+  async getOnboardingData(profileId: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { id: profileId },
+      include: {
+        userCompanies: {
+          where: { isActive: true },
+          orderBy: { joinedAt: 'asc' },
+          take: 1,
+          include: { company: true },
+        },
+      },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(`Perfil con id=${profileId} no encontrado`);
+    }
+
+    const company = profile.userCompanies[0]?.company ?? null;
+    if (!company) {
+      throw new NotFoundException(
+        'El perfil no tiene una empresa asociada activa',
+      );
+    }
+
+    return {
+      profileId: profile.id,
+      companyId: company.id,
+      profile: {
+        name: profile.name,
+        lastName: profile.lastName,
+        phone: profile.phone,
+        identificationTypeId: profile.identificationTypeId,
+        identificationNumber: profile.identificationNumber,
+        position: profile.position,
+      },
+      company: {
+        name: company.name,
+        nit: company.nit,
+        sectorId: company.sectorId,
+        state: company.state,
+        city: company.city,
+        address: company.address,
+      },
+      billing: {
+        billingName: company.billingName,
+        billingLastName: company.billingLastName,
+        billingDocTypeId: company.billingDocTypeId,
+        billingDocNumber: company.billingDocNumber,
+        billingEmail: company.billingEmail,
+        billingPhone: company.billingPhone,
+        billingAddress: company.billingAddress,
+        billingState: company.billingState,
+        billingCity: company.billingCity,
+      },
     };
   }
 }
