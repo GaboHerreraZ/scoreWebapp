@@ -1,6 +1,5 @@
 import {
   IsString,
-  IsOptional,
   IsInt,
   IsEmail,
   IsUUID,
@@ -10,7 +9,7 @@ import {
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 class OnboardCompanyDto {
   @ApiProperty({ example: 'Acme S.A.' })
@@ -38,37 +37,44 @@ class OnboardCompanyDto {
   @IsString()
   address: string;
 
-  // Facturación (opcional, para trazabilidad de los links de pago)
-  @ApiPropertyOptional()
-  @IsOptional()
+  // Facturación: requerida porque el pago del onboarding la usa para crear el
+  // cliente y la suscripción en ePayco (se valida de nuevo en payOnboarding).
+  @ApiProperty({ example: 'Gabriel' })
   @IsString()
-  billingName?: string;
+  billingName: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ example: 'Herrera' })
   @IsString()
-  billingLastName?: string;
+  billingLastName: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ example: 104, description: 'Parameter ID del tipo de documento' })
   @IsInt()
   @Type(() => Number)
-  billingDocTypeId?: number;
+  billingDocTypeId: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ example: '1035851234' })
   @IsString()
-  billingDocNumber?: string;
+  billingDocNumber: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ example: 'cliente@empresa.com' })
   @IsEmail()
-  billingEmail?: string;
+  billingEmail: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ example: '+573001234567' })
   @IsString()
-  billingPhone?: string;
+  billingPhone: string;
+
+  @ApiProperty({ example: 'Calle 10 #30-45' })
+  @IsString()
+  billingAddress: string;
+
+  @ApiProperty({ example: 'Antioquia' })
+  @IsString()
+  billingState: string;
+
+  @ApiProperty({ example: 'Medellín' })
+  @IsString()
+  billingCity: string;
 }
 
 class OnboardSubscriptionDto {

@@ -27,6 +27,17 @@ export class CompanySubscriptionsService {
     private readonly mailService: MailService,
   ) {}
 
+  /**
+   * Normaliza el code de tipo de documento al formato que ePayco exige (MAYÚSCULAS).
+   * En BD los codes son lowercase (cc/ce/nit/pa); ePayco usa CC/CE/NIT/PP. Es
+   * básicamente toUpperCase, con la única corrección de pasaporte: pa → PP (ePayco
+   * no acepta 'PA'). Sin code válido, cae a 'CC' (persona natural) por defecto.
+   */
+  private toEpaycoDocType(code?: string | null): string {
+    const upper = (code ?? 'cc').toUpperCase();
+    return upper === 'PA' ? 'PP' : upper;
+  }
+
   // ─── Cálculo de precio por consulta ───────────────────────
 
   /**
@@ -95,6 +106,19 @@ export class CompanySubscriptionsService {
       startDate: cs.startDate,
       endDate: cs.endDate,
       alreadyPaid,
+      // Facturación ya capturada en el onboarding (la empresa). El checkout las
+      // muestra como solo lectura; el cliente solo ingresa la tarjeta.
+      billing: {
+        name: cs.company.billingName,
+        lastName: cs.company.billingLastName,
+        docTypeId: cs.company.billingDocTypeId,
+        docNumber: cs.company.billingDocNumber,
+        email: cs.company.billingEmail,
+        address: cs.company.billingAddress,
+        state: cs.company.billingState,
+        city: cs.company.billingCity,
+        phone: cs.company.billingPhone,
+      },
     };
   }
 
@@ -111,19 +135,15 @@ export class CompanySubscriptionsService {
       throw new NotFoundException('Enlace de pago inválido o expirado');
     }
 
-    const [pendingStatus, activeStatus] = await Promise.all([
-      this.repository.findParameterByTypeAndCode(
-        'subscription_status',
-        'pending_payment',
-      ),
-      this.repository.findParameterByTypeAndCode(
-        'subscription_status',
-        'active',
-      ),
-    ]);
-    if (!pendingStatus || !activeStatus) {
+    // No se necesita activeStatus aquí: la activación la hace el webhook al
+    // confirmar el primer cobro (no se da acceso sin cobro confirmado).
+    const pendingStatus = await this.repository.findParameterByTypeAndCode(
+      'subscription_status',
+      'pending_payment',
+    );
+    if (!pendingStatus) {
       throw new BadRequestException(
-        'Faltan parámetros de estado de suscripción (pending_payment / active)',
+        'Falta el parámetro de estado de suscripción (pending_payment)',
       );
     }
     if (cs.statusId !== pendingStatus.id) {
@@ -147,21 +167,48 @@ export class CompanySubscriptionsService {
       );
     }
 
-    const { card, billing } = dto;
+    const { card } = dto;
 
-    // 1. Guardar billing en la empresa ANTES de tocar ePayco (barato y reversible;
-    //    si algo en ePayco falla, no quedan cobros huérfanos por este paso).
-    await this.repository.updateCompanyBilling(cs.companyId, {
-      billingName: billing.name,
-      billingLastName: billing.lastName,
-      billingDocTypeId: billing.docType,
-      billingDocNumber: billing.docNumber,
-      billingEmail: billing.email,
-      billingAddress: billing.address,
-      billingState: billing.state,
-      billingCity: billing.city,
-      billingPhone: billing.phone,
-    });
+    // 1. Datos de facturación: ya se capturaron en el onboarding del admin y viven
+    //    en la empresa; no se piden en el checkout. Validamos que estén completos
+    //    para poder crear el cliente y la suscripción en ePayco.
+    const company = cs.company;
+    if (
+      !company.billingName ||
+      !company.billingLastName ||
+      !company.billingEmail ||
+      !company.billingAddress ||
+      !company.billingCity ||
+      !company.billingPhone ||
+      !company.billingDocNumber ||
+      !company.billingDocTypeId
+    ) {
+      // Restauramos el token consumido para no bloquear un reintento futuro.
+      await this.repository.restorePaymentToken(
+        cs.id,
+        dto.token,
+        pendingStatus.id,
+      );
+      throw new BadRequestException(
+        'Faltan datos de facturación de la empresa. Complételos en el portal antes de procesar el pago.',
+      );
+    }
+
+    // docTypeCode que ePayco necesita en MAYÚSCULAS (CC/CE/NIT/PP). Lo derivamos
+    // del Parameter referenciado por billingDocTypeId (en BD el code es lowercase).
+    const docTypeParam = await this.repository.findParameterById(
+      company.billingDocTypeId,
+    );
+    const billing = {
+      name: company.billingName,
+      lastName: company.billingLastName,
+      email: company.billingEmail,
+      address: company.billingAddress,
+      city: company.billingCity,
+      phone: company.billingPhone,
+      docNumber: company.billingDocNumber,
+      docTypeCode: this.toEpaycoDocType(docTypeParam?.code),
+    };
 
     // Pasos en ePayco (tokenizar → cliente → plan → suscripción). Si algo falla
     // ANTES de tener la suscripción creada, restauramos el paymentToken para que
@@ -229,23 +276,16 @@ export class CompanySubscriptionsService {
       throw error;
     }
 
-    // 6. Activar la suscripción y registrar el pago (atómico). Si falla, saga
-    //    compensatoria: cancelar la suscripción ePayco creada y restaurar el token.
+    // 6. Guardar los IDs de ePayco SIN activar: la suscripción queda en
+    //    pending_payment hasta que el webhook confirme el primer cobro (no se da
+    //    acceso sin cobro confirmado). Si falla el commit, saga compensatoria:
+    //    cancelar la suscripción ePayco creada y restaurar el token.
     let updated;
     try {
-      updated = await this.repository.activateAfterPayment({
+      updated = await this.repository.saveEpaycoIdsPending({
         companySubscriptionId: cs.id,
-        activeStatusId: activeStatus.id,
         epaycoPlanId,
         epaycoSubscriptionId,
-        firstPayment: {
-          periodStart: cs.startDate,
-          periodEnd: cs.endDate,
-          amount,
-          currencyCode: 'COP',
-          responseCode: 200,
-          responseMessage: 'Pago inicial de onboarding procesado',
-        },
       });
     } catch (error) {
       this.logger.error(
@@ -264,11 +304,12 @@ export class CompanySubscriptionsService {
     }
 
     this.logger.log(
-      `Empresa ${cs.companyId} pagó su suscripción de onboarding (ePayco subscription=${epaycoSubscriptionId})`,
+      `Empresa ${cs.companyId} inició el pago de onboarding; pendiente de confirmación de ePayco (subscription=${epaycoSubscriptionId})`,
     );
 
     return {
-      paid: true,
+      paid: false,
+      pendingConfirmation: true,
       companySubscriptionId: updated.id,
       epaycoSubscriptionId,
     };
@@ -581,7 +622,7 @@ export class CompanySubscriptionsService {
     // Resolver doc para la suscripción ePayco
     const billingDocNumber =
       dto.billing?.docNumber ?? company.billingDocNumber ?? '';
-    const billingDocTypeCode = dto.billing?.docTypeCode ?? 'CC';
+    const billingDocTypeCode = this.toEpaycoDocType(dto.billing?.docTypeCode);
 
     if (!billingDocNumber) {
       throw new BadRequestException(
@@ -863,28 +904,53 @@ export class CompanySubscriptionsService {
     const currentEndDate = new Date(companySubscription.endDate);
 
     if (responseCode === 1) {
-      // El primer cobro corresponde al pago inicial ya registrado en
-      // payOnboarding (sin epaycoTransactionId): lo conciliamos adjuntándole los
-      // datos del webhook y NO extendemos el periodo (ya estaba cubierto). Sólo
-      // los cobros posteriores (renovaciones) extienden el periodo.
-      const initialPayment =
-        await this.repository.findUnreconciledInitialPayment(
-          companySubscription.id,
-        );
-      if (initialPayment) {
-        await this.repository.reconcileInitialPayment(initialPayment.id, {
-          epaycoRef: dto.x_ref_payco,
-          epaycoTransactionId: dto.x_transaction_id,
-          franchise: dto.x_franchise,
-          approvalCode: dto.x_approval_code,
+      // ¿Es el primer cobro (suscripción aún pending_payment)? Entonces ESTE
+      // webhook es la activación real: pasamos a active y registramos el pago
+      // inicial. No extendemos el periodo (el endDate ya se fijó al crear la
+      // suscripción y este cobro lo cubre). Los cobros posteriores (ya active)
+      // son renovaciones y sí extienden.
+      const [pendingStatus, activeStatus] = await Promise.all([
+        this.repository.findParameterByTypeAndCode(
+          'subscription_status',
+          'pending_payment',
+        ),
+        this.repository.findParameterByTypeAndCode(
+          'subscription_status',
+          'active',
+        ),
+      ]);
+
+      if (
+        pendingStatus &&
+        activeStatus &&
+        companySubscription.statusId === pendingStatus.id
+      ) {
+        const activated = await this.repository.activateAfterConfirmation({
+          companySubscriptionId: companySubscription.id,
+          pendingStatusId: pendingStatus.id,
+          activeStatusId: activeStatus.id,
+          firstPayment: {
+            periodStart: companySubscription.startDate,
+            periodEnd: companySubscription.endDate,
+            amount: parseFloat(dto.x_amount ?? '0'),
+            currencyCode: dto.x_currency_code ?? 'COP',
+            epaycoRef: dto.x_ref_payco,
+            epaycoTransactionId: dto.x_transaction_id,
+            responseCode: 200,
+            responseMessage: dto.x_response,
+            franchise: dto.x_franchise,
+            approvalCode: dto.x_approval_code,
+          },
         });
         this.logger.log(
-          `Pago inicial de onboarding conciliado para suscripción ${companySubscription.id} (ref=${dto.x_ref_payco})`,
+          activated
+            ? `Suscripción ${companySubscription.id} ACTIVADA por confirmación de cobro inicial (ref=${dto.x_ref_payco})`
+            : `Suscripción ${companySubscription.id} ya estaba activada (webhook inicial concurrente, ref=${dto.x_ref_payco})`,
         );
         return { received: true };
       }
 
-      // Cobro exitoso (renovación) → extender período
+      // Cobro exitoso (renovación, ya estaba active) → extender período
       const subscription = companySubscription.subscription;
       const newEndDate = new Date(currentEndDate);
       if (subscription.isMonthly) {
@@ -915,17 +981,56 @@ export class CompanySubscriptionsService {
         `Suscripción ${companySubscription.id} renovada hasta ${newEndDate.toISOString()} (empresa=${companySubscription.companyId})`,
       );
     } else if (responseCode === 2 || responseCode === 4) {
-      // Cobro rechazado o fallido
-      const rejectedStatus = await this.repository.findParameterByTypeAndCode(
+      // Cobro rechazado o fallido. Distinguimos el cobro INICIAL del de renovación:
+      const pendingStatus = await this.repository.findParameterByTypeAndCode(
         'subscription_status',
-        'rejected',
+        'pending_payment',
       );
-      if (rejectedStatus) {
-        await this.repository.update(companySubscription.id, {
-          statusId: rejectedStatus.id,
-          isCurrent: false,
-          autoRenew: false,
-        });
+      const isInitialCharge =
+        pendingStatus && companySubscription.statusId === pendingStatus.id;
+
+      let retryUrl: string | undefined;
+
+      if (isInitialCharge) {
+        // Rechazo del cobro inicial (p. ej. tarjeta inválida). Cancelamos la
+        // suscripción ePayco creada (la de la tarjeta mala) para que NO siga
+        // reintentando con ella, emitimos un paymentToken nuevo y enviamos un link
+        // de reintento para que el cliente ingrese una tarjeta nueva. La suscripción
+        // queda pending; payOnboarding creará una suscripción ePayco limpia.
+        if (companySubscription.epaycoSubscriptionId) {
+          await this.safeCancelEpaycoSubscription(
+            companySubscription.epaycoSubscriptionId,
+          );
+        }
+
+        const newPaymentToken = randomBytes(32).toString('hex');
+        await this.repository.resetForRetry(
+          companySubscription.id,
+          newPaymentToken,
+        );
+
+        const frontendUrl = this.configService.get<string>(
+          'FRONTEND_URL',
+          'http://localhost:4200',
+        );
+        retryUrl = `${frontendUrl}/pago-suscripcion?cs=${companySubscription.id}&token=${newPaymentToken}`;
+
+        this.logger.warn(
+          `Cobro inicial rechazado (código=${responseCode}) para suscripción ${companySubscription.id}; suscripción ePayco cancelada y link de reintento emitido.`,
+        );
+      } else {
+        // Rechazo en renovación (suscripción activa): se marca rejected.
+        const rejectedStatus = await this.repository.findParameterByTypeAndCode(
+          'subscription_status',
+          'rejected',
+        );
+        if (rejectedStatus) {
+          await this.repository.update(companySubscription.id, {
+            statusId: rejectedStatus.id,
+            isCurrent: false,
+            autoRenew: false,
+          });
+        }
       }
 
       await this.repository.createPaymentHistory({
@@ -942,11 +1047,8 @@ export class CompanySubscriptionsService {
         approvalCode: dto.x_approval_code,
       });
 
-      this.logger.warn(
-        `Suscripción ${companySubscription.id} rechazada (código=${responseCode}) empresa=${companySubscription.companyId}`,
-      );
-
-      // Notificar al cliente (admin + facturación) el motivo del rechazo.
+      // Notificar al cliente (admin + facturación) el motivo del rechazo, tanto en
+      // el cobro inicial (para que cambie la tarjeta) como en una renovación.
       try {
         const { to, userName } = await this.resolveNotificationRecipients(
           companySubscription.companyId,
@@ -961,7 +1063,10 @@ export class CompanySubscriptionsService {
           planName: companySubscription.subscription.name,
           reason:
             dto.x_response ||
-            'El banco rechazó el cobro recurrente de tu suscripción.',
+            (isInitialCharge
+              ? 'No se pudo procesar el primer cobro de tu suscripción. Revisa los datos de tu tarjeta.'
+              : 'El banco rechazó el cobro recurrente de tu suscripción.'),
+          retryUrl,
         });
       } catch (error: any) {
         this.logger.warn(

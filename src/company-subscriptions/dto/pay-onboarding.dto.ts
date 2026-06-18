@@ -1,10 +1,8 @@
 import {
   IsString,
   IsUUID,
-  IsEmail,
   MaxLength,
   ValidateNested,
-  IsNumber,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -35,64 +33,12 @@ class CardDto {
   expYear: string;
 }
 
-class BillingDto {
-  @ApiProperty({ example: 'Gabriel', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  name: string;
-
-  @ApiProperty({ example: 'Herrera', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  lastName: string;
-
-  @ApiProperty({
-    example: 'CC',
-    description: 'Document type code (CC, CE, NIT, etc.)',
-  })
-  @IsString()
-  @MaxLength(10)
-  docTypeCode: string;
-
-  @ApiProperty({ example: 1 })
-  @IsNumber()
-  docType: number;
-
-  @ApiProperty({ example: '1035851234', maxLength: 50 })
-  @IsString()
-  @MaxLength(50)
-  docNumber: string;
-
-  @ApiProperty({ example: 'cliente@empresa.com', maxLength: 255 })
-  @IsEmail()
-  @MaxLength(255)
-  email: string;
-
-  @ApiProperty({ example: 'Calle 10 #30-45', maxLength: 255 })
-  @IsString()
-  @MaxLength(255)
-  address: string;
-
-  @ApiProperty({ example: 'Antioquia', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  state: string;
-
-  @ApiProperty({ example: 'Medellín', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  city: string;
-
-  @ApiProperty({ example: '+573001234567', maxLength: 50 })
-  @IsString()
-  @MaxLength(50)
-  phone: string;
-}
-
 /**
  * Pago inicial del onboarding desde la página de checkout propia. El link del
  * correo trae companySubscriptionId + token (paymentToken), que autorizan el
  * pago sin sesión. La tarjeta se tokeniza y se crea la suscripción recurrente.
+ * Los datos de facturación NO se piden aquí: ya se capturaron en el onboarding
+ * del admin y viven en la empresa; payOnboarding los lee de allí.
  */
 export class PayOnboardingDto {
   @ApiProperty({ description: 'ID de la CompanySubscription a pagar' })
@@ -108,9 +54,4 @@ export class PayOnboardingDto {
   @ValidateNested()
   @Type(() => CardDto)
   card: CardDto;
-
-  @ApiProperty({ type: BillingDto })
-  @ValidateNested()
-  @Type(() => BillingDto)
-  billing: BillingDto;
 }
