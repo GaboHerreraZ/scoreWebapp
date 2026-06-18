@@ -35,6 +35,24 @@ export class AiAnalysesRepository {
     });
   }
 
+  /**
+   * Vincula una fila de AiAnalysis (p. ej. la extracción de PDF, creada antes
+   * que el estudio) a su CreditStudy. Acepta un tx opcional para correr dentro
+   * de la transacción que crea el estudio. updateMany para no fallar si el id no
+   * existe (best-effort).
+   */
+  async linkToCreditStudy(
+    analysisId: string,
+    creditStudyId: string,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const client = tx ?? this.prisma;
+    return client.aiAnalysis.updateMany({
+      where: { id: analysisId },
+      data: { creditStudyId },
+    });
+  }
+
   async findAll(params: {
     skip: number;
     take: number;

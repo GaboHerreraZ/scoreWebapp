@@ -91,7 +91,7 @@ export class AiAnalysesController {
     const userId = (req as any).user.id as string;
 
     // 1. La IA lee el PDF UNA sola vez: extrae datos financieros + red flags.
-    const { financialData, reliabilityFlags } =
+    const { financialData, reliabilityFlags, extractionId } =
       await this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);
 
     // 2. Se crea el estudio de inmediato con los datos del usuario + los
@@ -115,12 +115,21 @@ export class AiAnalysesController {
           : undefined,
     } as CreateCreditStudyDto;
 
-    return this.creditStudiesService.createFromExtraction(
+    const study = await this.creditStudiesService.createFromExtraction(
       companyId,
       userId,
       createDto,
       reliabilityFlags,
     );
+
+    // 3. Vincular la extracción (creada en el paso 1, antes del estudio) al
+    //    estudio recién creado, para poder saber qué estudio tuvo extracción PDF.
+    await this.aiAnalysesService.linkExtractionToCreditStudy(
+      extractionId,
+      study.id,
+    );
+
+    return study;
   }
 
   @Post('credit-studies/:creditStudyId')

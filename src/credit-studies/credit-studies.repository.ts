@@ -85,7 +85,9 @@ export class CreditStudiesRepository {
           select: {
             id: true,
             result: true,
+            status: true,
             createdAt: true,
+            type: { select: { code: true } },
             performedByUser: {
               select: { id: true, name: true, lastName: true },
             },
