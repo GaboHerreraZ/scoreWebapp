@@ -1,6 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+
+/** Error de dominio: la empresa no tiene crédito disponible para consumir. */
+export class NoCreditsAvailableError extends ConflictException {
+  constructor() {
+    super(
+      'La empresa no tiene consultas disponibles. Compre una bolsa de análisis para continuar.',
+    );
+  }
+}
 
 @Injectable()
 export class AnalysisPacksRepository {
@@ -110,5 +119,79 @@ export class AnalysisPacksRepository {
       },
     });
     return result.count > 0;
+  }
+
+  /**
+   * Consume 1 crédito de la empresa y crea el CreditStudy asociado, TODO en una
+   * transacción atómica con lock FIFO para evitar la doble-venta del último
+   * crédito (dos estudios concurrentes consumiendo el mismo saldo).
+   *
+   * Pasos dentro de la transacción:
+   *   1. SELECT ... FOR UPDATE de la bolsa consumible más próxima a vencer
+   *      (active, vigente, con saldo). El lock serializa los consumos concurrentes.
+   *   2. Si no hay → NoCreditsAvailableError (no se crea el estudio).
+   *   3. Crea el CreditStudy (vía createStudy, que recibe el tx).
+   *   4. Registra el AnalysisConsumption (ledger 1:1 con el estudio).
+   *   5. quantityConsumed += 1; si llega al tope → status = depleted.
+   *
+   * @param createStudy callback que crea el estudio usando el cliente transaccional.
+   */
+  async consumeCreditForStudy<T extends { id: string }>(params: {
+    companyId: string;
+    consumedBy: string;
+    activeStatusId: number;
+    depletedStatusId: number;
+    createStudy: (tx: Prisma.TransactionClient) => Promise<T>;
+  }): Promise<T> {
+    const { companyId, consumedBy, activeStatusId, depletedStatusId } = params;
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Bolsa consumible con lock (FIFO por endDate). FOR UPDATE serializa
+      //    los consumos concurrentes: el segundo espera y relee el saldo.
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "analysis_packs"
+        WHERE "company_id" = ${companyId}::uuid
+          AND "status_id" = ${activeStatusId}
+          AND "end_date" >= CURRENT_DATE
+          AND "quantity_consumed" < "quantity_purchased"
+        ORDER BY "end_date" ASC
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      const packRow = rows[0];
+      if (!packRow) {
+        throw new NoCreditsAvailableError();
+      }
+
+      // 3. Crear el estudio dentro de la misma transacción.
+      const study = await params.createStudy(tx);
+
+      // 4. Registrar el consumo (ledger).
+      await tx.analysisConsumption.create({
+        data: {
+          packId: packRow.id,
+          companyId,
+          creditStudyId: study.id,
+          consumedBy,
+        },
+      });
+
+      // 5. Incrementar el contador; marcar depleted si se agotó el saldo.
+      const updated = await tx.analysisPack.update({
+        where: { id: packRow.id },
+        data: { quantityConsumed: { increment: 1 } },
+        select: { quantityConsumed: true, quantityPurchased: true },
+      });
+      if (updated.quantityConsumed >= updated.quantityPurchased) {
+        await tx.analysisPack.update({
+          where: { id: packRow.id },
+          data: { statusId: depletedStatusId },
+        });
+      }
+
+      return study;
+    });
   }
 }
