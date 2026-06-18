@@ -43,6 +43,8 @@ model Parameter {
   promissoryNotesByStatus               PromissoryNote[]      @relation("PromissoryNoteStatus")
   notificationsByType                   Notification[]        @relation("NotificationType")
   consultationPricesByDiscountType      ConsultationPrice[]   @relation("ConsultationPriceDiscountType")
+  packOfferingsByDiscountType           PackOffering[]        @relation("PackOfferingDiscountType")
+  analysisPacksByStatus                 AnalysisPack[]        @relation("AnalysisPackStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -77,6 +79,7 @@ model Profile {
   createdPromissoryNotes    PromissoryNote[]    @relation("PromissoryNoteCreatedBy")
   createdNotifications      Notification[]      @relation("NotificationCreatedBy")
   notificationReads         NotificationRead[]  @relation("NotificationReadUser")
+  analysisConsumptions      AnalysisConsumption[] @relation("AnalysisConsumptionConsumedBy")
 
   @@map("profiles")
 }
@@ -147,6 +150,7 @@ model ConsultationPrice {
   updatedByAdmin       PlatformAdmin?        @relation("ConsultationPriceUpdatedBy", fields: [updatedBy], references: [id])
   discountType         Parameter?            @relation("ConsultationPriceDiscountType", fields: [discountTypeId], references: [id])
   companySubscriptions CompanySubscription[]
+  analysisPacks        AnalysisPack[]
 
   @@map("consultation_prices")
 }
@@ -191,6 +195,8 @@ model Company {
   aiAnalyses           AiAnalysis[]
   promissoryNotes      PromissoryNote[]
   notifications        Notification[]
+  analysisPacks        AnalysisPack[]
+  analysisConsumptions AnalysisConsumption[]
 
   @@map("companies")
 }
@@ -249,6 +255,7 @@ model PlatformAdmin {
   createdSubscriptions      Subscription[]      @relation("SubscriptionCreatedBy")
   createdConsultationPrices ConsultationPrice[] @relation("ConsultationPriceCreatedBy")
   updatedConsultationPrices ConsultationPrice[] @relation("ConsultationPriceUpdatedBy")
+  createdPackOfferings      PackOffering[]      @relation("PackOfferingCreatedBy")
 
   @@map("platform_admins")
 }
@@ -277,6 +284,108 @@ model PaymentHistory {
 
   @@index([companySubscriptionId])
   @@map("payment_history")
+}
+
+// ─── Catálogo de bolsas ofrecibles (configurable, lo que ve el front) ──
+// Define las opciones de compra (2, 4, 8, 10 consultas...). El precio NO se
+// guarda aquí: es derivado = quantity × ConsultationPrice.unitPrice vigente,
+// menos un descuento por volumen opcional. El backend resuelve el precio al
+// listar el catálogo; el front nunca lo calcula.
+
+model PackOffering {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(150) // "Pack de 4 consultas"
+  description    String?  @db.VarChar(500)
+  quantity       Int // nº de consultas (análisis de crédito) incluidas
+  // Vigencia que tendrá la bolsa al comprarse, en días. Hoy 365, configurable.
+  validityDays   Int      @default(365) @map("validity_days")
+  // Descuento por volumen OPCIONAL sobre el precio unitario base.
+  // null/false = se cobra quantity × unitPrice sin descuento.
+  hasDiscount    Boolean  @default(false) @map("has_discount")
+  discountTypeId Int?     @map("discount_type_id") // Parameter 'discount_type': percentage | fixed
+  discountValue  Float?   @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
+  sortOrder      Int      @default(0) @map("sort_order")
+  isActive       Boolean  @default(true) @map("is_active")
+  // Ofertable en el catálogo vigente. Permite retirar una oferta sin borrarla
+  // ni romper las AnalysisPack ya compradas que la referencian.
+  isCurrent      Boolean  @default(true) @map("is_current")
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  createdByAdmin PlatformAdmin? @relation("PackOfferingCreatedBy", fields: [createdBy], references: [id])
+  discountType   Parameter?     @relation("PackOfferingDiscountType", fields: [discountTypeId], references: [id])
+  analysisPacks  AnalysisPack[]
+
+  @@map("pack_offerings")
+}
+
+// ─── Bolsa de análisis comprada (saldo prepago con vigencia) ──────────
+// Una compra concreta de una empresa. Pago ÚNICO en ePayco (no recurrente).
+// El precio se CONGELA al comprar (unitPricePaid/totalPaid), inmune a cambios
+// posteriores del catálogo o del ConsultationPrice. El saldo disponible =
+// quantityPurchased − quantityConsumed; quantityConsumed es un denormalizado
+// del ledger AnalysisConsumption (la fuente de verdad es COUNT del ledger).
+
+model AnalysisPack {
+  id                  String   @id @default(uuid()) @db.Uuid
+  companyId           String   @map("company_id") @db.Uuid
+  packOfferingId      String?  @map("pack_offering_id") @db.Uuid // qué oferta del catálogo compró
+
+  quantityPurchased   Int      @map("quantity_purchased")
+  quantityConsumed    Int      @default(0) @map("quantity_consumed")
+
+  // Vigencia (1 año por defecto; resuelta desde PackOffering.validityDays)
+  startDate           DateTime @map("start_date") @db.Date
+  endDate             DateTime @map("end_date") @db.Date
+
+  // Precio CONGELADO al momento de la compra
+  unitPricePaid       Float    @map("unit_price_paid")
+  totalPaid           Float    @map("total_paid")
+  currencyCode        String   @default("COP") @map("currency_code") @db.VarChar(10)
+  consultationPriceId String?  @map("consultation_price_id") @db.Uuid // precio que rigió (trazabilidad)
+
+  statusId            Int      @map("status_id") // Parameter 'analysis_pack_status'
+
+  // ePayco — pago ÚNICO (no suscripción recurrente)
+  epaycoRef           String?  @map("epayco_ref") @db.VarChar(100)
+  epaycoTransactionId String?  @map("epayco_transaction_id") @db.VarChar(100)
+  // Secreto del link de pago (compra sin sesión); se invalida (null) al pagar.
+  paymentToken        String?  @map("payment_token") @db.VarChar(64)
+
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  company           Company               @relation(fields: [companyId], references: [id])
+  packOffering      PackOffering?         @relation(fields: [packOfferingId], references: [id])
+  status            Parameter             @relation("AnalysisPackStatus", fields: [statusId], references: [id])
+  consultationPrice ConsultationPrice?    @relation(fields: [consultationPriceId], references: [id])
+  consumptions      AnalysisConsumption[]
+
+  @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
+  @@map("analysis_packs")
+}
+
+// ─── Consumo de un análisis (ledger) ──────────────────────────────────
+// Una fila por CreditStudy creado. creditStudyId es @unique → 1:1 con el
+// estudio (un estudio consume exactamente 1 crédito, no se puede doble-cobrar).
+// El vínculo estudio↔bolsa vive AQUÍ, no en CreditStudy.
+
+model AnalysisConsumption {
+  id            String   @id @default(uuid()) @db.Uuid
+  packId        String   @map("pack_id") @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  creditStudyId String   @unique @map("credit_study_id") @db.Uuid
+  consumedBy    String   @map("consumed_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  pack           AnalysisPack @relation(fields: [packId], references: [id])
+  company        Company      @relation(fields: [companyId], references: [id])
+  creditStudy    CreditStudy  @relation(fields: [creditStudyId], references: [id])
+  consumedByUser Profile      @relation("AnalysisConsumptionConsumedBy", fields: [consumedBy], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("analysis_consumptions")
 }
 
 // ─── Permisos usuario ↔ empresa ─────────────────────────────
@@ -431,6 +540,7 @@ model CreditStudy {
   updatedByUser   Profile          @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
   aiAnalyses      AiAnalysis[]
   promissoryNotes PromissoryNote[]
+  analysisConsumption AnalysisConsumption?
 
   @@map("credit_studies")
 }
