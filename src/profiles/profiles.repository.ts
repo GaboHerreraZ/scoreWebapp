@@ -6,10 +6,6 @@ import { Prisma } from '../../generated/prisma/client.js';
 export class ProfilesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.ProfileUncheckedCreateInput) {
-    return this.prisma.profile.create({ data });
-  }
-
   async findAll(params: {
     skip: number;
     take: number;

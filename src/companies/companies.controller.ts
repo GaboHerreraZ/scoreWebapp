@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
   Delete,
   Body,
@@ -26,7 +25,6 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CompaniesService } from './companies.service.js';
-import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -36,18 +34,6 @@ import { PaginationDto } from '../common/dto/pagination.dto.js';
 @Controller('companies')
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create a company' })
-  @ApiResponse({ status: 201, description: 'Company created successfully' })
-  @ApiResponse({
-    status: 409,
-    description: 'Company with that NIT already exists',
-  })
-  create(@Body() dto: CreateCompanyDto, @Req() req: Request) {
-    const userId = (req as any).user.id as string;
-    return this.companiesService.create(dto, userId);
-  }
 
   @Get()
   @ApiOperation({ summary: 'List companies with pagination and filters' })

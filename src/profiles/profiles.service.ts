@@ -6,7 +6,6 @@ import {
 import { ProfilesRepository } from './profiles.repository.js';
 import { AnalysisPacksRepository } from '../analysis-packs/analysis-packs.repository.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
-import { CreateProfileDto } from './dto/create-profile.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { FilterProfileDto } from './dto/filter-profile.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -36,25 +35,6 @@ export class ProfilesService {
       (sum, p) => sum + (p.quantityPurchased - p.quantityConsumed),
       0,
     );
-  }
-
-  async create(dto: CreateProfileDto) {
-    const existing = await this.repository.findByEmail(dto.email);
-    if (existing) {
-      throw new ConflictException(
-        `Ya existe un perfil con el correo "${dto.email}"`,
-      );
-    }
-
-    return this.repository.create({
-      id: dto.id,
-      email: dto.email,
-      name: dto.name,
-      lastName: dto.lastName,
-      phone: dto.phone,
-      roleId: dto.roleId,
-      position: dto.position,
-    });
   }
 
   async findAll(filters: FilterProfileDto) {

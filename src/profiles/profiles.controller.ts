@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
   Delete,
   Body,
@@ -18,7 +17,6 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { ProfilesService } from './profiles.service.js';
-import { CreateProfileDto } from './dto/create-profile.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { FilterProfileDto } from './dto/filter-profile.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -29,17 +27,6 @@ import { ProfileResponseDto } from './dto/profile-response.dto.js';
 @Controller('profiles')
 export class ProfilesController {
   constructor(private readonly profilesService: ProfilesService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create a profile' })
-  @ApiResponse({ status: 201, description: 'Profile created successfully' })
-  @ApiResponse({
-    status: 409,
-    description: 'Profile with that email already exists',
-  })
-  create(@Body() dto: CreateProfileDto) {
-    return this.profilesService.create(dto);
-  }
 
   @Get()
   @ApiOperation({ summary: 'List profiles with pagination and search' })

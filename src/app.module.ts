@@ -13,6 +13,7 @@ import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { ConsultationPricesModule } from './consultation-prices/consultation-prices.module.js';
 import { PackOfferingsModule } from './pack-offerings/pack-offerings.module.js';
 import { AnalysisPacksModule } from './analysis-packs/analysis-packs.module.js';
+import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
@@ -39,6 +40,7 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
     ConsultationPricesModule,
     PackOfferingsModule,
     AnalysisPacksModule,
+    OnboardingModule,
     DashboardModule,
     AiAnalysesModule,
     InvitationsModule,
