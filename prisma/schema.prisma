@@ -41,7 +41,6 @@ model Parameter {
   companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
   promissoryNotesByStatus               PromissoryNote[]      @relation("PromissoryNoteStatus")
   notificationsByType                   Notification[]        @relation("NotificationType")
-  consultationPricesByDiscountType      ConsultationPrice[]   @relation("ConsultationPriceDiscountType")
   packOfferingsByDiscountType           PackOffering[]        @relation("PackOfferingDiscountType")
   analysisPacksByStatus                 AnalysisPack[]        @relation("AnalysisPackStatus")
 
@@ -85,24 +84,19 @@ model Profile {
 
 // ─── Precio de la consulta (Creditia) — versionado en el tiempo ──
 // Cada registro fija el valor unitario de una consulta. Solo uno debe estar
-// activo a la vez. Para una promo temporal se crea un registro con hasDiscount
-// y validUntil; al vencer se desactiva y vuelve a regir el precio base.
-// CompanySubscription guarda el id del registro con el que se calculó su precio,
-// dejando ese precio congelado aunque el valor cambie después.
+// activo a la vez (isActive); cambiar de precio = crear un registro nuevo y
+// desactivar el anterior. El historial queda por createdAt/updatedAt. Cada
+// AnalysisPack guarda el id del precio con el que se calculó, dejándolo
+// congelado aunque el valor cambie después.
 
 model ConsultationPrice {
   id            String    @id @default(uuid()) @db.Uuid
   name          String    @db.VarChar(150)
-  // unitPrice = precio FINAL por consulta (ya con el descuento aplicado). Es el
-  // valor que se usa en el cálculo del plan. basePrice/discount* son informativos.
+  // unitPrice = precio FINAL por consulta. Es el valor que se usa en el cálculo
+  // del precio del pack. El único descuento del sistema (por volumen) vive en
+  // PackOffering; aquí no hay descuento.
   unitPrice     Float     @map("unit_price")
   currencyCode  String    @default("COP") @map("currency_code") @db.VarChar(10)
-  hasDiscount    Boolean   @default(false) @map("has_discount")
-  basePrice      Float?    @map("base_price") // precio normal antes del descuento
-  discountTypeId Int?      @map("discount_type_id") // Parameter (type 'discount_type'): 'percentage' | 'fixed'
-  discountValue  Float?    @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
-  validFrom      DateTime  @map("valid_from") @db.Date
-  validUntil    DateTime? @map("valid_until") @db.Date
   isActive      Boolean   @default(true) @map("is_active")
   createdBy     String    @map("created_by") @db.Uuid
   updatedBy     String?   @map("updated_by") @db.Uuid
@@ -111,7 +105,6 @@ model ConsultationPrice {
 
   createdByAdmin       PlatformAdmin         @relation("ConsultationPriceCreatedBy", fields: [createdBy], references: [id])
   updatedByAdmin       PlatformAdmin?        @relation("ConsultationPriceUpdatedBy", fields: [updatedBy], references: [id])
-  discountType         Parameter?            @relation("ConsultationPriceDiscountType", fields: [discountTypeId], references: [id])
   analysisPacks        AnalysisPack[]
 
   @@map("consultation_prices")
@@ -197,10 +190,10 @@ model PackOffering {
   discountTypeId Int?     @map("discount_type_id") // Parameter 'discount_type': percentage | fixed
   discountValue  Float?   @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
   sortOrder      Int      @default(0) @map("sort_order")
+  // Único flag de visibilidad: si está en el catálogo ofrecible. Retirar una
+  // oferta (isActive=false) la saca del catálogo sin borrarla ni romper las
+  // AnalysisPack ya compradas que la referencian.
   isActive       Boolean  @default(true) @map("is_active")
-  // Ofertable en el catálogo vigente. Permite retirar una oferta sin borrarla
-  // ni romper las AnalysisPack ya compradas que la referencian.
-  isCurrent      Boolean  @default(true) @map("is_current")
   createdBy      String?  @map("created_by") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
