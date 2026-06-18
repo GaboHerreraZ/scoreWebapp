@@ -11,6 +11,7 @@ import { MailService } from '../mail/mail.service.js';
 import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { OnboardClientDto } from './dto/onboard-client.dto.js';
 import { ChangeTierDto } from './dto/change-tier.dto.js';
+import { MarkEinvoiceDto } from './dto/mark-einvoice.dto.js';
 import { getCurrentCycleWindow } from '../common/utils/subscription-cycle.js';
 
 @Injectable()
@@ -109,6 +110,9 @@ export class AdminService {
           billingDocNumber: dto.company.billingDocNumber,
           billingEmail: dto.company.billingEmail,
           billingPhone: dto.company.billingPhone,
+          billingAddress: dto.company.billingAddress,
+          billingState: dto.company.billingState,
+          billingCity: dto.company.billingCity,
         },
       });
 
@@ -386,6 +390,9 @@ export class AdminService {
       responseMessage: p.responseMessage,
       franchise: p.franchise,
       approvalCode: p.approvalCode,
+      einvoiceSent: p.einvoiceSent,
+      einvoiceSentAt: p.einvoiceSentAt,
+      einvoiceNumber: p.einvoiceNumber,
       createdAt: p.createdAt,
     });
 
@@ -678,4 +685,28 @@ export class AdminService {
     };
   }
 
+  /**
+   * Marca (o desmarca) el envío de la factura electrónica de un cobro del
+   * payment history. Manual por ahora: el admin lo actualiza al emitir la
+   * factura. Al marcar como enviada se sella la fecha; al desmarcar se limpia.
+   */
+  async markEinvoice(paymentId: string, dto: MarkEinvoiceDto) {
+    const payment = await this.prisma.paymentHistory.findUnique({
+      where: { id: paymentId },
+    });
+    if (!payment) {
+      throw new NotFoundException('Cobro no encontrado en el historial de pagos.');
+    }
+
+    const sent = dto.sent ?? true;
+
+    return this.prisma.paymentHistory.update({
+      where: { id: paymentId },
+      data: {
+        einvoiceSent: sent,
+        einvoiceSentAt: sent ? new Date() : null,
+        einvoiceNumber: sent ? (dto.einvoiceNumber ?? payment.einvoiceNumber) : null,
+      },
+    });
+  }
 }

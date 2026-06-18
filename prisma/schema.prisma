@@ -268,6 +268,9 @@ model PaymentHistory {
   responseMessage       String?  @map("response_message") @db.VarChar(255)
   franchise             String?  @db.VarChar(50)
   approvalCode          String?  @map("approval_code") @db.VarChar(100)
+  einvoiceSent          Boolean   @default(false) @map("einvoice_sent")
+  einvoiceSentAt        DateTime? @map("einvoice_sent_at")
+  einvoiceNumber        String?   @map("einvoice_number") @db.VarChar(100)
   createdAt             DateTime @default(now()) @map("created_at")
 
   companySubscription CompanySubscription @relation(fields: [companySubscriptionId], references: [id])
