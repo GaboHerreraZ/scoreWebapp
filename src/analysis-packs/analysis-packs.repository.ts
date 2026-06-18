@@ -26,6 +26,31 @@ export class AnalysisPacksRepository {
     return this.prisma.parameter.findFirst({ where: { type, code } });
   }
 
+  /** Datos de facturación de la empresa (para el billing de la sesión ePayco). */
+  async findCompanyBilling(companyId: string) {
+    return this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        name: true,
+        billingName: true,
+        billingLastName: true,
+        billingEmail: true,
+        billingPhone: true,
+        billingAddress: true,
+        billingDocNumber: true,
+        billingDocTypeId: true,
+      },
+    });
+  }
+
+  /** Guarda el sessionId del checkout v2 en la bolsa. */
+  async setEpaycoSessionId(packId: string, sessionId: string) {
+    return this.prisma.analysisPack.update({
+      where: { id: packId },
+      data: { epaycoSessionId: sessionId },
+    });
+  }
+
   async create(data: Prisma.AnalysisPackUncheckedCreateInput) {
     return this.prisma.analysisPack.create({
       data,

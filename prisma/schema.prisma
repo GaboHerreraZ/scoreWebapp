@@ -239,7 +239,8 @@ model AnalysisPack {
 
   statusId            Int      @map("status_id") // Parameter 'analysis_pack_status'
 
-  // ePayco — pago ÚNICO (no suscripción recurrente)
+  // ePayco — pago ÚNICO vía Smart Checkout v2 (no suscripción recurrente)
+  epaycoSessionId     String?  @map("epayco_session_id") @db.VarChar(100) // sesión del checkout v2 (1 por intento)
   epaycoRef           String?  @map("epayco_ref") @db.VarChar(100)
   epaycoTransactionId String?  @map("epayco_transaction_id") @db.VarChar(100)
   // Secreto del link de pago (compra sin sesión); se invalida (null) al pagar.
