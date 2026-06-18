@@ -65,6 +65,23 @@ export class AnalysisPacksRepository {
     });
   }
 
+  /**
+   * Bolsa por la referencia de ePayco (x_ref_payco, guardada en epaycoRef por el
+   * webhook). Para la pantalla de resultado: el front llega con ?ref_payco=... en
+   * la URL y consulta por ahí. Más reciente primero por si una referencia se
+   * reusara (no debería). Incluye la empresa para validar acceso y pintar.
+   */
+  async findByEpaycoRef(epaycoRef: string) {
+    return this.prisma.analysisPack.findFirst({
+      where: { epaycoRef },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        ...this.defaultInclude,
+        company: { select: { id: true, name: true, nit: true } },
+      },
+    });
+  }
+
   /** Bolsas de una empresa (historial), más recientes primero. */
   async findByCompany(companyId: string) {
     return this.prisma.analysisPack.findMany({

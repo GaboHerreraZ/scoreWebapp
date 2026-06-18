@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -10,6 +11,8 @@ import { AnalysisPacksRepository } from './analysis-packs.repository.js';
 import { PackOfferingsRepository } from '../pack-offerings/pack-offerings.repository.js';
 import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { EpaycoService } from '../epayco/epayco.service.js';
+import { CompanyAccessRepository } from '../common/auth/company-access.repository.js';
+import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
 import {
@@ -28,6 +31,8 @@ export class AnalysisPacksService {
     private readonly consultationPricesService: ConsultationPricesService,
     private readonly epaycoService: EpaycoService,
     private readonly configService: ConfigService,
+    private readonly companyAccessRepository: CompanyAccessRepository,
+    private readonly platformAdminRepository: PlatformAdminRepository,
   ) {}
 
   /**
@@ -39,7 +44,7 @@ export class AnalysisPacksService {
     const offering = await this.packOfferingsRepository.findById(
       dto.packOfferingId,
     );
-    if (!offering || !offering.isActive || !offering.isCurrent) {
+    if (!offering || !offering.isActive) {
       throw new NotFoundException(
         'La oferta de bolsa no existe o ya no está disponible',
       );
@@ -209,6 +214,91 @@ export class AnalysisPacksService {
   /** Bolsas de una empresa (historial). */
   async findByCompany(companyId: string) {
     return this.repository.findByCompany(companyId);
+  }
+
+  /**
+   * Estado/recibo de una compra por la referencia de ePayco (x_ref_payco), para
+   * la pantalla de resultado del pago. El front llega a /pago/resultado?ref_payco=...
+   * y consulta por ahí (con polling corto): la referencia vive en la URL, así que
+   * sobrevive a refrescos sin depender de memoria/localStorage. El webhook de
+   * ePayco puede tardar unos segundos en activar la bolsa, así que el front verá
+   * pending_payment (o 404 si el ref aún no se guardó) y luego active/cancelled.
+   * Requiere login y que el usuario tenga acceso a la empresa de la bolsa.
+   */
+  async getStatusByReference(refPayco: string, userId: string) {
+    const pack = await this.repository.findByEpaycoRef(refPayco);
+    if (!pack) {
+      throw new NotFoundException('No se encontró una compra con esa referencia');
+    }
+
+    // Control de acceso: miembro activo de la empresa, o PlatformAdmin (soporte).
+    const isMember = await this.companyAccessRepository.isActiveMember(
+      userId,
+      pack.companyId,
+    );
+    if (!isMember) {
+      const isAdmin =
+        await this.platformAdminRepository.isPlatformAdmin(userId);
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes acceso a esta compra');
+      }
+    }
+
+    return this.buildReceipt(pack);
+  }
+
+  /**
+   * Arma el "recibo" de una bolsa (empresa, plan, desglose de pago, vigencia)
+   * para la pantalla de resultado. El desglose se calcula desde el precio
+   * CONGELADO en la bolsa: muestra lo que se pagó, no el catálogo actual.
+   */
+  private buildReceipt(
+    pack: NonNullable<
+      Awaited<ReturnType<AnalysisPacksRepository['findByEpaycoRef']>>
+    >,
+  ) {
+    const subtotal = pack.unitPricePaid * pack.quantityPurchased;
+    const discountAmount = Math.max(0, subtotal - pack.totalPaid);
+
+    return {
+      analysisPackId: pack.id,
+      status: pack.status.code, // pending_payment | active | cancelled
+      statusLabel: pack.status.label,
+      invoice: `PACK-${pack.id}`,
+
+      // Empresa para la que se compró (se creó en el onboarding).
+      company: {
+        id: pack.company.id,
+        name: pack.company.name,
+        nit: pack.company.nit,
+      },
+
+      // Plan / oferta adquirida.
+      plan: {
+        packOfferingId: pack.packOfferingId,
+        name: pack.packOffering?.name ?? null,
+        description: pack.packOffering?.description ?? null,
+        consultations: pack.quantityPurchased, // nº de consultas adquiridas
+        validityDays: pack.packOffering?.validityDays ?? null,
+      },
+
+      // Desglose de lo pagado.
+      payment: {
+        unitPrice: pack.unitPricePaid, // precio por consulta congelado
+        subtotal, // unitPrice × consultas (sin descuento)
+        discountAmount, // descuento aplicado (>= 0)
+        total: pack.totalPaid, // lo que efectivamente se pagó
+        currency: pack.currencyCode,
+        epaycoRef: pack.epaycoRef,
+        epaycoTransactionId: pack.epaycoTransactionId,
+      },
+
+      // Vigencia de la bolsa.
+      validity: {
+        startDate: pack.startDate,
+        endDate: pack.endDate,
+      },
+    };
   }
 
   /**

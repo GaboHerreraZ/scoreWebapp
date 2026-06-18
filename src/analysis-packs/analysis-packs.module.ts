@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AnalysisPacksController } from './analysis-packs.controller.js';
 import { AnalysisPacksWebhookController } from './analysis-packs-webhook.controller.js';
+import { AnalysisPacksReferenceController } from './analysis-packs-reference.controller.js';
 import { AnalysisPacksService } from './analysis-packs.service.js';
 import { AnalysisPacksRepository } from './analysis-packs.repository.js';
 import { PackOfferingsModule } from '../pack-offerings/pack-offerings.module.js';
@@ -9,7 +10,11 @@ import { EpaycoModule } from '../epayco/epayco.module.js';
 
 @Module({
   imports: [PackOfferingsModule, ConsultationPricesModule, EpaycoModule],
-  controllers: [AnalysisPacksController, AnalysisPacksWebhookController],
+  controllers: [
+    AnalysisPacksController,
+    AnalysisPacksWebhookController,
+    AnalysisPacksReferenceController,
+  ],
   providers: [AnalysisPacksService, AnalysisPacksRepository],
   exports: [AnalysisPacksService, AnalysisPacksRepository],
 })
