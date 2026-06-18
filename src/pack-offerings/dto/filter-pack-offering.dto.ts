@@ -9,13 +9,4 @@ export class FilterPackOfferingDto extends PaginationDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Filter by current (offerable) flag',
-  })
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  isCurrent?: boolean;
 }

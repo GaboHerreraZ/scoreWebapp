@@ -40,26 +40,61 @@ export class PackOfferingsService {
       discountValue: dto.discountValue,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
-      isCurrent: dto.isCurrent,
       createdBy: admin.id,
     });
   }
 
   async findAll(filters: FilterPackOfferingDto) {
-    const { page = 1, limit = 10, isActive, isCurrent } = filters;
+    const { page = 1, limit = 10, isActive } = filters;
 
     const where: Prisma.PackOfferingWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
-    if (isCurrent !== undefined) where.isCurrent = isCurrent;
 
-    const { data, total } = await this.repository.findMany({
-      skip: (page - 1) * limit,
-      take: limit,
-      where,
+    const [{ data, total }, activePrice] = await Promise.all([
+      this.repository.findMany({
+        skip: (page - 1) * limit,
+        take: limit,
+        where,
+      }),
+      this.consultationPricesService.getActivePrice(),
+    ]);
+
+    // Cada oferta lleva la config cruda + el precio YA RESUELTO contra el
+    // ConsultationPrice vigente (unitPrice × quantity − descuento por volumen).
+    // Si no hay precio activo, los campos de pricing van en null (no cotizable).
+    const dataWithPricing = data.map((offering) => {
+      const pricing = activePrice
+        ? calculatePackPrice({
+            quantity: offering.quantity,
+            unitPrice: activePrice.unitPrice,
+            hasDiscount: offering.hasDiscount,
+            discountTypeCode: offering.discountType?.code as
+              | DiscountTypeCode
+              | undefined,
+            discountValue: offering.discountValue,
+          })
+        : null;
+
+      // Precio por consulta YA con el descuento del pack repartido (total/quantity).
+      // Si no hay descuento, coincide con unitPrice.
+      const unitPriceWithDiscount =
+        pricing && offering.quantity > 0
+          ? pricing.total / offering.quantity
+          : null;
+
+      return {
+        ...offering,
+        currency: activePrice?.currencyCode ?? 'COP',
+        unitPrice: pricing?.unitPrice ?? null, // precio por consulta vigente (sin descuento)
+        unitPriceWithDiscount, // precio por consulta con el descuento del pack aplicado
+        subtotal: pricing?.subtotal ?? null, // quantity × unitPrice (sin descuento)
+        discountAmount: pricing?.discountAmount ?? null, // cuánto descuenta
+        total: pricing?.total ?? null, // total a pagar (con descuento)
+      };
     });
 
     return {
-      data,
+      data: dataWithPricing,
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -82,17 +117,33 @@ export class PackOfferingsService {
       );
     }
 
+    // Los campos de PRODUCTO quedan congelados: cambiar quantity/validityDays/
+    // descuento desincronizaría las AnalysisPack ya compradas que apuntan a esta
+    // oferta (verían valores distintos a los que pagaron). Solo se permite editar
+    // nombre, descripción e isActive (retirar/reactivar del catálogo). Para
+    // "cambiar" una oferta vendida, créese una nueva y retírese esta (isActive=false).
+    const frozenFields = [
+      'quantity',
+      'validityDays',
+      'hasDiscount',
+      'discountTypeId',
+      'discountValue',
+      'sortOrder',
+    ] as const;
+    const attempted = frozenFields.filter((f) => dto[f] !== undefined);
+    if (attempted.length > 0) {
+      throw new ConflictException(
+        `Una oferta de bolsa solo permite editar nombre, descripción y estado ` +
+          `(isActive). No se puede modificar: ${attempted.join(', ')}. ` +
+          `Para cambiar el número de consultas, vigencia o descuento, ` +
+          `cree una nueva oferta y retire esta (isActive=false).`,
+      );
+    }
+
     return this.repository.update(id, {
       name: dto.name,
       description: dto.description,
-      quantity: dto.quantity,
-      validityDays: dto.validityDays,
-      hasDiscount: dto.hasDiscount,
-      discountTypeId: dto.discountTypeId,
-      discountValue: dto.discountValue,
-      sortOrder: dto.sortOrder,
       isActive: dto.isActive,
-      isCurrent: dto.isCurrent,
     });
   }
 

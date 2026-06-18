@@ -85,16 +85,11 @@ export class CreatePackOfferingDto {
   @Min(0)
   sortOrder?: number;
 
-  @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
   @ApiPropertyOptional({
     default: true,
-    description: 'Si la oferta está vigente en el catálogo ofrecible',
+    description: 'Si la oferta está disponible en el catálogo ofrecible',
   })
   @IsOptional()
   @IsBoolean()
-  isCurrent?: boolean;
+  isActive?: boolean;
 }
