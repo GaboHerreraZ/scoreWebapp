@@ -182,6 +182,25 @@ export class AiAnalysesService {
     }
   }
 
+  /**
+   * Vincula la fila de extracción PDF (creada antes del estudio) a su
+   * CreditStudy. Best-effort: si falla, no rompe el flujo de creación del estudio.
+   */
+  async linkExtractionToCreditStudy(
+    extractionId: string,
+    creditStudyId: string,
+  ) {
+    try {
+      await this.repository.linkToCreditStudy(extractionId, creditStudyId);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo vincular la extracción ${extractionId} al estudio ${creditStudyId}: ${
+          error instanceof Error ? error.message : 'error desconocido'
+        }`,
+      );
+    }
+  }
+
   async extractPdf(pdfBuffer: Buffer, companyId: string, userId: string) {
     // 1. Get extraction type parameter
     const typeId = await this.getTypeId('financialStatementsPdfUpload');
@@ -233,8 +252,10 @@ export class AiAnalysesService {
         }
       }
 
-      // 4. Save the extraction record with the PDF file
-      await this.repository.create({
+      // 4. Save the extraction record with the PDF file. La fila nace sin
+      //    creditStudyId (el estudio aún no existe); createFromExtraction lo
+      //    vincula después con el id que devolvemos aquí (extractionId).
+      const extraction = await this.repository.create({
         typeId,
         companyId,
         performedBy: userId,
@@ -260,7 +281,7 @@ export class AiAnalysesService {
         'ai_analysis',
       );
 
-      return { financialData, reliabilityFlags };
+      return { financialData, reliabilityFlags, extractionId: extraction.id };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Error desconocido';

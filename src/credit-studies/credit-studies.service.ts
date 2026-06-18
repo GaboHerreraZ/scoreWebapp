@@ -212,7 +212,18 @@ export class CreditStudiesService {
         `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
-    return study;
+
+    // Flags derivados de los AiAnalysis ya cargados (sin query extra):
+    // ¿el estudio ya tuvo un análisis IA y/o una extracción de PDF exitosos?
+    const successful = study.aiAnalyses.filter((a) => a.status === 'success');
+    const hasAiAnalysis = successful.some(
+      (a) => a.type?.code === 'creditReview',
+    );
+    const hasPdfExtraction = successful.some(
+      (a) => a.type?.code === 'financialStatementsPdfUpload',
+    );
+
+    return { ...study, hasAiAnalysis, hasPdfExtraction };
   }
 
   async update(
