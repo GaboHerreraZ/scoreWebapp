@@ -32,23 +32,16 @@ export class ConsultationPricesService {
       name: dto.name,
       unitPrice: dto.unitPrice,
       currencyCode: dto.currencyCode,
-      hasDiscount: dto.hasDiscount,
-      basePrice: dto.basePrice,
-      discountTypeId: dto.discountTypeId,
-      discountValue: dto.discountValue,
-      validFrom: new Date(dto.validFrom),
-      validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
       isActive: dto.isActive,
       createdBy: admin.id,
     });
   }
 
   async findAll(filters: FilterConsultationPriceDto) {
-    const { page = 1, limit = 10, isActive, hasDiscount } = filters;
+    const { page = 1, limit = 10, isActive } = filters;
 
     const where: Prisma.ConsultationPriceWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
-    if (hasDiscount !== undefined) where.hasDiscount = hasDiscount;
 
     const { data, total } = await this.repository.findMany({
       skip: (page - 1) * limit,
@@ -73,7 +66,7 @@ export class ConsultationPricesService {
   }
 
   async update(id: string, dto: UpdateConsultationPriceDto, userId: string) {
-    await this.findById(id);
+    const current = await this.findById(id);
 
     const admin = await this.repository.findPlatformAdminByUserId(userId);
     if (!admin) {
@@ -82,17 +75,34 @@ export class ConsultationPricesService {
       );
     }
 
+    // Siempre debe quedar al menos un precio activo (si no, el catálogo de packs
+    // no puede cotizar). No se permite desactivar el único registro activo:
+    // primero créese/actívese otro precio.
+    if (dto.isActive === false && current.isActive) {
+      const activeCount = await this.repository.countActive();
+      if (activeCount <= 1) {
+        throw new ConflictException(
+          'No se puede desactivar el único precio de consulta activo. ' +
+            'Cree o active otro precio antes de desactivar este.',
+        );
+      }
+    }
+
+    // unitPrice es INMUTABLE: una bolsa comprada congela el precio y apunta a
+    // este registro (consultationPriceId). Editar unitPrice rompería la
+    // trazabilidad (la bolsa quedaría apuntando a un precio distinto al que
+    // pagó). Para cambiar el precio, créese un registro nuevo (desactiva el
+    // anterior). Solo se editan name, currencyCode e isActive.
+    if (dto.unitPrice !== undefined) {
+      throw new ConflictException(
+        'No se puede editar el precio (unitPrice) de un registro existente. ' +
+          'Cree un nuevo precio de consulta; el anterior se desactivará.',
+      );
+    }
+
     return this.repository.update(id, {
       name: dto.name,
-      unitPrice: dto.unitPrice,
       currencyCode: dto.currencyCode,
-      hasDiscount: dto.hasDiscount,
-      basePrice: dto.basePrice,
-      discountTypeId: dto.discountTypeId,
-      discountValue: dto.discountValue,
-      validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
-      validUntil:
-        dto.validUntil === undefined ? undefined : new Date(dto.validUntil),
       isActive: dto.isActive,
       updatedBy: admin.id,
     });

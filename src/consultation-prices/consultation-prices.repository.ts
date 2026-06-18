@@ -7,7 +7,6 @@ export class ConsultationPricesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly defaultInclude = {
-    discountType: true,
     createdByAdmin: true,
     updatedByAdmin: true,
   } as const;
@@ -45,7 +44,7 @@ export class ConsultationPricesRepository {
         skip: params.skip,
         take: params.take,
         // El activo primero; dentro de cada grupo, el más reciente arriba.
-        orderBy: [{ isActive: 'desc' }, { validFrom: 'desc' }],
+        orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
         include: this.defaultInclude,
       }),
       this.prisma.consultationPrice.count({ where: params.where }),
@@ -62,12 +61,12 @@ export class ConsultationPricesRepository {
 
   /**
    * Precio de consulta vigente: el registro activo más reciente.
-   * Su unitPrice es el que se usa para calcular el precio de un plan.
+   * Su unitPrice es el que se usa para calcular el precio de un pack.
    */
   async findActive() {
     return this.prisma.consultationPrice.findFirst({
       where: { isActive: true },
-      orderBy: { validFrom: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -97,6 +96,11 @@ export class ConsultationPricesRepository {
 
   async delete(id: string) {
     return this.prisma.consultationPrice.delete({ where: { id } });
+  }
+
+  /** Nº de precios actualmente activos (debe haber siempre al menos uno). */
+  async countActive(): Promise<number> {
+    return this.prisma.consultationPrice.count({ where: { isActive: true } });
   }
 
   /** Nº de bolsas compradas con este precio (impide borrado si > 0). */
