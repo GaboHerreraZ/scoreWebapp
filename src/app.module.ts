@@ -13,6 +13,7 @@ import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
 import { ConsultationPricesModule } from './consultation-prices/consultation-prices.module.js';
 import { PackOfferingsModule } from './pack-offerings/pack-offerings.module.js';
+import { AnalysisPacksModule } from './analysis-packs/analysis-packs.module.js';
 import { CompanySubscriptionsModule } from './company-subscriptions/company-subscriptions.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
@@ -41,6 +42,7 @@ import { JobsModule } from './jobs/jobs.module.js';
     SubscriptionsModule,
     ConsultationPricesModule,
     PackOfferingsModule,
+    AnalysisPacksModule,
     CompanySubscriptionsModule,
     DashboardModule,
     AiAnalysesModule,

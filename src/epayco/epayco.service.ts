@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createRequire } from 'module';
+import { createHash } from 'crypto';
 
 const require = createRequire(import.meta.url);
 const Epayco = require('epayco-sdk-node');
@@ -249,5 +250,72 @@ export class EpaycoService {
     } catch (error: any) {
       throw new BadRequestException(error.message);
     }
+  }
+
+  // ─── Checkout onepage (pago único) ────────────────────────
+
+  /**
+   * Construye los parámetros del checkout onepage de ePayco para un pago ÚNICO.
+   * El front los pasa al widget (ePayco.checkout.open). NO se procesan tarjetas
+   * en el backend: el cliente paga en la página de ePayco.
+   *
+   * La referencia propia viaja en `invoice` y en `x_extra1` (id del recurso a
+   * confirmar), que el webhook de confirmación recibe de vuelta. El checkout no
+   * va firmado (la integridad se valida en la confirmación, no aquí); se exponen
+   * solo datos públicos (public key, p_cust_id).
+   */
+  buildCheckoutData(params: {
+    invoice: string;
+    amount: number;
+    name: string;
+    description: string;
+    currency?: string;
+    extra1?: string;
+    extra2?: string;
+    extra3?: string;
+    responseUrl?: string;
+    confirmationUrl: string;
+    email?: string;
+  }) {
+    return {
+      key: this.configService.get<string>('EPAYCO_PUBLIC_KEY'),
+      test: this.configService.get<string>('EPAYCO_TEST', 'true') === 'true',
+      external: false,
+      name: params.name,
+      description: params.description,
+      invoice: params.invoice,
+      currency: (params.currency ?? 'cop').toLowerCase(),
+      amount: String(params.amount),
+      country: 'co',
+      lang: 'es',
+      response: params.responseUrl ?? '',
+      confirmation: params.confirmationUrl,
+      method_confirmation: 'POST',
+      extra1: params.extra1 ?? '',
+      extra2: params.extra2 ?? '',
+      extra3: params.extra3 ?? '',
+      email_billing: params.email ?? '',
+    };
+  }
+
+  /**
+   * Valida la firma de una confirmación de ePayco. La firma es
+   * SHA256(p_cust_id ^ p_key ^ x_ref_payco ^ x_transaction_id ^ x_amount ^ x_currency_code).
+   * Reutilizable por cualquier flujo que reciba confirmaciones (packs, etc.).
+   */
+  validateConfirmationSignature(params: {
+    refPayco?: string;
+    transactionId?: string;
+    amount?: string;
+    currencyCode?: string;
+    signature?: string;
+  }): boolean {
+    const pCustId = this.configService.get<string>('EPAYCO_P_CUST_ID');
+    const pKey = this.configService.get<string>('EPAYCO_P_KEY');
+
+    const concatenated = `${pCustId}^${pKey}^${params.refPayco}^${params.transactionId}^${params.amount}^${params.currencyCode}`;
+    const computed = createHash('sha256').update(concatenated).digest('hex');
+
+    return computed === params.signature;
   }
 }

@@ -8,6 +8,6 @@ import { ConsultationPricesModule } from '../consultation-prices/consultation-pr
   imports: [ConsultationPricesModule],
   controllers: [PackOfferingsController],
   providers: [PackOfferingsService, PackOfferingsRepository],
-  exports: [PackOfferingsService],
+  exports: [PackOfferingsService, PackOfferingsRepository],
 })
 export class PackOfferingsModule {}
