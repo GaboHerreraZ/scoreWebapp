@@ -8,7 +8,7 @@ export class PackOfferingsRepository {
 
   private readonly defaultInclude = {
     discountType: true,
-    createdByAdmin: true,
+    createdByAdmin: { select: { email: true } },
   } as const;
 
   async create(data: Prisma.PackOfferingUncheckedCreateInput) {
@@ -42,7 +42,7 @@ export class PackOfferingsRepository {
    */
   async findOfferable() {
     return this.prisma.packOffering.findMany({
-      where: { isActive: true, isCurrent: true },
+      where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { quantity: 'asc' }],
       include: { discountType: true },
     });
