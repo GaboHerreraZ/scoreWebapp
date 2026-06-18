@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Delete,
   Body,
@@ -19,6 +20,7 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { ConsultationPricesService } from './consultation-prices.service.js';
+import { CreateConsultationPriceDto } from './dto/create-consultation-price.dto.js';
 import { UpdateConsultationPriceDto } from './dto/update-consultation-price.dto.js';
 import { FilterConsultationPriceDto } from './dto/filter-consultation-price.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
@@ -29,6 +31,14 @@ import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 @Controller('consultation-prices')
 export class ConsultationPricesController {
   constructor(private readonly service: ConsultationPricesService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create a consultation price' })
+  @ApiResponse({ status: 201, description: 'Consultation price created' })
+  create(@Body() dto: CreateConsultationPriceDto, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.service.create(dto, userId);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List consultation prices (paginated)' })

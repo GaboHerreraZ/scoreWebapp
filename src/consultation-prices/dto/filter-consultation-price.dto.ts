@@ -9,13 +9,4 @@ export class FilterConsultationPriceDto extends PaginationDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Filter by promotional (discount) prices',
-  })
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  hasDiscount?: boolean;
 }
