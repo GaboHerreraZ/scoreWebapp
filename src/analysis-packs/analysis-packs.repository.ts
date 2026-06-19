@@ -167,7 +167,7 @@ export class AnalysisPacksRepository {
         skip,
         take,
         include: {
-          status: { select: { label: true } },
+          status: { select: { label: true, code: true } },
           packOffering: {
             select: { name: true, quantity: true, discountValue: true },
           },
@@ -180,15 +180,17 @@ export class AnalysisPacksRepository {
 
   /**
    * Eventos de pago de un conjunto de bolsas, SOLO campos seguros (sin payload
-   * crudo ni datos sensibles), para mostrar trazabilidad al cliente. Cronológico.
+   * crudo ni datos sensibles), para mostrar trazabilidad al cliente. Más
+   * recientes primero.
    */
   async findPaymentEventsByPackIds(packIds: string[]) {
     if (packIds.length === 0) return [];
     return this.prisma.paymentEvent.findMany({
       where: { analysisPackId: { in: packIds } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       select: {
         analysisPackId: true,
+        epaycoRef: true,
         codResponse: true,
         responseText: true,
         amount: true,
@@ -217,7 +219,7 @@ export class AnalysisPacksRepository {
             studyDate: true,
             createdBy: true,
             customer: { select: { id: true, businessName: true } },
-            status: { select: { label: true } },
+            status: { select: { label: true,  code: true } },
           },
         },
       },

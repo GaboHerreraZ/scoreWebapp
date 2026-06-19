@@ -290,29 +290,15 @@ export class AnalysisPacksService {
     const limit = filters.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    // Solo bolsas procesadas OK por ePayco: se excluyen las que nunca se pagaron
-    // (pending_payment) y las rechazadas (cancelled). Quedan activas, agotadas y
-    // vencidas por fecha.
-    const [pendingStatus, cancelledStatus] = await Promise.all([
-      this.repository.findParameterByTypeAndCode(
-        'analysis_pack_status',
-        'pending_payment',
-      ),
-      this.repository.findParameterByTypeAndCode(
-        'analysis_pack_status',
-        'cancelled',
-      ),
-    ]);
-    const excludeStatusIds = [pendingStatus?.id, cancelledStatus?.id].filter(
-      (id): id is number => id !== undefined,
-    );
-
+    // Se retornan TODAS las bolsas de la empresa, sin importar su estado
+    // (active, exhausted, expired, pending_payment, cancelled), para tener
+    // trazabilidad completa de todos los intentos.
     const { data: packs, total } =
       await this.repository.findByCompanyPaginated({
         companyId,
         skip,
         take: limit,
-        excludeStatusIds,
+        excludeStatusIds: [],
       });
 
     const packIds = packs.map((p) => p.id);
@@ -350,6 +336,7 @@ export class AnalysisPacksService {
 
     const toPaymentEvent = (e: (typeof paymentEvents)[number]) => ({
       date: e.createdAt,
+      epaycoRef: e.epaycoRef,
       codResponse: e.codResponse,
       statusLabel: this.paymentEventLabel(e.codResponse),
       responseText: e.responseText,
