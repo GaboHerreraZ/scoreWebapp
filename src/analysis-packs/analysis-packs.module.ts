@@ -7,9 +7,17 @@ import { AnalysisPacksRepository } from './analysis-packs.repository.js';
 import { PackOfferingsModule } from '../pack-offerings/pack-offerings.module.js';
 import { ConsultationPricesModule } from '../consultation-prices/consultation-prices.module.js';
 import { EpaycoModule } from '../epayco/epayco.module.js';
+import { PaymentAlertsModule } from '../payment-alerts/payment-alerts.module.js';
+import { MailModule } from '../mail/mail.module.js';
 
 @Module({
-  imports: [PackOfferingsModule, ConsultationPricesModule, EpaycoModule],
+  imports: [
+    PackOfferingsModule,
+    ConsultationPricesModule,
+    EpaycoModule,
+    PaymentAlertsModule,
+    MailModule,
+  ],
   controllers: [
     AnalysisPacksController,
     AnalysisPacksWebhookController,
