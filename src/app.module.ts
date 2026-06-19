@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { SupabaseAuthGuard } from './auth/guards/supabase-auth.guard.js';
@@ -24,10 +25,12 @@ import { EpaycoModule } from './epayco/epayco.module.js';
 import { ExcelModule } from './common/excel/excel.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
+import { DebugController } from './common/debug/debug.controller.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SentryModule.forRoot(),
     ExcelModule,
     PrismaModule,
     AuthModule,
@@ -51,6 +54,7 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
     EpaycoModule,
     AdminModule,
   ],
+  controllers: [DebugController],
   providers: [
     {
       provide: APP_GUARD,
