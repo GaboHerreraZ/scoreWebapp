@@ -12,4 +12,13 @@ export class PlatformAdminRepository {
     });
     return !!admin && admin.isActive;
   }
+
+  /** Emails de los admins activos del portal (para notificaciones internas). */
+  async findActiveAdminEmails(): Promise<string[]> {
+    const admins = await this.prisma.platformAdmin.findMany({
+      where: { isActive: true },
+      select: { email: true },
+    });
+    return admins.map((a) => a.email).filter((e): e is string => !!e);
+  }
 }

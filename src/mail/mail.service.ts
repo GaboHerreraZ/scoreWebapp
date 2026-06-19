@@ -80,4 +80,76 @@ export class MailService {
       html,
     });
   }
+
+  /** Avisa al cliente que su pago fue reversado y debe pagar de nuevo. */
+  async sendPaymentReversedClientEmail(params: {
+    to: string;
+    customerName: string;
+    planName: string;
+    quantity: string;
+    amount: string;
+    currency: string;
+  }) {
+    const { to, customerName, planName, quantity, amount, currency } = params;
+
+    const html = this.loadTemplate('payment-reversed-client', {
+      customerName,
+      planName,
+      quantity,
+      amount,
+      currency,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: 'Tu pago en Creditia fue reversado',
+      html,
+    });
+  }
+
+  /** Notifica a un admin del incidente de pago reversado. */
+  async sendPaymentReversedAdminEmail(params: {
+    to: string;
+    companyName: string;
+    planName: string;
+    amount: string;
+    currency: string;
+    consumed: string;
+    quantity: string;
+    epaycoRef: string;
+    actionNote: string;
+  }) {
+    const {
+      to,
+      companyName,
+      planName,
+      amount,
+      currency,
+      consumed,
+      quantity,
+      epaycoRef,
+      actionNote,
+    } = params;
+
+    const html = this.loadTemplate('payment-reversed-admin', {
+      companyName,
+      planName,
+      amount,
+      currency,
+      consumed,
+      quantity,
+      epaycoRef,
+      actionNote,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Alerta: pago reversado — ${companyName}`,
+      html,
+    });
+  }
 }
