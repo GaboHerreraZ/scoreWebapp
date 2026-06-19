@@ -24,6 +24,7 @@ import { CreatePackOfferingDto } from './dto/create-pack-offering.dto.js';
 import { UpdatePackOfferingDto } from './dto/update-pack-offering.dto.js';
 import { FilterPackOfferingDto } from './dto/filter-pack-offering.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
+import { Public } from '../common/decorators/public.decorator.js';
 
 @ApiTags('Pack Offerings')
 @ApiBearerAuth()
@@ -34,6 +35,7 @@ export class PackOfferingsController {
   // ─── Catálogo (cualquier usuario autenticado: lo muestra el front) ──
 
   @Get('catalog')
+  @Public()
   @ApiOperation({
     summary: 'Catálogo de bolsas ofrecibles con precio derivado resuelto',
   })
