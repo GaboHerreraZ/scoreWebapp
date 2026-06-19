@@ -43,6 +43,9 @@ model Parameter {
   notificationsByType                   Notification[]        @relation("NotificationType")
   packOfferingsByDiscountType           PackOffering[]        @relation("PackOfferingDiscountType")
   analysisPacksByStatus                 AnalysisPack[]        @relation("AnalysisPackStatus")
+  paymentAlertsByType                   PaymentAlert[]        @relation("PaymentAlertType")
+  paymentAlertsBySeverity               PaymentAlert[]        @relation("PaymentAlertSeverity")
+  paymentAlertsByStatus                 PaymentAlert[]        @relation("PaymentAlertStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -78,6 +81,7 @@ model Profile {
   createdNotifications      Notification[]      @relation("NotificationCreatedBy")
   notificationReads         NotificationRead[]  @relation("NotificationReadUser")
   analysisConsumptions      AnalysisConsumption[] @relation("AnalysisConsumptionConsumedBy")
+  resolvedPaymentAlerts     PaymentAlert[]      @relation("PaymentAlertResolvedBy")
 
   @@map("profiles")
 }
@@ -151,6 +155,8 @@ model Company {
   notifications        Notification[]
   analysisPacks        AnalysisPack[]
   analysisConsumptions AnalysisConsumption[]
+  paymentAlerts        PaymentAlert[]
+  paymentEvents        PaymentEvent[]
 
   @@map("companies")
 }
@@ -255,6 +261,8 @@ model AnalysisPack {
   status            Parameter             @relation("AnalysisPackStatus", fields: [statusId], references: [id])
   consultationPrice ConsultationPrice?    @relation(fields: [consultationPriceId], references: [id])
   consumptions      AnalysisConsumption[]
+  paymentAlerts     PaymentAlert[]
+  paymentEvents     PaymentEvent[]
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
   @@map("analysis_packs")
@@ -574,4 +582,66 @@ model NotificationRead {
 
   @@unique([notificationId, userId])
   @@map("notification_reads")
+}
+
+// ─── Alertas de pago (incidentes que el admin debe gestionar) ──────────
+// Registro de incidentes de cobro que requieren contacto con el cliente
+// (p.ej. pago reversado). Fuente de verdad del incidente: los correos son
+// best-effort. type/severity/status son Parameter (payment_alert_type,
+// payment_alert_severity, payment_alert_status).
+
+model PaymentAlert {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  analysisPackId String?  @map("analysis_pack_id") @db.Uuid
+  typeId         Int      @map("type_id")
+  severityId     Int      @map("severity_id")
+  statusId       Int      @map("status_id")
+  title          String   @db.VarChar(255)
+  message        String   @db.Text
+  metadata       Json?    @db.JsonB // ref ePayco, monto, créditos consumidos, etc.
+  resolvedBy     String?  @map("resolved_by") @db.Uuid
+  resolvedAt     DateTime? @map("resolved_at")
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  analysisPack  AnalysisPack? @relation(fields: [analysisPackId], references: [id])
+  type          Parameter     @relation("PaymentAlertType", fields: [typeId], references: [id])
+  severity      Parameter     @relation("PaymentAlertSeverity", fields: [severityId], references: [id])
+  status        Parameter     @relation("PaymentAlertStatus", fields: [statusId], references: [id])
+  resolvedByUser Profile?     @relation("PaymentAlertResolvedBy", fields: [resolvedBy], references: [id])
+
+  @@index([companyId, statusId])
+  @@index([statusId, createdAt])
+  @@map("payment_alerts")
+}
+
+// ─── Eventos de pago de ePayco (log crudo por confirmación) ────────────
+// Una fila por CADA confirmación que ePayco envía al webhook (rechazo, pago,
+// reversa...). Guarda el payload CRUDO completo para auditoría/debug y soporte
+// de disputas. A diferencia de AnalysisPack (1 fila por bolsa), aquí se conserva
+// el historial de TODOS los intentos. No se actualiza: es append-only.
+
+model PaymentEvent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  analysisPackId      String?  @map("analysis_pack_id") @db.Uuid // bolsa (x_extra1); null si no se identificó
+  companyId           String?  @map("company_id") @db.Uuid
+  epaycoRef           String?  @map("epayco_ref") @db.VarChar(100)
+  epaycoTransactionId String?  @map("epayco_transaction_id") @db.VarChar(100)
+  codResponse         Int?     @map("cod_response") // 1=aceptada 2=rechazada 4=fallida 6=reversada...
+  responseText        String?  @map("response_text") @db.VarChar(255)
+  amount              Float?
+  currencyCode        String?  @map("currency_code") @db.VarChar(10)
+  isTest              Boolean  @default(false) @map("is_test")
+  payload             Json     @db.JsonB // payload crudo COMPLETO de ePayco
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  analysisPack AnalysisPack? @relation(fields: [analysisPackId], references: [id])
+  company      Company?      @relation(fields: [companyId], references: [id])
+
+  @@index([analysisPackId, createdAt])
+  @@index([epaycoTransactionId])
+  @@map("payment_events")
 }
