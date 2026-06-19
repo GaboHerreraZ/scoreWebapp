@@ -637,6 +637,37 @@ export class AnalysisPacksService {
         `Pago de bolsa ${pack.id} rechazado/fallido (código=${responseCode}, ref=${dto.x_ref_payco}); ` +
           `la bolsa sigue pending_payment para permitir reintento`,
       );
+
+      // Alerta SOLO en BD (sin correo): un rechazo aislado no es accionable —
+      // el cliente puede reintentar y no hubo cobro. Queda en el panel admin
+      // con severidad informativa para detectar patrones de fallos. Best-effort.
+      try {
+        await this.paymentAlertsService.createAlert({
+          companyId: pack.companyId,
+          analysisPackId: pack.id,
+          typeCode: 'payment_failed',
+          severityCode: 'info',
+          title: 'Pago rechazado',
+          message:
+            `Un intento de pago de la bolsa fue ${
+              responseCode === 2 ? 'rechazado' : 'fallido'
+            }. La bolsa sigue pendiente de pago para que el cliente reintente.`,
+          metadata: {
+            codResponse: responseCode,
+            epaycoRef: dto.x_ref_payco ?? null,
+            epaycoTransactionId: dto.x_transaction_id ?? null,
+            responseReason: dto.x_response_reason_text ?? null,
+            totalPaid: pack.totalPaid,
+            currency: pack.currencyCode,
+          },
+        });
+      } catch (e) {
+        this.logger.error(
+          `No se pudo crear la alerta de pago rechazado para la bolsa ${pack.id}: ${
+            (e as Error).message
+          }`,
+        );
+      }
     } else if (responseCode === 6) {
       // Reversada → un pago YA aprobado se devolvió (contracargo/anulación). La
       // bolsa pudo quedar active: la regresamos a pending_payment para que el
