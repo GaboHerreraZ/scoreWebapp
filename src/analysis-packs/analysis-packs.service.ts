@@ -13,8 +13,11 @@ import { ConsultationPricesService } from '../consultation-prices/consultation-p
 import { EpaycoService } from '../epayco/epayco.service.js';
 import { CompanyAccessRepository } from '../common/auth/company-access.repository.js';
 import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
+import { PaymentAlertsService } from '../payment-alerts/payment-alerts.service.js';
+import { MailService } from '../mail/mail.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
+import { PaginationDto } from '../common/dto/pagination.dto.js';
 import {
   calculatePackPrice,
   type DiscountTypeCode,
@@ -33,6 +36,8 @@ export class AnalysisPacksService {
     private readonly configService: ConfigService,
     private readonly companyAccessRepository: CompanyAccessRepository,
     private readonly platformAdminRepository: PlatformAdminRepository,
+    private readonly paymentAlertsService: PaymentAlertsService,
+    private readonly mailService: MailService,
   ) {}
 
   /**
@@ -149,6 +154,18 @@ export class AnalysisPacksService {
       'http://localhost:4200',
     );
 
+    // El front decide a dónde volver tras el pago (distinto entre onboarding y
+    // panel admin). Solo se acepta un path RELATIVO propio del front (debe
+    // empezar con "/" y no ser "//", que sería otro dominio → open redirect).
+    // Si no llega o es inválido, se usa el default actual.
+    const safePath =
+      dto.redirectPath &&
+      dto.redirectPath.startsWith('/') &&
+      !dto.redirectPath.startsWith('//')
+        ? dto.redirectPath
+        : '/pago/resultado';
+    const responseUrl = `${frontendUrl}${safePath}`;
+
     const billingName = [company.billingName, company.billingLastName]
       .filter(Boolean)
       .join(' ')
@@ -163,7 +180,7 @@ export class AnalysisPacksService {
       currency: activePrice.currencyCode,
       extra1: pack.id, // el webhook lo recibe para identificar la bolsa
       confirmationUrl: `${backendUrl}/api/webhooks/epayco/packs`,
-      responseUrl: `${frontendUrl}/pago/resultado`,
+      responseUrl,
       billing: {
         email: company.billingEmail ?? undefined,
         name: billingName || company.name,
@@ -235,6 +252,126 @@ export class AnalysisPacksService {
   /** Bolsas de una empresa (historial). */
   async findByCompany(companyId: string) {
     return this.repository.findByCompany(companyId);
+  }
+
+  /** Etiqueta legible del código de respuesta de ePayco (para el cliente). */
+  private paymentEventLabel(codResponse: number | null): string {
+    switch (codResponse) {
+      case 1:
+        return 'Aprobada';
+      case 2:
+        return 'Rechazada';
+      case 3:
+        return 'Pendiente';
+      case 4:
+        return 'Fallida';
+      case 6:
+        return 'Reversada';
+      case 7:
+        return 'Retenida';
+      case 8:
+        return 'Iniciada';
+      case 9:
+        return 'Expirada';
+      default:
+        return 'Desconocida';
+    }
+  }
+
+  /**
+   * Bolsas de una empresa (paginadas) + sus consumos agrupados por bolsa. Cada
+   * consumo trae el detalle del estudio (customer, estado y autor) para que el
+   * front muestre "qué se gastó en cada bolsa". También incluye los eventos de
+   * pago (paymentEvents) de cada bolsa para trazabilidad de los intentos de
+   * cobro. Solo se traen los consumos/eventos de las bolsas de la página actual.
+   */
+  async getPacksWithConsumptions(companyId: string, filters: PaginationDto) {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    // Solo bolsas procesadas OK por ePayco: se excluyen las que nunca se pagaron
+    // (pending_payment) y las rechazadas (cancelled). Quedan activas, agotadas y
+    // vencidas por fecha.
+    const [pendingStatus, cancelledStatus] = await Promise.all([
+      this.repository.findParameterByTypeAndCode(
+        'analysis_pack_status',
+        'pending_payment',
+      ),
+      this.repository.findParameterByTypeAndCode(
+        'analysis_pack_status',
+        'cancelled',
+      ),
+    ]);
+    const excludeStatusIds = [pendingStatus?.id, cancelledStatus?.id].filter(
+      (id): id is number => id !== undefined,
+    );
+
+    const { data: packs, total } =
+      await this.repository.findByCompanyPaginated({
+        companyId,
+        skip,
+        take: limit,
+        excludeStatusIds,
+      });
+
+    const packIds = packs.map((p) => p.id);
+    const [consumptions, paymentEvents] = await Promise.all([
+      this.repository.findConsumptionsByPackIds(packIds),
+      this.repository.findPaymentEventsByPackIds(packIds),
+    ]);
+
+    // Agrupar los consumos por packId.
+    const consumptionsByPack = new Map<string, typeof consumptions>();
+    for (const c of consumptions) {
+      const list = consumptionsByPack.get(c.packId) ?? [];
+      list.push(c);
+      consumptionsByPack.set(c.packId, list);
+    }
+
+    // Agrupar los eventos de pago por bolsa (analysisPackId no es null aquí, ya
+    // que filtramos por packIds existentes).
+    const eventsByPack = new Map<string, typeof paymentEvents>();
+    for (const e of paymentEvents) {
+      const key = e.analysisPackId!;
+      const list = eventsByPack.get(key) ?? [];
+      list.push(e);
+      eventsByPack.set(key, list);
+    }
+
+    const toStudy = (c: (typeof consumptions)[number]) => ({
+      creditStudyId: c.creditStudyId,
+      customerId: c.creditStudy.customer.id,
+      customerName: c.creditStudy.customer.businessName,
+      statusLabel: c.creditStudy.status.label,
+      studyDate: c.creditStudy.studyDate,
+      createdBy: c.creditStudy.createdBy,
+    });
+
+    const toPaymentEvent = (e: (typeof paymentEvents)[number]) => ({
+      date: e.createdAt,
+      codResponse: e.codResponse,
+      statusLabel: this.paymentEventLabel(e.codResponse),
+      responseText: e.responseText,
+      amount: e.amount,
+      currency: e.currencyCode,
+    });
+
+    const data = packs.map((pack) => ({
+      ...pack,
+      consumptions: (consumptionsByPack.get(pack.id) ?? []).map(toStudy),
+      paymentEvents: (eventsByPack.get(pack.id) ?? []).map(toPaymentEvent),
+    }));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   /**
@@ -413,6 +550,32 @@ export class AnalysisPacksService {
       throw new NotFoundException(`Bolsa no encontrada (${packId})`);
     }
 
+    // Log crudo del evento (best-effort, append-only). Se guarda el payload
+    // ORIGINAL (raw) de ePayco, incluso si luego es un webhook duplicado, para
+    // tener trazabilidad completa de todas las confirmaciones recibidas.
+    try {
+      await this.repository.createPaymentEvent({
+        analysisPackId: pack.id,
+        companyId: pack.companyId,
+        epaycoRef: dto.x_ref_payco,
+        epaycoTransactionId: dto.x_transaction_id,
+        codResponse: dto.x_cod_response
+          ? parseInt(dto.x_cod_response, 10)
+          : null,
+        responseText: dto.x_response_reason_text ?? dto.x_response ?? null,
+        amount: dto.x_amount ? parseFloat(dto.x_amount) : null,
+        currencyCode: dto.x_currency_code ?? null,
+        isTest: dto.x_test_request?.toUpperCase() === 'TRUE',
+        payload: raw as unknown as Prisma.InputJsonValue,
+      });
+    } catch (e) {
+      this.logger.error(
+        `No se pudo registrar el PaymentEvent para la bolsa ${pack.id}: ${
+          (e as Error).message
+        }`,
+      );
+    }
+
     // 3. Idempotencia por transacción
     if (dto.x_transaction_id) {
       const already = await this.repository.existsByTransactionId(
@@ -426,7 +589,7 @@ export class AnalysisPacksService {
       }
     }
 
-    const [pendingStatus, activeStatus, cancelledStatus] = await Promise.all([
+    const [pendingStatus, activeStatus] = await Promise.all([
       this.repository.findParameterByTypeAndCode(
         'analysis_pack_status',
         'pending_payment',
@@ -435,12 +598,8 @@ export class AnalysisPacksService {
         'analysis_pack_status',
         'active',
       ),
-      this.repository.findParameterByTypeAndCode(
-        'analysis_pack_status',
-        'cancelled',
-      ),
     ]);
-    if (!pendingStatus || !activeStatus || !cancelledStatus) {
+    if (!pendingStatus || !activeStatus) {
       throw new BadRequestException('Faltan parámetros de estado de bolsa');
     }
 
@@ -477,25 +636,166 @@ export class AnalysisPacksService {
           : `Bolsa ${pack.id} ya estaba activada (webhook concurrente, ref=${dto.x_ref_payco})`,
       );
     } else if (responseCode === 2 || responseCode === 4) {
-      // Rechazado/fallido → cancelar la bolsa pendiente.
-      await this.repository.markCancelled(
+      // Rechazada (2) / Fallida (4) → NO se cancela: un rechazo de tarjeta no es
+      // definitivo, el usuario puede reintentar en el MISMO checkout. La bolsa se
+      // queda en pending_payment para que un reintento aprobado la active; solo
+      // se registra el motivo (sin pisar epaycoRef/epaycoTransactionId, que son
+      // del pago exitoso). La cancelación por abandono se maneja aparte.
+      await this.repository.recordFailedAttempt(
         pack.id,
         pendingStatus.id,
-        cancelledStatus.id,
-        dto.x_ref_payco,
-        dto.x_transaction_id,
-        receipt,
+        dto.x_response_reason_text ?? null,
       );
       this.logger.warn(
-        `Pago de bolsa ${pack.id} rechazado/fallido (código=${responseCode}, ref=${dto.x_ref_payco})`,
+        `Pago de bolsa ${pack.id} rechazado/fallido (código=${responseCode}, ref=${dto.x_ref_payco}); ` +
+          `la bolsa sigue pending_payment para permitir reintento`,
       );
+    } else if (responseCode === 6) {
+      // Reversada → un pago YA aprobado se devolvió (contracargo/anulación). La
+      // bolsa pudo quedar active: la regresamos a pending_payment para que el
+      // cliente reintente el pago. quantityConsumed se conserva (los estudios ya
+      // hechos no se deshacen): al repagar, el saldo sigue siendo purchased −
+      // consumed. Si gastó créditos, el área comercial contacta al cliente.
+      const reverted = await this.repository.revertToPending(
+        pack.id,
+        pendingStatus.id,
+        dto.x_response_reason_text ?? 'Pago reversado',
+      );
+      const consumed = pack.quantityConsumed > 0;
+      this.logger.warn(
+        `Bolsa ${pack.id} REVERSADA (código=6, ref=${dto.x_ref_payco}); ` +
+          `${reverted ? 'devuelta a pending_payment para reintento' : 'sin cambios'}. ` +
+          `Consumidos hasta ahora: ${pack.quantityConsumed}/${pack.quantityPurchased}` +
+          `${consumed ? ' — REQUIERE GESTIÓN: el cliente ya consumió créditos' : ''}`,
+      );
+
+      // Alerta para el panel admin (best-effort: no rompe el webhook). Crítica
+      // si el cliente ya consumió créditos del pago reversado.
+      try {
+        await this.paymentAlertsService.createAlert({
+          companyId: pack.companyId,
+          analysisPackId: pack.id,
+          typeCode: 'payment_reversed',
+          severityCode: consumed ? 'critical' : 'warning',
+          title: 'Pago reversado',
+          message: consumed
+            ? `El pago de la bolsa fue reversado y el cliente ya consumió ` +
+              `${pack.quantityConsumed} de ${pack.quantityPurchased} consultas. ` +
+              `Contactar al cliente para regularizar el pago.`
+            : `El pago de la bolsa fue reversado. La bolsa quedó pendiente de pago ` +
+              `para que el cliente reintente.`,
+          metadata: {
+            epaycoRef: dto.x_ref_payco ?? null,
+            epaycoTransactionId: dto.x_transaction_id ?? null,
+            responseReason: dto.x_response_reason_text ?? null,
+            totalPaid: pack.totalPaid,
+            currency: pack.currencyCode,
+            quantityPurchased: pack.quantityPurchased,
+            quantityConsumed: pack.quantityConsumed,
+          },
+        });
+      } catch (e) {
+        this.logger.error(
+          `No se pudo crear la alerta de reversa para la bolsa ${pack.id}: ${
+            (e as Error).message
+          }`,
+        );
+      }
+
+      // Correos best-effort (cliente + admins). No bloquean el webhook.
+      await this.notifyReversal(pack, consumed);
     } else {
-      // Pendiente (3) u otro → no hacemos nada; esperamos una confirmación final.
-      this.logger.log(
-        `Bolsa ${pack.id} pendiente de confirmación (código=${responseCode}, ref=${dto.x_ref_payco})`,
+      // Pendiente (3), Iniciada (8), Retenida (7), Expirada (9) u otro → la bolsa
+      // se queda en pending_payment esperando una confirmación final; el cliente
+      // puede reintentar. No activamos ni cancelamos.
+      this.logger.warn(
+        `Bolsa ${pack.id} sin confirmación de pago (código=${responseCode}, ref=${dto.x_ref_payco}); ` +
+          `sigue pending_payment a la espera de confirmación/reintento`,
       );
     }
 
     return { received: true };
+  }
+
+  /**
+   * Notifica una reversa por correo (best-effort): al cliente (debe repagar) y a
+   * los admins del portal (incidente a gestionar). Cualquier fallo de envío se
+   * loguea pero NO interrumpe el procesamiento del webhook.
+   */
+  private async notifyReversal(
+    pack: NonNullable<
+      Awaited<ReturnType<AnalysisPacksRepository['findById']>>
+    >,
+    consumed: boolean,
+  ) {
+    const planName = pack.packOffering?.name ?? 'Bolsa de consultas';
+    const amount = pack.totalPaid.toLocaleString('es-CO');
+    const quantity = String(pack.quantityPurchased);
+    const billing = await this.repository.findCompanyBilling(pack.companyId);
+
+    // Correo al cliente (al email de facturación de la empresa).
+    try {
+      const to = billing?.billingEmail;
+      if (to) {
+        const customerName =
+          [billing?.billingName, billing?.billingLastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim() ||
+          billing?.name ||
+          'cliente';
+        await this.mailService.sendPaymentReversedClientEmail({
+          to,
+          customerName,
+          planName,
+          quantity,
+          amount,
+          currency: pack.currencyCode,
+        });
+      } else {
+        this.logger.warn(
+          `Reversa bolsa ${pack.id}: la empresa no tiene billingEmail, no se notificó al cliente`,
+        );
+      }
+    } catch (e) {
+      this.logger.error(
+        `Reversa bolsa ${pack.id}: fallo al notificar al cliente: ${
+          (e as Error).message
+        }`,
+      );
+    }
+
+    // Correo a los admins activos del portal.
+    try {
+      const adminEmails =
+        await this.platformAdminRepository.findActiveAdminEmails();
+      const companyName = billing?.name ?? pack.companyId;
+      const actionNote = consumed
+        ? `El cliente ya consumió ${pack.quantityConsumed} de ${pack.quantityPurchased} ` +
+          `consultas: contactarlo para regularizar el pago.`
+        : `La bolsa quedó pendiente de pago; el cliente puede reintentar.`;
+
+      await Promise.all(
+        adminEmails.map((to) =>
+          this.mailService.sendPaymentReversedAdminEmail({
+            to,
+            companyName,
+            planName,
+            amount,
+            currency: pack.currencyCode,
+            consumed: String(pack.quantityConsumed),
+            quantity,
+            epaycoRef: pack.epaycoRef ?? '—',
+            actionNote,
+          }),
+        ),
+      );
+    } catch (e) {
+      this.logger.error(
+        `Reversa bolsa ${pack.id}: fallo al notificar a los admins: ${
+          (e as Error).message
+        }`,
+      );
+    }
   }
 }

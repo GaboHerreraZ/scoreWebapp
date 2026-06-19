@@ -143,6 +143,88 @@ export class AnalysisPacksRepository {
   }
 
   /**
+   * Bolsas de una empresa paginadas (más recientes primero) + total. Solo las
+   * procesadas OK por ePayco (excluye los estados pasados en excludeStatusIds:
+   * pending_payment y cancelled), es decir activas, agotadas o vencidas por
+   * fecha. Trae solo lo necesario: del status el label y de la oferta
+   * name/quantity/discountValue (sin consultationPrice).
+   */
+  async findByCompanyPaginated(params: {
+    companyId: string;
+    skip: number;
+    take: number;
+    excludeStatusIds: number[];
+  }) {
+    const { companyId, skip, take, excludeStatusIds } = params;
+    const where = {
+      companyId,
+      statusId: { notIn: excludeStatusIds },
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.analysisPack.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          status: { select: { label: true } },
+          packOffering: {
+            select: { name: true, quantity: true, discountValue: true },
+          },
+        },
+      }),
+      this.prisma.analysisPack.count({ where }),
+    ]);
+    return { data, total };
+  }
+
+  /**
+   * Eventos de pago de un conjunto de bolsas, SOLO campos seguros (sin payload
+   * crudo ni datos sensibles), para mostrar trazabilidad al cliente. Cronológico.
+   */
+  async findPaymentEventsByPackIds(packIds: string[]) {
+    if (packIds.length === 0) return [];
+    return this.prisma.paymentEvent.findMany({
+      where: { analysisPackId: { in: packIds } },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        analysisPackId: true,
+        codResponse: true,
+        responseText: true,
+        amount: true,
+        currencyCode: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /**
+   * Consumos de un conjunto de bolsas, con el detalle del estudio asociado
+   * (customer, estado y autor), para agrupar por bolsa (packId). Más recientes
+   * primero. Se filtra por packIds para traer solo los de la página de bolsas.
+   */
+  async findConsumptionsByPackIds(packIds: string[]) {
+    if (packIds.length === 0) return [];
+    return this.prisma.analysisConsumption.findMany({
+      where: { packId: { in: packIds } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        packId: true,
+        creditStudyId: true,
+        createdAt: true,
+        creditStudy: {
+          select: {
+            studyDate: true,
+            createdBy: true,
+            customer: { select: { id: true, businessName: true } },
+            status: { select: { label: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
    * Saldo disponible de una empresa: suma de (purchased − consumed) sobre las
    * bolsas activas y vigentes (endDate >= hoy). Devuelve el total y el detalle
    * de cada bolsa con saldo para que el front muestre vencimientos.
@@ -160,6 +242,14 @@ export class AnalysisPacksRepository {
       orderBy: { endDate: 'asc' },
       include: this.defaultInclude,
     });
+  }
+
+  /**
+   * Registra un evento de pago crudo de ePayco (append-only). Una fila por cada
+   * confirmación recibida; conserva el payload completo para auditoría.
+   */
+  async createPaymentEvent(data: Prisma.PaymentEventUncheckedCreateInput) {
+    return this.prisma.paymentEvent.create({ data });
   }
 
   /** ¿Ya procesamos esta transacción ePayco? (idempotencia del webhook). */
@@ -197,7 +287,10 @@ export class AnalysisPacksRepository {
     return result.count > 0;
   }
 
-  /** Marca la bolsa como cancelada (pago rechazado/fallido del checkout). */
+  /**
+   * Cancela una bolsa pendiente de forma DEFINITIVA (abandono/timeout, no un
+   * rechazo puntual de tarjeta). Solo aplica si sigue en pending_payment.
+   */
   async markCancelled(
     packId: string,
     pendingStatusId: number,
@@ -216,6 +309,50 @@ export class AnalysisPacksRepository {
       },
     });
     return result.count > 0;
+  }
+
+  /**
+   * Registra un intento de pago RECHAZADO sin cancelar la bolsa: deja el motivo
+   * del último intento y MANTIENE la bolsa en pending_payment, para que un
+   * reintento aprobado en el mismo checkout pueda activarla. No toca
+   * epaycoRef/epaycoTransactionId (esos son del pago exitoso). Solo actúa si la
+   * bolsa sigue pendiente (no pisa una ya activada por una confirmación previa).
+   */
+  async recordFailedAttempt(
+    packId: string,
+    pendingStatusId: number,
+    responseReason: string | null,
+  ): Promise<boolean> {
+    const result = await this.prisma.analysisPack.updateMany({
+      where: { id: packId, statusId: pendingStatusId },
+      data: { epaycoResponseReason: responseReason },
+    });
+    return result.count > 0;
+  }
+
+  /**
+   * Regresa una bolsa a pending_payment tras una REVERSA de ePayco (el pago
+   * aprobado se devolvió). A diferencia de recordFailedAttempt, actúa sobre una
+   * bolsa en cualquier estado (típicamente active) y limpia los datos del pago
+   * reversado (refs/sesión) para permitir un nuevo intento. quantityConsumed NO
+   * se toca: los estudios ya hechos persisten y el saldo se recalcula al repagar.
+   */
+  async revertToPending(
+    packId: string,
+    pendingStatusId: number,
+    responseReason: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.analysisPack.update({
+      where: { id: packId },
+      data: {
+        statusId: pendingStatusId,
+        epaycoResponseReason: responseReason,
+        epaycoRef: null,
+        epaycoTransactionId: null,
+        epaycoSessionId: null,
+      },
+    });
+    return !!result;
   }
 
   /**

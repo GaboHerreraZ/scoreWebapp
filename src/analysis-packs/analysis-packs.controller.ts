@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/swagger';
 import { AnalysisPacksService } from './analysis-packs.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
+import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Analysis Packs')
@@ -56,5 +58,21 @@ export class AnalysisPacksController {
   })
   getBalance(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.service.getBalance(companyId);
+  }
+
+  @Get('with-consumptions')
+  @ApiOperation({
+    summary: 'Bolsas de la empresa (paginadas) con sus consumos agrupados',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'data: bolsas + consumptions por bolsa (customer, estado, autor); meta: paginación',
+  })
+  getWithConsumptions(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Query() filters: PaginationDto,
+  ) {
+    return this.service.getPacksWithConsumptions(companyId, filters);
   }
 }

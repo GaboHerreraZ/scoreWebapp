@@ -1,5 +1,5 @@
-import { IsUUID } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PurchasePackDto {
   @ApiProperty({
@@ -8,4 +8,16 @@ export class PurchasePackDto {
   })
   @IsUUID()
   packOfferingId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Path RELATIVO del front al que ePayco redirige tras el pago (ej. ' +
+      '/onboarding/resultado o /panel/pagos/resultado). Debe empezar con "/". ' +
+      'Si no se envía, se usa el path por defecto (/pago/resultado).',
+    example: '/panel/pagos/resultado',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  redirectPath?: string;
 }
