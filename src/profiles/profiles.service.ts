@@ -85,13 +85,9 @@ export class ProfilesService {
     let permissions = {
       canAddCreditStudy: false,
       canAddUser: true,
-      canAddCustomer: true,
       canMakeAiAnalysis: false,
-      canExportExcel: true,
       hasCredits: false,
       availableCredits: 0,
-      canEditTheme: true,
-      emailNotification: true,
       canExtractPdf: false,
     };
 
@@ -106,12 +102,8 @@ export class ProfilesService {
         canMakeAiAnalysis: hasCredits,
         canExtractPdf: hasCredits,
         canAddUser: true,
-        canAddCustomer: true,
-        canExportExcel: true,
         hasCredits,
         availableCredits,
-        canEditTheme: true,
-        emailNotification: true,
       };
     }
 
