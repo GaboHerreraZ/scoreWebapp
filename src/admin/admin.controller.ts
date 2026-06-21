@@ -22,6 +22,18 @@ import { AdminService } from './admin.service.js';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  @Get('platform-admins')
+  @ApiOperation({
+    summary: 'Listar admins activos del portal (para selectores, p.ej. asignar leads)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Admins activos con id, name, email, phone y role',
+  })
+  listPlatformAdmins() {
+    return this.adminService.listPlatformAdmins();
+  }
+
   @Get('companies')
   @ApiOperation({ summary: 'Listar todas las empresas (cross-tenant)' })
   @ApiResponse({ status: 200, description: 'Listado paginado de empresas' })

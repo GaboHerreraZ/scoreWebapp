@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { AnalysisPacksRepository } from '../analysis-packs/analysis-packs.repository.js';
+import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
 
 @Injectable()
 export class AdminService {
@@ -9,7 +10,13 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly parametersRepository: ParametersRepository,
     private readonly analysisPacksRepository: AnalysisPacksRepository,
+    private readonly platformAdminRepository: PlatformAdminRepository,
   ) {}
+
+  /** Admins activos del portal (para selectores: asignar leads, etc.). */
+  async listPlatformAdmins() {
+    return this.platformAdminRepository.findActiveAdmins();
+  }
 
   /** Saldo de créditos de una empresa: total disponible + nº de bolsas vigentes. */
   private async resolveCredits(companyId: string) {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { SentryModule } from '@sentry/nestjs/setup';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -27,12 +28,16 @@ import { EpaycoModule } from './epayco/epayco.module.js';
 import { ExcelModule } from './common/excel/excel.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
+import { ContactRequestsModule } from './contact-requests/contact-requests.module.js';
 import { DebugController } from './common/debug/debug.controller.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     SentryModule.forRoot(),
+    // Rate limiting global. Default permisivo (cubre toda la API); los
+    // endpoints públicos sensibles aplican un @Throttle más estricto.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     ExcelModule,
     PrismaModule,
     AuthModule,
@@ -57,9 +62,16 @@ import { DebugController } from './common/debug/debug.controller.js';
     NotificationsModule,
     EpaycoModule,
     AdminModule,
+    ContactRequestsModule,
   ],
   controllers: [DebugController],
   providers: [
+    // El ThrottlerGuard va primero para que el rate-limit aplique también a
+    // rutas @Public (el AuthGuard las dejaría pasar sin contar).
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: SupabaseAuthGuard,

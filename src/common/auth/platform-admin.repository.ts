@@ -21,4 +21,22 @@ export class PlatformAdminRepository {
     });
     return admins.map((a) => a.email).filter((e): e is string => !!e);
   }
+
+  /**
+   * Admins activos del portal con datos para selectores (p.ej. asignar un lead).
+   * Incluye el rol del equipo interno (admin/support/sales) resuelto.
+   */
+  async findActiveAdmins() {
+    return this.prisma.platformAdmin.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: { select: { code: true, label: true } },
+      },
+    });
+  }
 }

@@ -152,4 +152,61 @@ export class MailService {
       html,
     });
   }
+
+  /** Aviso a los admins de un nuevo lead del formulario de contacto comercial. */
+  async sendContactRequestAdminEmail(params: {
+    to: string;
+    subjectLabel: string;
+    companyName: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    message: string;
+  }) {
+    const { to, subjectLabel, companyName, fullName, email, phone, message } =
+      params;
+
+    const html = this.loadTemplate('contact-request-admin', {
+      subjectLabel,
+      companyName,
+      fullName,
+      email,
+      phone,
+      message,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Nuevo contacto comercial — ${companyName} (${subjectLabel})`,
+      html,
+    });
+  }
+
+  /** Confirmación al cliente de que recibimos su solicitud de contacto. */
+  async sendContactRequestClientEmail(params: {
+    to: string;
+    fullName: string;
+    companyName: string;
+    subjectLabel: string;
+    message: string;
+  }) {
+    const { to, fullName, companyName, subjectLabel, message } = params;
+
+    const html = this.loadTemplate('contact-request-client', {
+      fullName,
+      companyName,
+      subjectLabel,
+      message,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: 'Recibimos tu mensaje — Creditia',
+      html,
+    });
+  }
 }
