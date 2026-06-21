@@ -46,6 +46,7 @@ model Parameter {
   paymentAlertsByType                   PaymentAlert[]        @relation("PaymentAlertType")
   paymentAlertsBySeverity               PaymentAlert[]        @relation("PaymentAlertSeverity")
   paymentAlertsByStatus                 PaymentAlert[]        @relation("PaymentAlertStatus")
+  promoCodesByScope                     PromoCode[]           @relation("PromoCodeScope")
 
   @@unique([type, code])
   @@map("parameters")
@@ -82,6 +83,8 @@ model Profile {
   notificationReads         NotificationRead[]  @relation("NotificationReadUser")
   analysisConsumptions      AnalysisConsumption[] @relation("AnalysisConsumptionConsumedBy")
   resolvedPaymentAlerts     PaymentAlert[]      @relation("PaymentAlertResolvedBy")
+  promoRedemptions          PromoCodeRedemption[] @relation("PromoCodeRedemptionRedeemedBy")
+  promoRedeemedPacks        AnalysisPack[]      @relation("AnalysisPackPromoRedeemedBy")
 
   @@map("profiles")
 }
@@ -157,6 +160,8 @@ model Company {
   analysisConsumptions AnalysisConsumption[]
   paymentAlerts        PaymentAlert[]
   paymentEvents        PaymentEvent[]
+  promoCodes           PromoCode[] // códigos atados a esta empresa (scope=company)
+  promoRedemptions     PromoCodeRedemption[]
 
   @@map("companies")
 }
@@ -173,6 +178,7 @@ model PlatformAdmin {
   createdConsultationPrices ConsultationPrice[] @relation("ConsultationPriceCreatedBy")
   updatedConsultationPrices ConsultationPrice[] @relation("ConsultationPriceUpdatedBy")
   createdPackOfferings      PackOffering[]      @relation("PackOfferingCreatedBy")
+  createdPromoCodes         PromoCode[]         @relation("PromoCodeCreatedBy")
 
   @@map("platform_admins")
 }
@@ -253,6 +259,14 @@ model AnalysisPack {
   // Secreto del link de pago (compra sin sesión); se invalida (null) al pagar.
   paymentToken        String?  @map("payment_token") @db.VarChar(64)
 
+  // Código promocional aplicado (snapshot congelado en la fase 1 de la compra).
+  // El canje real (PromoCodeRedemption) se crea al confirmarse el pago (webhook).
+  // promoRedeemedBy se captura aquí porque el webhook no tiene usuario autenticado.
+  promoCodeId          String?  @map("promo_code_id") @db.Uuid
+  promoDiscountPercent Decimal? @map("promo_discount_percent") @db.Decimal(5, 2)
+  promoDiscountAmount  Float?   @map("promo_discount_amount")
+  promoRedeemedBy      String?  @map("promo_redeemed_by") @db.Uuid
+
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -260,9 +274,12 @@ model AnalysisPack {
   packOffering      PackOffering?         @relation(fields: [packOfferingId], references: [id])
   status            Parameter             @relation("AnalysisPackStatus", fields: [statusId], references: [id])
   consultationPrice ConsultationPrice?    @relation(fields: [consultationPriceId], references: [id])
+  promoCode         PromoCode?            @relation(fields: [promoCodeId], references: [id])
+  promoRedeemedByUser Profile?            @relation("AnalysisPackPromoRedeemedBy", fields: [promoRedeemedBy], references: [id])
   consumptions      AnalysisConsumption[]
   paymentAlerts     PaymentAlert[]
   paymentEvents     PaymentEvent[]
+  promoRedemptions  PromoCodeRedemption[]
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
   @@map("analysis_packs")
@@ -644,4 +661,67 @@ model PaymentEvent {
   @@index([analysisPackId, createdAt])
   @@index([epaycoTransactionId])
   @@map("payment_events")
+}
+
+// ─── Códigos promocionales ─────────────────────────────────────────────
+// Otorgan un descuento porcentual sobre la compra de una bolsa (sobre el total,
+// después del descuento por volumen del PackOffering). Dos modos según scope:
+//   'company' → atado a UNA empresa (companyId), maxRedemptions = 1.
+//   'global'  → cualquier empresa, maxRedemptions = N; cada empresa lo usa 1 vez.
+// El código es "usable" si: isActive && redemptionsCount < maxRedemptions &&
+// (sin fechas o dentro de validFrom/validUntil). No hay flag "agotado": se deriva.
+// El canje real (consumir cupo) ocurre al CONFIRMARSE el pago (webhook), no al
+// iniciar la compra; una reversa libera el cupo.
+
+model PromoCode {
+  id               String    @id @default(uuid()) @db.Uuid
+  code             String    @unique @db.VarChar(50) // normalizado a UPPERCASE
+  scopeId          Int       @map("scope_id") // Parameter 'promo_code_scope'
+  companyId        String?   @map("company_id") @db.Uuid // solo scope=company
+  discountPercent  Decimal   @map("discount_percent") @db.Decimal(5, 2) // inmutable
+  maxRedemptions   Int       @map("max_redemptions") // cupo total
+  redemptionsCount Int       @default(0) @map("redemptions_count") // denorm del ledger
+  validFrom        DateTime? @map("valid_from")
+  validUntil       DateTime? @map("valid_until")
+  isActive         Boolean   @default(true) @map("is_active")
+  description      String?   @db.VarChar(255) // nota interna
+  createdBy        String?   @map("created_by") @db.Uuid // PlatformAdmin
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  scope          Parameter             @relation("PromoCodeScope", fields: [scopeId], references: [id])
+  company        Company?              @relation(fields: [companyId], references: [id])
+  createdByAdmin PlatformAdmin?        @relation("PromoCodeCreatedBy", fields: [createdBy], references: [id])
+  redemptions    PromoCodeRedemption[]
+  analysisPacks  AnalysisPack[]
+
+  @@index([code])
+  @@index([scopeId, isActive])
+  @@map("promo_codes")
+}
+
+// ─── Canjes de código promocional (ledger append-only) ─────────────────
+// Una fila por cada canje confirmado. Fuente de verdad del cupo (redemptionsCount
+// en PromoCode es la copia desnormalizada). El @@unique([promoCodeId, companyId])
+// garantiza a nivel BD que una empresa canjea un código una sola vez. Guarda un
+// snapshot del % y monto descontado por si el código cambia/desactiva después.
+
+model PromoCodeRedemption {
+  id              String   @id @default(uuid()) @db.Uuid
+  promoCodeId     String   @map("promo_code_id") @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  analysisPackId  String?  @map("analysis_pack_id") @db.Uuid // bolsa donde se aplicó
+  redeemedBy      String?  @map("redeemed_by") @db.Uuid // Profile (usuario de empresa)
+  discountPercent Decimal  @map("discount_percent") @db.Decimal(5, 2) // snapshot
+  discountAmount  Float    @map("discount_amount") // snapshot en COP
+  redeemedAt      DateTime @default(now()) @map("redeemed_at")
+
+  promoCode      PromoCode     @relation(fields: [promoCodeId], references: [id])
+  company        Company       @relation(fields: [companyId], references: [id])
+  analysisPack   AnalysisPack? @relation(fields: [analysisPackId], references: [id])
+  redeemedByUser Profile?      @relation("PromoCodeRedemptionRedeemedBy", fields: [redeemedBy], references: [id])
+
+  @@unique([promoCodeId, companyId]) // una empresa canjea un código solo 1 vez
+  @@index([promoCodeId, redeemedAt])
+  @@map("promo_code_redemptions")
 }

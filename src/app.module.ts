@@ -15,6 +15,7 @@ import { ConsultationPricesModule } from './consultation-prices/consultation-pri
 import { PackOfferingsModule } from './pack-offerings/pack-offerings.module.js';
 import { AnalysisPacksModule } from './analysis-packs/analysis-packs.module.js';
 import { PaymentAlertsModule } from './payment-alerts/payment-alerts.module.js';
+import { PromoCodesModule } from './promo-codes/promo-codes.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
@@ -45,6 +46,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     PackOfferingsModule,
     AnalysisPacksModule,
     PaymentAlertsModule,
+    PromoCodesModule,
     OnboardingModule,
     DashboardModule,
     AiAnalysesModule,

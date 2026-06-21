@@ -20,4 +20,15 @@ export class PurchasePackDto {
   @IsString()
   @MaxLength(300)
   redirectPath?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Código promocional a aplicar (opcional). Se valida y se congela el ' +
+      'descuento en la bolsa; el cupo se canjea al confirmarse el pago.',
+    example: 'CREDITIA15',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  promoCode?: string;
 }
