@@ -5,8 +5,10 @@ import {
   Body,
   Param,
   Query,
+  Req,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -37,8 +39,10 @@ export class AnalysisPacksController {
   purchase(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: PurchasePackDto,
+    @Req() req: Request,
   ) {
-    return this.service.purchase(companyId, dto);
+    const userId = (req as any).user.id as string;
+    return this.service.purchase(companyId, dto, userId);
   }
 
   @Get()

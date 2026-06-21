@@ -14,6 +14,7 @@ import { EpaycoService } from '../epayco/epayco.service.js';
 import { CompanyAccessRepository } from '../common/auth/company-access.repository.js';
 import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
 import { PaymentAlertsService } from '../payment-alerts/payment-alerts.service.js';
+import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
@@ -37,6 +38,7 @@ export class AnalysisPacksService {
     private readonly companyAccessRepository: CompanyAccessRepository,
     private readonly platformAdminRepository: PlatformAdminRepository,
     private readonly paymentAlertsService: PaymentAlertsService,
+    private readonly promoCodesService: PromoCodesService,
     private readonly mailService: MailService,
   ) {}
 
@@ -45,7 +47,7 @@ export class AnalysisPacksService {
    * precio CONGELADO y devuelve los datos del checkout onepage de ePayco para
    * que el front abra el widget. La confirmación llega por webhook (no aquí).
    */
-  async purchase(companyId: string, dto: PurchasePackDto) {
+  async purchase(companyId: string, dto: PurchasePackDto, userId?: string) {
     const offering = await this.packOfferingsRepository.findById(
       dto.packOfferingId,
     );
@@ -74,7 +76,38 @@ export class AnalysisPacksService {
       discountValue: offering.discountValue,
     });
 
-    if (pricing.total <= 0) {
+    // Código promocional OPCIONAL: se valida (sin canjear) y se aplica el % de
+    // descuento SOBRE el total ya con descuento por volumen. El canje del cupo
+    // ocurre al confirmarse el pago (webhook). Si el código es inválido, se
+    // rechaza la compra para que el usuario lo corrija (no se ignora en silencio).
+    let promo: {
+      promoCodeId: string;
+      discountPercent: number;
+      discountAmount: number;
+    } | null = null;
+    let totalToCharge = pricing.total;
+
+    if (dto.promoCode?.trim()) {
+      const validation = await this.promoCodesService.validateForPurchase(
+        dto.promoCode,
+        companyId,
+      );
+      if (!validation.valid) {
+        throw new BadRequestException(
+          `Código promocional inválido: ${validation.reason}`,
+        );
+      }
+      const percent = validation.discountPercent!;
+      const discountAmount = Math.round(pricing.total * (percent / 100));
+      totalToCharge = Math.max(0, pricing.total - discountAmount);
+      promo = {
+        promoCodeId: validation.promoCodeId!,
+        discountPercent: percent,
+        discountAmount,
+      };
+    }
+
+    if (totalToCharge <= 0) {
       throw new BadRequestException(
         'El monto de la compra no es válido para procesar el pago',
       );
@@ -117,16 +150,29 @@ export class AnalysisPacksService {
         pendingStatus.id,
       );
 
+    // Snapshot del código promocional en la bolsa (o null para LIMPIAR si un
+    // reintento anterior tenía código y ahora no). totalPaid = lo que se cobra
+    // realmente (ya con el descuento del código aplicado).
+    const promoSnapshot = {
+      promoCodeId: promo?.promoCodeId ?? null,
+      promoDiscountPercent: promo
+        ? new Prisma.Decimal(promo.discountPercent)
+        : null,
+      promoDiscountAmount: promo?.discountAmount ?? null,
+      promoRedeemedBy: promo ? (userId ?? null) : null,
+    };
+
     const pack = existingPending
       ? await this.repository.refreshPendingPurchase(existingPending.id, {
           quantityPurchased: offering.quantity,
           startDate,
           endDate,
           unitPricePaid: pricing.unitPrice,
-          totalPaid: pricing.total,
+          totalPaid: totalToCharge,
           currencyCode: activePrice.currencyCode,
           consultationPriceId: activePrice.id,
           paymentToken,
+          ...promoSnapshot,
         })
       : await this.repository.create({
           companyId,
@@ -136,11 +182,12 @@ export class AnalysisPacksService {
           startDate,
           endDate,
           unitPricePaid: pricing.unitPrice,
-          totalPaid: pricing.total,
+          totalPaid: totalToCharge,
           currencyCode: activePrice.currencyCode,
           consultationPriceId: activePrice.id,
           statusId: pendingStatus.id,
           paymentToken,
+          ...promoSnapshot,
         });
 
     // invoice = referencia única propia que ePayco devuelve en la confirmación.
@@ -174,7 +221,7 @@ export class AnalysisPacksService {
     // 2. Crear la sesión de Smart Checkout v2. El sessionId va al front.
     const sessionId = await this.epaycoService.createCheckoutSession({
       invoice,
-      amount: pricing.total,
+      amount: totalToCharge,
       name: offering.name,
       description: `${offering.quantity} consultas (análisis de crédito)`,
       currency: activePrice.currencyCode,
@@ -622,6 +669,61 @@ export class AnalysisPacksService {
           ? `Bolsa ${pack.id} ACTIVADA por confirmación de pago (ref=${dto.x_ref_payco})`
           : `Bolsa ${pack.id} ya estaba activada (webhook concurrente, ref=${dto.x_ref_payco})`,
       );
+
+      // Canje del código promocional: SOLO si esta confirmación fue la que
+      // activó la bolsa (activated=true evita canjear dos veces en webhooks
+      // concurrentes) y la bolsa traía un código congelado. El canje es atómico
+      // (lock + re-validación de cupo). Si el cupo se agotó entre la compra y
+      // ahora (oversold), la bolsa YA quedó activa con lo cobrado: se levanta
+      // una alerta para gestionarlo. Best-effort: no rompe el webhook.
+      if (activated && pack.promoCodeId) {
+        try {
+          const result = await this.promoCodesService.redeem({
+            promoCodeId: pack.promoCodeId,
+            companyId: pack.companyId,
+            analysisPackId: pack.id,
+            redeemedBy: pack.promoRedeemedBy ?? null,
+            discountPercent: Number(pack.promoDiscountPercent ?? 0),
+            discountAmount: pack.promoDiscountAmount ?? 0,
+          });
+          if (result.ok) {
+            this.logger.log(
+              `Código promocional canjeado para la bolsa ${pack.id} (code=${pack.promoCodeId})`,
+            );
+          } else {
+            // No se pudo canjear (agotado, ya usado, vencido...). El pago ya se
+            // cobró con descuento; alertamos al admin para conciliar.
+            this.logger.warn(
+              `No se pudo canjear el código de la bolsa ${pack.id}: ${result.reason}. ` +
+                `El pago YA se cobró con descuento — requiere gestión.`,
+            );
+            await this.paymentAlertsService.createAlert({
+              companyId: pack.companyId,
+              analysisPackId: pack.id,
+              typeCode: 'promo_code_oversold',
+              severityCode: 'warning',
+              title: 'Cupo de código sobrevendido',
+              message:
+                `El pago se aprobó con descuento de un código promocional, pero el ` +
+                `cupo no pudo canjearse (${result.reason}). La bolsa quedó activa con ` +
+                `el monto cobrado; revisar el caso.`,
+              metadata: {
+                promoCodeId: pack.promoCodeId,
+                reason: result.reason,
+                discountPercent: Number(pack.promoDiscountPercent ?? 0),
+                discountAmount: pack.promoDiscountAmount ?? 0,
+                epaycoRef: dto.x_ref_payco ?? null,
+              },
+            });
+          }
+        } catch (e) {
+          this.logger.error(
+            `Error al canjear el código de la bolsa ${pack.id}: ${
+              (e as Error).message
+            }`,
+          );
+        }
+      }
     } else if (responseCode === 2 || responseCode === 4) {
       // Rechazada (2) / Fallida (4) → NO se cancela: un rechazo de tarjeta no es
       // definitivo, el usuario puede reintentar en el MISMO checkout. La bolsa se
@@ -718,6 +820,29 @@ export class AnalysisPacksService {
             (e as Error).message
           }`,
         );
+      }
+
+      // Si la bolsa usó un código promocional, se LIBERA el cupo: el pago no
+      // quedó firme, así que la promo no debe contar como consumida. Idempotente
+      // y best-effort (no rompe el webhook).
+      if (pack.promoCodeId) {
+        try {
+          const released = await this.promoCodesService.release(
+            pack.promoCodeId,
+            pack.companyId,
+          );
+          this.logger.log(
+            `Reversa bolsa ${pack.id}: cupo de código ${
+              released > 0 ? 'liberado' : 'sin canje previo que liberar'
+            } (code=${pack.promoCodeId})`,
+          );
+        } catch (e) {
+          this.logger.error(
+            `Reversa bolsa ${pack.id}: fallo al liberar el cupo del código: ${
+              (e as Error).message
+            }`,
+          );
+        }
       }
 
       // Correos best-effort (cliente + admins). No bloquean el webhook.

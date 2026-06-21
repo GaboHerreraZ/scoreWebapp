@@ -8,6 +8,7 @@ import { PackOfferingsModule } from '../pack-offerings/pack-offerings.module.js'
 import { ConsultationPricesModule } from '../consultation-prices/consultation-prices.module.js';
 import { EpaycoModule } from '../epayco/epayco.module.js';
 import { PaymentAlertsModule } from '../payment-alerts/payment-alerts.module.js';
+import { PromoCodesModule } from '../promo-codes/promo-codes.module.js';
 import { MailModule } from '../mail/mail.module.js';
 
 @Module({
@@ -16,6 +17,7 @@ import { MailModule } from '../mail/mail.module.js';
     ConsultationPricesModule,
     EpaycoModule,
     PaymentAlertsModule,
+    PromoCodesModule,
     MailModule,
   ],
   controllers: [

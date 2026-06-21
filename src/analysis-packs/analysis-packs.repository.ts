@@ -100,6 +100,12 @@ export class AnalysisPacksRepository {
       currencyCode: string;
       consultationPriceId: string;
       paymentToken: string;
+      // Snapshot del código promocional (o null para limpiar en un reintento
+      // que ya no trae código).
+      promoCodeId?: string | null;
+      promoDiscountPercent?: Prisma.Decimal | null;
+      promoDiscountAmount?: number | null;
+      promoRedeemedBy?: string | null;
     },
   ) {
     return this.prisma.analysisPack.update({
