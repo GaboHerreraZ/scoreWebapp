@@ -1,21 +1,227 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { AnalysisPacksRepository } from '../analysis-packs/analysis-packs.repository.js';
 import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
+import { SupabaseService } from '../auth/supabase.service.js';
+import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
+import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
+
+/**
+ * Pantallas del panel admin habilitadas por rol (hardcode por ahora; sin tabla
+ * de permisos). 'admin' ve todo; el resto (support/sales/sin rol) ve solo lo
+ * básico. Cuando se necesite granularidad real, esto pasa a BD.
+ */
+const ALL_SCREENS = [
+  'dashboard',
+  'companies',
+  'parameters',
+  'consultation-prices',
+  'pack-offerings',
+  'payment-alerts',
+  'promo-codes',
+  'contact-requests',
+  'platform-admins', // gestión de usuarios del portal: SOLO rol admin
+] as const;
+
+const BASIC_SCREENS = [
+  'companies',
+  'payment-alerts',
+  'contact-requests',
+] as const;
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly parametersRepository: ParametersRepository,
     private readonly analysisPacksRepository: AnalysisPacksRepository,
     private readonly platformAdminRepository: PlatformAdminRepository,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
-  /** Admins activos del portal (para selectores: asignar leads, etc.). */
-  async listPlatformAdmins() {
-    return this.platformAdminRepository.findActiveAdmins();
+  /**
+   * Admins del portal para la pantalla de gestión. Por defecto trae todos
+   * (activos e inactivos); onlyActive=true filtra a los activos (selector de
+   * asignación de leads).
+   */
+  async listPlatformAdmins(onlyActive = false) {
+    return this.platformAdminRepository.findAdmins(onlyActive);
+  }
+
+  /**
+   * Datos del admin logueado + pantallas permitidas según su rol. userId es el
+   * id de Supabase (del token). Solo 'admin' ve todas; el resto (incl. rol sin
+   * asignar) ve las básicas.
+   *
+   * - 403 si el usuario no es un PlatformAdmin del portal.
+   * - 401 si existe pero está DESACTIVADO (borrado lógico): su sesión ya no es
+   *   válida para el portal y el front debe redirigir a login.
+   */
+  async getMyScreens(userId: string) {
+    const admin =
+      await this.platformAdminRepository.findByUserIdWithRole(userId);
+    if (!admin) {
+      throw new ForbiddenException('No tienes acceso al portal de administración');
+    }
+    if (!admin.isActive) {
+      throw new UnauthorizedException('Tu cuenta de administrador está desactivada');
+    }
+
+    const isAdmin = admin.role?.code === 'admin';
+    const allowedScreens = isAdmin ? [...ALL_SCREENS] : [...BASIC_SCREENS];
+
+    return {
+      admin: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        phone: admin.phone,
+        role: admin.role,
+      },
+      allowedScreens,
+    };
+  }
+
+  // ── Gestión de usuarios del portal (solo rol admin) ───────────────────
+
+  /**
+   * Verifica que quien llama (userId de Supabase) sea un PlatformAdmin activo
+   * con rol 'admin'. Lanza 403 si no. Gestionar cuentas es exclusivo de admins.
+   */
+  private async assertCallerIsAdmin(callerUserId: string) {
+    const caller =
+      await this.platformAdminRepository.findByUserIdWithRole(callerUserId);
+    if (!caller || !caller.isActive || caller.role?.code !== 'admin') {
+      throw new ForbiddenException(
+        'Solo un administrador puede gestionar usuarios del portal',
+      );
+    }
+  }
+
+  /**
+   * Crea un usuario del portal: primero en Supabase Auth (email + password,
+   * correo dado por confirmado) y luego el PlatformAdmin con sus datos + rol.
+   * Si el insert del PlatformAdmin falla, se hace ROLLBACK del usuario de
+   * Supabase para no dejar cuentas huérfanas. Solo el rol 'admin' puede crear.
+   */
+  async createPlatformAdmin(dto: CreatePlatformAdminDto, callerUserId: string) {
+    await this.assertCallerIsAdmin(callerUserId);
+
+    // El rol debe existir y ser del tipo correcto.
+    const role = await this.platformAdminRepository.findParameterById(dto.roleId);
+    if (!role || role.type !== 'platform_admin_role') {
+      throw new BadRequestException('roleId inválido (no es un rol de portal)');
+    }
+
+    // No duplicar un admin con el mismo correo.
+    const existing = await this.platformAdminRepository.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe un administrador con el correo ${dto.email}`,
+      );
+    }
+
+    // 1. Crear el usuario en Supabase (auth).
+    const supabaseUserId = await this.supabaseService.createUser(
+      dto.email,
+      dto.password,
+    );
+
+    // 2. Crear el PlatformAdmin; si falla, rollback del usuario de Supabase.
+    try {
+      return await this.platformAdminRepository.create({
+        userId: supabaseUserId,
+        email: dto.email,
+        name: dto.name,
+        phone: dto.phone ?? null,
+        roleId: dto.roleId,
+        isActive: true,
+      });
+    } catch (e) {
+      this.logger.error(
+        `Fallo al crear PlatformAdmin para ${dto.email}; revirtiendo usuario de Supabase ${supabaseUserId}: ${
+          (e as Error).message
+        }`,
+      );
+      await this.supabaseService.deleteUser(supabaseUserId);
+      throw new InternalServerErrorException(
+        'No se pudo crear el administrador; se revirtió el usuario',
+      );
+    }
+  }
+
+  /**
+   * Edita los datos de perfil de un PlatformAdmin (name/phone/roleId). No toca
+   * email/password (serían cambios en Supabase) ni isActive (ver desactivar).
+   * Solo el rol 'admin' puede editar. Valida el rol nuevo si se envía.
+   */
+  async updatePlatformAdmin(
+    id: string,
+    dto: UpdatePlatformAdminDto,
+    callerUserId: string,
+  ) {
+    await this.assertCallerIsAdmin(callerUserId);
+
+    const target = await this.platformAdminRepository.findById(id);
+    if (!target) {
+      throw new NotFoundException(`Administrador con id=${id} no encontrado`);
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.roleId !== undefined) {
+      const role = await this.platformAdminRepository.findParameterById(
+        dto.roleId,
+      );
+      if (!role || role.type !== 'platform_admin_role') {
+        throw new BadRequestException('roleId inválido (no es un rol de portal)');
+      }
+      data.roleId = dto.roleId;
+    }
+
+    return this.platformAdminRepository.update(id, data);
+  }
+
+  /**
+   * Desactiva un PlatformAdmin (borrado lógico): isActive=false. NO toca el
+   * usuario en Supabase; al intentar usar el portal, /auth/me/screens devuelve
+   * 401. Solo el rol 'admin' puede desactivar.
+   */
+  async deactivatePlatformAdmin(id: string, callerUserId: string) {
+    await this.assertCallerIsAdmin(callerUserId);
+
+    const target = await this.platformAdminRepository.findById(id);
+    if (!target) {
+      throw new NotFoundException(`Administrador con id=${id} no encontrado`);
+    }
+    return this.platformAdminRepository.setActive(id, false);
+  }
+
+  /**
+   * Reactiva un PlatformAdmin previamente desactivado (isActive=true). Recupera
+   * su acceso al portal. Solo el rol 'admin' puede reactivar.
+   */
+  async activatePlatformAdmin(id: string, callerUserId: string) {
+    await this.assertCallerIsAdmin(callerUserId);
+
+    const target = await this.platformAdminRepository.findById(id);
+    if (!target) {
+      throw new NotFoundException(`Administrador con id=${id} no encontrado`);
+    }
+    return this.platformAdminRepository.setActive(id, true);
   }
 
   /** Saldo de créditos de una empresa: total disponible + nº de bolsas vigentes. */
