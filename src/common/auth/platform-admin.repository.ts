@@ -1,9 +1,63 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { Prisma } from '../../../generated/prisma/client.js';
 
 @Injectable()
 export class PlatformAdminRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  private readonly defaultSelect = {
+    id: true,
+    userId: true,
+    name: true,
+    email: true,
+    phone: true,
+    isActive: true,
+    role: { select: { id: true, code: true, label: true } },
+  } as const;
+
+  /** Crea un PlatformAdmin (tras crear el usuario en Supabase). */
+  async create(data: Prisma.PlatformAdminUncheckedCreateInput) {
+    return this.prisma.platformAdmin.create({
+      data,
+      select: this.defaultSelect,
+    });
+  }
+
+  async findById(id: string) {
+    return this.prisma.platformAdmin.findUnique({
+      where: { id },
+      select: this.defaultSelect,
+    });
+  }
+
+  /** Activa/desactiva un PlatformAdmin (borrado lógico). */
+  async setActive(id: string, isActive: boolean) {
+    return this.prisma.platformAdmin.update({
+      where: { id },
+      data: { isActive },
+      select: this.defaultSelect,
+    });
+  }
+
+  /** Edita datos del perfil de un PlatformAdmin (name/phone/roleId). */
+  async update(id: string, data: Prisma.PlatformAdminUncheckedUpdateInput) {
+    return this.prisma.platformAdmin.update({
+      where: { id },
+      data,
+      select: this.defaultSelect,
+    });
+  }
+
+  /** Parameter por type+code (validar el rol platform_admin_role). */
+  async findParameterById(id: number) {
+    return this.prisma.parameter.findUnique({ where: { id } });
+  }
+
+  /** ¿Existe ya un PlatformAdmin con ese email? (evitar duplicados). */
+  async findByEmail(email: string) {
+    return this.prisma.platformAdmin.findFirst({ where: { email } });
+  }
 
   /** True si el usuario de Supabase es un super-admin activo del portal. */
   async isPlatformAdmin(userId: string): Promise<boolean> {
@@ -11,6 +65,21 @@ export class PlatformAdminRepository {
       where: { userId },
     });
     return !!admin && admin.isActive;
+  }
+
+  /** PlatformAdmin por su userId de Supabase, con el rol resuelto. */
+  async findByUserIdWithRole(userId: string) {
+    return this.prisma.platformAdmin.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        isActive: true,
+        role: { select: { code: true, label: true } },
+      },
+    });
   }
 
   /** Emails de los admins activos del portal (para notificaciones internas). */
@@ -23,18 +92,21 @@ export class PlatformAdminRepository {
   }
 
   /**
-   * Admins activos del portal con datos para selectores (p.ej. asignar un lead).
-   * Incluye el rol del equipo interno (admin/support/sales) resuelto.
+   * Admins del portal con datos para la gestión y los selectores. Por defecto
+   * trae TODOS (activos e inactivos, con su isActive para que el front muestre
+   * el estado); con onlyActive=true filtra solo los activos (p.ej. para el
+   * selector de asignación de leads). Ordenados por nombre.
    */
-  async findActiveAdmins() {
+  async findAdmins(onlyActive = false) {
     return this.prisma.platformAdmin.findMany({
-      where: { isActive: true },
+      where: onlyActive ? { isActive: true } : undefined,
       orderBy: { name: 'asc' },
       select: {
         id: true,
         name: true,
         email: true,
         phone: true,
+        isActive: true,
         role: { select: { code: true, label: true } },
       },
     });

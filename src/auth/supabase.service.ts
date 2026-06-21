@@ -23,6 +23,42 @@ export class SupabaseService {
   }
 
   /**
+   * Crea un usuario en Supabase Auth con email + password, dando el correo por
+   * confirmado (email_confirm: true) para que pueda hacer login de inmediato.
+   * Devuelve el id del usuario creado. Usa la service-role key (admin API).
+   */
+  async createUser(email: string, password: string): Promise<string> {
+    const { data, error } = await this.client.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (error || !data.user) {
+      this.logger.error(
+        `Supabase createUser failed: ${error?.message ?? 'unknown error'}`,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo crear el usuario en Supabase: ${error?.message ?? 'error desconocido'}`,
+      );
+    }
+    return data.user.id;
+  }
+
+  /**
+   * Elimina un usuario de Supabase Auth (usado para rollback si falla un paso
+   * posterior). Best-effort: loguea pero no lanza, para no enmascarar el error
+   * original que disparó el rollback.
+   */
+  async deleteUser(userId: string): Promise<void> {
+    const { error } = await this.client.auth.admin.deleteUser(userId);
+    if (error) {
+      this.logger.error(
+        `Supabase deleteUser (rollback) failed for ${userId}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Uploads a file buffer to the given Supabase Storage bucket and returns the storage path.
    * Creates an `upsert` upload so re-uploads with the same path overwrite the existing file.
    */

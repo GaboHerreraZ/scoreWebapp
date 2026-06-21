@@ -1,11 +1,17 @@
 import {
   Controller,
   Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
   Param,
   Query,
+  Req,
   ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -14,6 +20,8 @@ import {
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
 import { AdminService } from './admin.service.js';
+import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
+import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 
 @ApiTags('Admin Portal')
 @ApiBearerAuth()
@@ -24,14 +32,76 @@ export class AdminController {
 
   @Get('platform-admins')
   @ApiOperation({
-    summary: 'Listar admins activos del portal (para selectores, p.ej. asignar leads)',
+    summary:
+      'Listar usuarios del portal. Por defecto todos (activos e inactivos); ?onlyActive=true para solo activos',
   })
   @ApiResponse({
     status: 200,
-    description: 'Admins activos con id, name, email, phone y role',
+    description: 'Usuarios con id, name, email, phone, isActive y role',
   })
-  listPlatformAdmins() {
-    return this.adminService.listPlatformAdmins();
+  listPlatformAdmins(@Query('onlyActive') onlyActive?: string) {
+    return this.adminService.listPlatformAdmins(onlyActive === 'true');
+  }
+
+  @Post('platform-admins')
+  @ApiOperation({
+    summary: 'Crear un usuario del portal (Supabase + PlatformAdmin). Solo rol admin.',
+  })
+  @ApiResponse({ status: 201, description: 'PlatformAdmin creado' })
+  @ApiResponse({ status: 403, description: 'Solo un administrador puede crear usuarios' })
+  @ApiResponse({ status: 409, description: 'El correo ya está registrado' })
+  createPlatformAdmin(
+    @Body() dto: CreatePlatformAdminDto,
+    @Req() req: Request,
+  ) {
+    const callerUserId = (req as any).user.id as string;
+    return this.adminService.createPlatformAdmin(dto, callerUserId);
+  }
+
+  @Patch('platform-admins/:id')
+  @ApiOperation({
+    summary: 'Editar un usuario del portal (name/phone/roleId). Solo rol admin.',
+  })
+  @ApiResponse({ status: 200, description: 'PlatformAdmin actualizado' })
+  @ApiResponse({ status: 403, description: 'Solo un administrador puede editar usuarios' })
+  @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
+  updatePlatformAdmin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePlatformAdminDto,
+    @Req() req: Request,
+  ) {
+    const callerUserId = (req as any).user.id as string;
+    return this.adminService.updatePlatformAdmin(id, dto, callerUserId);
+  }
+
+  @Patch('platform-admins/:id/activate')
+  @ApiOperation({
+    summary: 'Reactivar un usuario del portal desactivado. Solo rol admin.',
+  })
+  @ApiResponse({ status: 200, description: 'PlatformAdmin reactivado' })
+  @ApiResponse({ status: 403, description: 'Solo un administrador puede reactivar usuarios' })
+  @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
+  activatePlatformAdmin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
+    const callerUserId = (req as any).user.id as string;
+    return this.adminService.activatePlatformAdmin(id, callerUserId);
+  }
+
+  @Delete('platform-admins/:id')
+  @ApiOperation({
+    summary: 'Desactivar un usuario del portal (borrado lógico). Solo rol admin.',
+  })
+  @ApiResponse({ status: 200, description: 'PlatformAdmin desactivado' })
+  @ApiResponse({ status: 403, description: 'Solo un administrador puede desactivar usuarios' })
+  @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
+  deactivatePlatformAdmin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
+    const callerUserId = (req as any).user.id as string;
+    return this.adminService.deactivatePlatformAdmin(id, callerUserId);
   }
 
   @Get('companies')
