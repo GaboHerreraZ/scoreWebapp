@@ -47,6 +47,9 @@ model Parameter {
   paymentAlertsBySeverity               PaymentAlert[]        @relation("PaymentAlertSeverity")
   paymentAlertsByStatus                 PaymentAlert[]        @relation("PaymentAlertStatus")
   promoCodesByScope                     PromoCode[]           @relation("PromoCodeScope")
+  contactRequestsBySubject              ContactRequest[]      @relation("ContactRequestSubject")
+  contactRequestsByStatus               ContactRequest[]      @relation("ContactRequestStatus")
+  platformAdminsByRole                  PlatformAdmin[]       @relation("PlatformAdminRole")
 
   @@unique([type, code])
   @@map("parameters")
@@ -172,13 +175,21 @@ model PlatformAdmin {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @unique @map("user_id") @db.Uuid // Supabase auth.users
   email     String   @db.VarChar(255)
+  name      String?  @db.VarChar(150)
+  phone     String?  @db.VarChar(50)
+  // Rol del equipo interno Creditia (admin/support/sales). Parameter
+  // 'platform_admin_role'. DISTINTO de los roles de empresa (UserCompany.role).
+  roleId    Int?     @map("role_id")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
+  role                      Parameter?          @relation("PlatformAdminRole", fields: [roleId], references: [id])
   createdConsultationPrices ConsultationPrice[] @relation("ConsultationPriceCreatedBy")
   updatedConsultationPrices ConsultationPrice[] @relation("ConsultationPriceUpdatedBy")
   createdPackOfferings      PackOffering[]      @relation("PackOfferingCreatedBy")
   createdPromoCodes         PromoCode[]         @relation("PromoCodeCreatedBy")
+  assignedContactRequests   ContactRequest[]    @relation("ContactRequestAssignedTo")
+  handledContactRequests    ContactRequest[]    @relation("ContactRequestHandledBy")
 
   @@map("platform_admins")
 }
@@ -726,4 +737,43 @@ model PromoCodeRedemption {
   @@unique([promoCodeId, companyId]) // una empresa canjea un código solo 1 vez
   @@index([promoCodeId, redeemedAt])
   @@map("promo_code_redemptions")
+}
+
+// ─── Contacto comercial (leads del formulario público) ─────────────────
+// Cada fila es una solicitud enviada desde el formulario público de "contactar
+// ventas" (sin auth). subject/status son Parameter. Los campos de gestión
+// (assignedTo/handledBy/handledAt/notes) convierten el buzón en un mini-CRM:
+// el equipo comercial puede asignar, atender y cerrar cada lead desde el panel.
+
+model ContactRequest {
+  id          String   @id @default(uuid()) @db.Uuid
+  subjectId   Int      @map("subject_id") // Parameter 'contact_subject'
+  companyName String   @map("company_name") @db.VarChar(255)
+  fullName    String   @map("full_name") @db.VarChar(255)
+  email       String   @db.VarChar(255)
+  phone       String   @db.VarChar(50)
+  message     String   @db.Text
+
+  // Gestión (panel admin)
+  statusId    Int      @map("status_id") // Parameter 'contact_status'; nace en 'new'
+  assignedTo  String?  @map("assigned_to") @db.Uuid // PlatformAdmin que lo atiende
+  handledBy   String?  @map("handled_by") @db.Uuid // PlatformAdmin que lo cerró
+  handledAt   DateTime? @map("handled_at")
+  notes       String?  @db.Text
+
+  // Captura técnica (anti-spam / seguimiento)
+  ipAddress   String?  @map("ip_address") @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(500)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  subject        Parameter      @relation("ContactRequestSubject", fields: [subjectId], references: [id])
+  status         Parameter      @relation("ContactRequestStatus", fields: [statusId], references: [id])
+  assignedToAdmin PlatformAdmin? @relation("ContactRequestAssignedTo", fields: [assignedTo], references: [id])
+  handledByAdmin  PlatformAdmin? @relation("ContactRequestHandledBy", fields: [handledBy], references: [id])
+
+  @@index([statusId, createdAt])
+  @@index([subjectId])
+  @@map("contact_requests")
 }
