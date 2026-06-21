@@ -282,6 +282,7 @@ model AnalysisPack {
   promoRedemptions  PromoCodeRedemption[]
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
+  @@index([statusId, paidAt]) // métricas de venta por fecha (admin-stats)
   @@map("analysis_packs")
 }
 
@@ -304,6 +305,7 @@ model AnalysisConsumption {
   consumedByUser Profile      @relation("AnalysisConsumptionConsumedBy", fields: [consumedBy], references: [id])
 
   @@index([companyId, createdAt])
+  @@index([createdAt]) // serie temporal global de consumo (admin-stats)
   @@map("analysis_consumptions")
 }
 
