@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { Prisma } from '../../../generated/prisma/client.js';
 
 @Injectable()
 export class PlatformAdminRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   private readonly defaultSelect = {
     id: true,
@@ -82,13 +86,34 @@ export class PlatformAdminRepository {
     });
   }
 
-  /** Emails de los admins activos del portal (para notificaciones internas). */
+  /**
+   * Emails para notificaciones internas (soporte/ventas): los admins activos del
+   * portal MÁS el buzón central de soporte (SUPPORT_EMAIL, default
+   * soporte@creditia.co), que siempre debe recibir copia. Sin duplicados.
+   */
   async findActiveAdminEmails(): Promise<string[]> {
     const admins = await this.prisma.platformAdmin.findMany({
       where: { isActive: true },
       select: { email: true },
     });
-    return admins.map((a) => a.email).filter((e): e is string => !!e);
+    const emails = admins
+      .map((a) => a.email)
+      .filter((e): e is string => !!e);
+
+    const supportEmail =
+      this.configService.get<string>('SUPPORT_EMAIL') || 'soporte@creditia.co';
+
+    // Set para deduplicar (case-insensitive) si un admin ya usa ese correo.
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const e of [...emails, supportEmail]) {
+      const key = e.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(e);
+      }
+    }
+    return result;
   }
 
   /**

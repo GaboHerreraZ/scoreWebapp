@@ -209,4 +209,59 @@ export class MailService {
       html,
     });
   }
+
+  /** Confirmación al cliente de que su ticket de soporte fue registrado. */
+  async sendSupportTicketClientEmail(params: {
+    to: string;
+    fullName: string;
+    reference: string;
+    subject: string;
+    areaLabel: string;
+  }) {
+    const { to, fullName, reference, subject, areaLabel } = params;
+
+    const html = this.loadTemplate('support-ticket-client', {
+      fullName,
+      reference,
+      subject,
+      areaLabel,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Recibimos tu solicitud de soporte (${reference})`,
+      html,
+    });
+  }
+
+  /** Aviso a los admins de un nuevo ticket de soporte. */
+  async sendSupportTicketAdminEmail(params: {
+    to: string;
+    reference: string;
+    companyName: string;
+    areaLabel: string;
+    subject: string;
+    description: string;
+  }) {
+    const { to, reference, companyName, areaLabel, subject, description } =
+      params;
+
+    const html = this.loadTemplate('support-ticket-admin', {
+      reference,
+      companyName,
+      areaLabel,
+      subject,
+      description,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Nuevo ticket de soporte ${reference} — ${companyName}`,
+      html,
+    });
+  }
 }

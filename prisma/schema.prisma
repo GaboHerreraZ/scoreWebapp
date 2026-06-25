@@ -50,6 +50,10 @@ model Parameter {
   contactRequestsBySubject              ContactRequest[]      @relation("ContactRequestSubject")
   contactRequestsByStatus               ContactRequest[]      @relation("ContactRequestStatus")
   platformAdminsByRole                  PlatformAdmin[]       @relation("PlatformAdminRole")
+  supportTicketsByArea                  SupportTicket[]       @relation("SupportTicketArea")
+  supportTicketsByType                  SupportTicket[]       @relation("SupportTicketType")
+  supportTicketsByPriority              SupportTicket[]       @relation("SupportTicketPriority")
+  supportTicketsByStatus                SupportTicket[]       @relation("SupportTicketStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -88,6 +92,7 @@ model Profile {
   resolvedPaymentAlerts     PaymentAlert[]      @relation("PaymentAlertResolvedBy")
   promoRedemptions          PromoCodeRedemption[] @relation("PromoCodeRedemptionRedeemedBy")
   promoRedeemedPacks        AnalysisPack[]      @relation("AnalysisPackPromoRedeemedBy")
+  createdSupportTickets     SupportTicket[]     @relation("SupportTicketCreatedBy")
 
   @@map("profiles")
 }
@@ -165,6 +170,7 @@ model Company {
   paymentEvents        PaymentEvent[]
   promoCodes           PromoCode[] // códigos atados a esta empresa (scope=company)
   promoRedemptions     PromoCodeRedemption[]
+  supportTickets       SupportTicket[]
 
   @@map("companies")
 }
@@ -190,6 +196,7 @@ model PlatformAdmin {
   createdPromoCodes         PromoCode[]         @relation("PromoCodeCreatedBy")
   assignedContactRequests   ContactRequest[]    @relation("ContactRequestAssignedTo")
   handledContactRequests    ContactRequest[]    @relation("ContactRequestHandledBy")
+  assignedSupportTickets    SupportTicket[]     @relation("SupportTicketAssignedTo")
 
   @@map("platform_admins")
 }
@@ -776,4 +783,64 @@ model ContactRequest {
   @@index([statusId, createdAt])
   @@index([subjectId])
   @@map("contact_requests")
+}
+
+// ─── Tickets de soporte (de empresas a Creditia) ───────────────────────
+// Cada ticket pertenece a una empresa (Company 1→N). area/type/priority/status
+// son Parameter. relatedEntityType/Id apuntan opcionalmente a un registro
+// (estudio, cliente, pago): un CHECK en BD exige que sean ambos null o ambos
+// presentes. reference es un código legible único (SUP-AAAA-######) generado por
+// el servidor con un contador atómico (SupportTicketCounter). Gestión: status,
+// assignedTo (PlatformAdmin) y notas internas.
+
+model SupportTicket {
+  id                String   @id @default(uuid()) @db.Uuid
+  reference         String   @unique @db.VarChar(30) // SUP-2026-000123
+  companyId         String   @map("company_id") @db.Uuid
+  areaId            Int      @map("area_id") // Parameter 'support_area'
+  typeId            Int      @map("type_id") // Parameter 'support_type'
+  priorityId        Int      @map("priority_id") // Parameter 'support_priority'
+  statusId          Int      @map("status_id") // Parameter 'support_status'; nace en 'open'
+  subject           String   @db.VarChar(255)
+  description       String   @db.Text
+
+  // Registro relacionado (opcional). related_entity_type es un code libre
+  // (credit_study/customer/payment); related_entity_id es el id de ese registro
+  // como texto (puede ser uuid o numérico según el módulo).
+  relatedEntityType String?  @map("related_entity_type") @db.VarChar(50)
+  relatedEntityId   String?  @map("related_entity_id") @db.VarChar(100)
+
+  // Contexto técnico que envía el front (ruta, userAgent, viewport, etc.).
+  context           Json?    @db.JsonB
+
+  // Gestión (panel admin)
+  assignedTo        String?  @map("assigned_to") @db.Uuid // PlatformAdmin
+  notes             String?  @db.Text
+
+  createdBy         String   @map("created_by") @db.Uuid // Profile (usuario de empresa)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  company         Company        @relation(fields: [companyId], references: [id])
+  area            Parameter      @relation("SupportTicketArea", fields: [areaId], references: [id])
+  type            Parameter      @relation("SupportTicketType", fields: [typeId], references: [id])
+  priority        Parameter      @relation("SupportTicketPriority", fields: [priorityId], references: [id])
+  status          Parameter      @relation("SupportTicketStatus", fields: [statusId], references: [id])
+  assignedToAdmin PlatformAdmin? @relation("SupportTicketAssignedTo", fields: [assignedTo], references: [id])
+  createdByUser   Profile        @relation("SupportTicketCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([statusId, createdAt])
+  @@map("support_tickets")
+}
+
+// Contador atómico para el reference de los tickets, uno por año. Se incrementa
+// con UPDATE ... RETURNING dentro de una transacción para evitar duplicados en
+// concurrencia. No lo gestiona ningún CRUD: lo usa solo la generación del reference.
+
+model SupportTicketCounter {
+  year     Int @id // p.ej. 2026
+  lastSeq  Int @default(0) @map("last_seq")
+
+  @@map("support_ticket_counters")
 }
