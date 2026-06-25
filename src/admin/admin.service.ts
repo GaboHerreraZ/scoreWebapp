@@ -18,8 +18,12 @@ import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 
 /**
  * Pantallas del panel admin habilitadas por rol (hardcode por ahora; sin tabla
- * de permisos). 'admin' ve todo; el resto (support/sales/sin rol) ve solo lo
- * básico. Cuando se necesite granularidad real, esto pasa a BD.
+ * de permisos). Cuando se necesite granularidad real, esto pasa a BD.
+ *
+ * - 'admin' ve TODO (ALL_SCREENS).
+ * - el resto parte de un set base común y suma extras según su rol:
+ *     · 'support' suma 'support-tickets' (gestiona el soporte).
+ *     · 'sales' y sin rol solo el base.
  */
 const ALL_SCREENS = [
   'dashboard',
@@ -30,14 +34,17 @@ const ALL_SCREENS = [
   'payment-alerts',
   'promo-codes',
   'contact-requests',
+  'support-tickets',
   'platform-admins', // gestión de usuarios del portal: SOLO rol admin
 ] as const;
 
-const BASIC_SCREENS = [
+// Pantallas que ve cualquier usuario no-admin del portal.
+const BASE_SCREENS = [
   'companies',
   'payment-alerts',
   'contact-requests',
-] as const;
+  'support-tickets',
+];
 
 @Injectable()
 export class AdminService {
@@ -79,8 +86,9 @@ export class AdminService {
       throw new UnauthorizedException('Tu cuenta de administrador está desactivada');
     }
 
-    const isAdmin = admin.role?.code === 'admin';
-    const allowedScreens = isAdmin ? [...ALL_SCREENS] : [...BASIC_SCREENS];
+    // admin ve todo; el resto (support/sales/sin rol) ve el set base.
+    const allowedScreens =
+      admin.role?.code === 'admin' ? [...ALL_SCREENS] : [...BASE_SCREENS];
 
     return {
       admin: {
