@@ -120,6 +120,7 @@ export class ProfilesService {
       companyName: company.company.name,
       companyCity: company.company.city,
       companyNit: company.company.nit,
+      isOnboardingReady: company.company.isOnboardingReady,
       permissions,
     };
   }

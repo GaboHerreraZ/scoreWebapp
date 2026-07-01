@@ -150,6 +150,7 @@ model Company {
   billingPhone     String?  @map("billing_phone") @db.VarChar(50)
   epaycoCustomerId String?  @map("epayco_customer_id") @db.VarChar(100)
   isActive         Boolean  @default(true) @map("is_active")
+  isOnboardingReady Boolean @default(false) @map("is_onboarding_ready")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 

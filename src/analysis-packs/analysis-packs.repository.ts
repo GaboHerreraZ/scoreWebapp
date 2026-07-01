@@ -296,6 +296,18 @@ export class AnalysisPacksRepository {
   }
 
   /**
+   * Marca el onboarding de una empresa como listo (primer pack pagado). Solo
+   * escribe si aún estaba en false, para no tocar filas ni disparar updatedAt en
+   * webhooks repetidos. Idempotente.
+   */
+  async markOnboardingReady(companyId: string): Promise<void> {
+    await this.prisma.company.updateMany({
+      where: { id: companyId, isOnboardingReady: false },
+      data: { isOnboardingReady: true },
+    });
+  }
+
+  /**
    * Cancela una bolsa pendiente de forma DEFINITIVA (abandono/timeout, no un
    * rechazo puntual de tarjeta). Solo aplica si sigue en pending_payment.
    */

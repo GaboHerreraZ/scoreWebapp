@@ -670,6 +670,20 @@ export class AnalysisPacksService {
           : `Bolsa ${pack.id} ya estaba activada (webhook concurrente, ref=${dto.x_ref_payco})`,
       );
 
+      // Onboarding listo: al confirmarse el pago de una bolsa, la empresa ya
+      // tiene perfil + empresa + primer pack activo. Se marca en cada pago
+      // aprobado (el repo solo escribe si aún estaba en false → idempotente).
+      // Best-effort: un fallo aquí no debe romper el webhook ni la activación.
+      try {
+        await this.repository.markOnboardingReady(pack.companyId);
+      } catch (e) {
+        this.logger.error(
+          `No se pudo marcar el onboarding como listo para la empresa ${pack.companyId}: ${
+            (e as Error).message
+          }`,
+        );
+      }
+
       // Canje del código promocional: SOLO si esta confirmación fue la que
       // activó la bolsa (activated=true evita canjear dos veces en webhooks
       // concurrentes) y la bolsa traía un código congelado. El canje es atómico
