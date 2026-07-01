@@ -42,6 +42,13 @@ export class ProfileResponseDto {
   @ApiPropertyOptional({ type: RoleDto })
   role?: RoleDto;
 
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Onboarding listo: true cuando la empresa tiene perfil + empresa + primer pack pagado (active). false = quedó pendiente en algún paso.',
+  })
+  isOnboardingReady?: boolean;
+
   @ApiProperty()
   createdAt: Date;
 

@@ -49,6 +49,7 @@ export class ProfilesRepository {
                 city: true,
                 nit: true,
                 name: true,
+                isOnboardingReady: true,
               },
             },
           },
