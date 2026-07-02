@@ -308,6 +308,37 @@ export class AnalysisPacksRepository {
   }
 
   /**
+   * Estado de onboarding derivado del pack de una empresa, por PRIORIDAD (no por
+   * el más reciente): 'active' gana sobre 'pending_payment'. Cubre la ventana
+   * entre que el usuario paga y el webhook confirma, para que el front no ofrezca
+   * comprar de nuevo (evita doble compra):
+   *   - hasActive  → tiene una bolsa pagada (onboarding listo).
+   *   - hasPending → pagó/inició la compra, esperando confirmación del webhook.
+   *   - ninguno    → nunca compró (o solo tiene canceladas/vencidas/agotadas).
+   * Se filtra por status.type = 'analysis_pack_status' + code para no depender de
+   * resolver los ids de parámetro aquí.
+   */
+  async getOnboardingPackState(
+    companyId: string,
+  ): Promise<{ hasActive: boolean; hasPending: boolean }> {
+    const [activeCount, pendingCount] = await Promise.all([
+      this.prisma.analysisPack.count({
+        where: {
+          companyId,
+          status: { type: 'analysis_pack_status', code: 'active' },
+        },
+      }),
+      this.prisma.analysisPack.count({
+        where: {
+          companyId,
+          status: { type: 'analysis_pack_status', code: 'pending_payment' },
+        },
+      }),
+    ]);
+    return { hasActive: activeCount > 0, hasPending: pendingCount > 0 };
+  }
+
+  /**
    * Cancela una bolsa pendiente de forma DEFINITIVA (abandono/timeout, no un
    * rechazo puntual de tarjeta). Solo aplica si sigue en pending_payment.
    */

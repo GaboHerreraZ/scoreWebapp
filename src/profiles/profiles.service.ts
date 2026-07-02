@@ -91,6 +91,14 @@ export class ProfilesService {
       canExtractPdf: false,
     };
 
+    // Estado de onboarding para el enrutamiento post-login del front. Distingue
+    // la ventana entre pagar y que el webhook confirme, para no ofrecer comprar
+    // de nuevo (evita doble compra):
+    //   'no_pack'         → nunca compró → pantalla de elegir plan.
+    //   'payment_pending' → pagó/inició compra, esperando webhook → "pago en proceso".
+    //   'ready'           → tiene bolsa activa → dashboard (≡ isOnboardingReady).
+    let onboardingStatus: 'no_pack' | 'payment_pending' | 'ready' = 'no_pack';
+
     if (userCompany) {
       const availableCredits = await this.getAvailableCredits(
         userCompany.companyId,
@@ -105,6 +113,16 @@ export class ProfilesService {
         hasCredits,
         availableCredits,
       };
+
+      const { hasActive, hasPending } =
+        await this.analysisPacksRepository.getOnboardingPackState(
+          userCompany.companyId,
+        );
+      onboardingStatus = hasActive
+        ? 'ready'
+        : hasPending
+          ? 'payment_pending'
+          : 'no_pack';
     }
 
     const { userCompanies, ...rest } = profile;
@@ -121,6 +139,7 @@ export class ProfilesService {
       companyCity: company.company.city,
       companyNit: company.company.nit,
       isOnboardingReady: company.company.isOnboardingReady,
+      onboardingStatus,
       permissions,
     };
   }
