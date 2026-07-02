@@ -108,4 +108,13 @@ export class SupabaseService {
 
     return data.signedUrl;
   }
+
+  /**
+   * Returns the permanent public URL for a file in a PUBLIC Supabase Storage
+   * bucket (no signing, no expiry). Use only for buckets created as public.
+   */
+  getPublicUrl(bucket: string, path: string): string {
+    const { data } = this.client.storage.from(bucket).getPublicUrl(path);
+    return data.publicUrl;
+  }
 }

@@ -30,6 +30,7 @@ import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
 import { ContactRequestsModule } from './contact-requests/contact-requests.module.js';
 import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
+import { BlogModule } from './blog/blog.module.js';
 import { DebugController } from './common/debug/debug.controller.js';
 
 @Module({
@@ -65,6 +66,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     AdminModule,
     ContactRequestsModule,
     SupportTicketsModule,
+    BlogModule,
   ],
   controllers: [DebugController],
   providers: [
