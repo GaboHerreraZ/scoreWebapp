@@ -49,6 +49,14 @@ export class ProfileResponseDto {
   })
   isOnboardingReady?: boolean;
 
+  @ApiPropertyOptional({
+    enum: ['no_pack', 'payment_pending', 'ready'],
+    example: 'payment_pending',
+    description:
+      "Estado de onboarding para el enrutamiento post-login: 'no_pack' (nunca compró → elegir plan), 'payment_pending' (pagó/inició compra, esperando confirmación del webhook → pantalla de pago en proceso, sin ofrecer comprar de nuevo), 'ready' (bolsa activa → dashboard).",
+  })
+  onboardingStatus?: 'no_pack' | 'payment_pending' | 'ready';
+
   @ApiProperty()
   createdAt: Date;
 
