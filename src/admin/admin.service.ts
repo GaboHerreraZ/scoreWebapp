@@ -35,8 +35,12 @@ const ALL_SCREENS = [
   'promo-codes',
   'contact-requests',
   'support-tickets',
-  'platform-admins', // gestión de usuarios del portal: SOLO rol admin
+  'platform-admins',// gestión de usuarios del portal: SOLO rol admin
+  "blog-posts"
 ] as const;
+
+// Bucket de Supabase Storage para las fotos de los usuarios del portal.
+const PLATFORM_ADMIN_AVATAR_BUCKET = 'platform-admin-avatars';
 
 // Pantallas que ve cualquier usuario no-admin del portal.
 const BASE_SCREENS = [
@@ -201,6 +205,46 @@ export class AdminService {
     }
 
     return this.platformAdminRepository.update(id, data);
+  }
+
+  /**
+   * Sube la foto de un PlatformAdmin a Supabase Storage y guarda su path en
+   * avatarUrl. upsert por path fijo ({id}/avatar.{ext}) → re-subir reemplaza.
+   * Devuelve el path guardado y una URL firmada de cortesía para previsualizar.
+   * Solo el rol 'admin' puede hacerlo.
+   */
+  async uploadAvatar(
+    id: string,
+    file: Express.Multer.File,
+    callerUserId: string,
+  ) {
+    await this.assertCallerIsAdmin(callerUserId);
+
+    const target = await this.platformAdminRepository.findById(id);
+    if (!target) {
+      throw new NotFoundException(`Administrador con id=${id} no encontrado`);
+    }
+
+    const ext = file.originalname.split('.').pop() ?? 'png';
+    const storagePath = `${id}/avatar.${ext}`;
+
+    await this.supabaseService.uploadFile(
+      PLATFORM_ADMIN_AVATAR_BUCKET,
+      storagePath,
+      file.buffer,
+      file.mimetype,
+    );
+
+    const updated = await this.platformAdminRepository.update(id, {
+      avatarUrl: storagePath,
+    });
+
+    const avatarSignedUrl = await this.supabaseService.createSignedUrl(
+      PLATFORM_ADMIN_AVATAR_BUCKET,
+      storagePath,
+    );
+
+    return { ...updated, avatarSignedUrl };
   }
 
   /**

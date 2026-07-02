@@ -54,6 +54,8 @@ model Parameter {
   supportTicketsByType                  SupportTicket[]       @relation("SupportTicketType")
   supportTicketsByPriority              SupportTicket[]       @relation("SupportTicketPriority")
   supportTicketsByStatus                SupportTicket[]       @relation("SupportTicketStatus")
+  blogPostsByCategory                   BlogPost[]            @relation("BlogPostCategory")
+  blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -187,6 +189,7 @@ model PlatformAdmin {
   // Rol del equipo interno Creditia (admin/support/sales). Parameter
   // 'platform_admin_role'. DISTINTO de los roles de empresa (UserCompany.role).
   roleId    Int?     @map("role_id")
+  avatarUrl String?  @map("avatar_url") @db.VarChar(500) // foto del admin (autor de blog, etc.)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -198,6 +201,7 @@ model PlatformAdmin {
   assignedContactRequests   ContactRequest[]    @relation("ContactRequestAssignedTo")
   handledContactRequests    ContactRequest[]    @relation("ContactRequestHandledBy")
   assignedSupportTickets    SupportTicket[]     @relation("SupportTicketAssignedTo")
+  blogPosts                 BlogPost[]          @relation("BlogPostAuthor")
 
   @@map("platform_admins")
 }
@@ -844,4 +848,49 @@ model SupportTicketCounter {
   lastSeq  Int @default(0) @map("last_seq")
 
   @@map("support_ticket_counters")
+}
+
+// ─── Artículos del blog (contenido público de marketing / educación) ────
+// Contenido editorial del portal. slug es la clave de la URL pública (único).
+// category y status son Parameter ('blog_category' / 'blog_status'). author es
+// un PlatformAdmin (equipo Creditia). Los endpoints públicos filtran status =
+// 'published'; draft/archived solo se ven desde el panel admin. El "borrado" es
+// suave: se pasa el status a 'archived' (no se elimina la fila).
+
+model BlogPost {
+  id              String    @id @default(uuid()) @db.Uuid
+  slug            String    @unique @db.VarChar(255) // clave de la URL pública
+  title           String    @db.VarChar(300)
+  excerpt         String?   @db.VarChar(500)
+  content         String    @db.Text // HTML del artículo
+  coverImageUrl   String?   @map("cover_image_url") @db.VarChar(500)
+
+  categoryId      Int       @map("category_id") // Parameter 'blog_category'
+  authorId        String    @map("author_id") @db.Uuid // PlatformAdmin (autor)
+
+  readingMinutes  Int?      @map("reading_minutes")
+  tags            String[]  @default([]) // array Postgres text[]
+
+  // Fuente/original del artículo (cuando se escribe a partir de otro contenido).
+  // URL externa para mostrar un "Fuente / Ver fuente" al pie. Opcional.
+  sourceUrl       String?   @map("source_url") @db.VarChar(500)
+
+  statusId        Int       @map("status_id") // Parameter 'blog_status': draft | published | archived
+  publishedAt     DateTime? @map("published_at")
+
+  // SEO. La imagen para Open Graph al compartir usa coverImageUrl (no hay
+  // columna og propia: la portada sirve de preview social).
+  metaTitle       String?   @map("meta_title") @db.VarChar(300)
+  metaDescription String?   @map("meta_description") @db.VarChar(500)
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  category Parameter     @relation("BlogPostCategory", fields: [categoryId], references: [id])
+  status   Parameter     @relation("BlogPostStatus", fields: [statusId], references: [id])
+  author   PlatformAdmin @relation("BlogPostAuthor", fields: [authorId], references: [id])
+
+  @@index([statusId, publishedAt]) // listado público (published, orden por publishedAt desc)
+  @@index([categoryId])
+  @@map("blog_posts")
 }

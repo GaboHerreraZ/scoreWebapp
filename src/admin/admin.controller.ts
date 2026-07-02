@@ -10,13 +10,19 @@ import {
   Req,
   ParseUUIDPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
 import { AdminService } from './admin.service.js';
@@ -72,6 +78,55 @@ export class AdminController {
   ) {
     const callerUserId = (req as any).user.id as string;
     return this.adminService.updatePlatformAdmin(id, dto, callerUserId);
+  }
+
+  @Patch('platform-admins/:id/avatar')
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiOperation({
+    summary: 'Subir/actualizar la foto de un usuario del portal. Solo rol admin.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        avatar: {
+          type: 'string',
+          format: 'binary',
+          description: 'Imagen (PNG, JPG, WEBP) máx. 2MB',
+        },
+      },
+      required: ['avatar'],
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Avatar actualizado' })
+  @ApiResponse({ status: 400, description: 'Archivo inválido' })
+  @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
+  uploadPlatformAdminAvatar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    if (!file) {
+      throw new BadRequestException('El archivo de avatar es requerido');
+    }
+
+    const allowedMimes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Tipo de archivo inválido. Permitidos: PNG, JPG, WEBP',
+      );
+    }
+
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (file.size > maxSize) {
+      throw new BadRequestException(
+        'El tamaño del archivo no debe exceder 2MB',
+      );
+    }
+
+    const callerUserId = (req as any).user.id as string;
+    return this.adminService.uploadAvatar(id, file, callerUserId);
   }
 
   @Patch('platform-admins/:id/activate')

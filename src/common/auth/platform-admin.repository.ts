@@ -16,6 +16,7 @@ export class PlatformAdminRepository {
     name: true,
     email: true,
     phone: true,
+    avatarUrl: true,
     isActive: true,
     role: { select: { id: true, code: true, label: true } },
   } as const;
