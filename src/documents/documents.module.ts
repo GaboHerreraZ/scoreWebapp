@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PromissoryNotesModule } from './promissory-notes/promissory-notes.module.js';
+import { MacroContractModule } from './macro-contract/macro-contract.module.js';
 
 /**
  * Módulo raíz de documentos firmables. Agrupa la capa de firma compartida
@@ -9,6 +10,7 @@ import { PromissoryNotesModule } from './promissory-notes/promissory-notes.modul
  * firma DocuSeal vía SigningModule.
  */
 @Module({
-  imports: [PromissoryNotesModule],
+  imports: [PromissoryNotesModule, MacroContractModule],
+  exports: [MacroContractModule],
 })
 export class DocumentsModule {}

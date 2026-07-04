@@ -1,0 +1,155 @@
+<!--
+  CONTRATO MACRO CREDITIA — PLANTILLA REUTILIZABLE PARA ZAPSIGN
+  ============================================================
+
+  Cómo usar este archivo:
+  1. Ábrelo en un navegador para revisar el formato, o impórtalo en Word
+     (Archivo → Abrir → selecciona este .html) para guardarlo como .docx.
+  2. Sube el .docx (o su PDF) a tu cuenta de Zapsign como PLANTILLA (modelo).
+  3. Zapsign detectará las variables escritas entre {{DOBLES LLAVES}}.
+  4. Copia el template_id que te da Zapsign y pásamelo para conectarlo al código.
+
+  IMPORTANTE sobre las variables:
+  - Zapsign reemplaza EXACTAMENTE el texto {{VARIABLE}} por el valor que envíes
+    en el array data[] ({ "de": "{{VARIABLE}}", "para": "valor" }).
+  - Los nombres de abajo coinciden 1:1 con lo que el backend puede rellenar
+    desde el modelo Company / Profile. Ver variable-map.md.
+  - Las zonas de FIRMA no son variables: son campos de firma que se configuran
+    en Zapsign (un firmante = Creditia, otro = el cliente). No los pongas como {{}}.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Contrato Macro de Prestación de Servicios — Creditia</title>
+<style>
+  body { font-family: "Times New Roman", Georgia, serif; font-size: 12pt; line-height: 1.5; color: #111; max-width: 800px; margin: 0 auto; padding: 40px; }
+  h1 { font-size: 15pt; text-align: center; text-transform: uppercase; margin-bottom: 4px; }
+  h2 { font-size: 12pt; margin-top: 22px; }
+  .subtitle { text-align: center; font-size: 10pt; color: #444; margin-top: 0; }
+  .parties { margin: 24px 0; }
+  p { text-align: justify; margin: 8px 0; }
+  .clause-title { font-weight: bold; }
+  .signatures { margin-top: 60px; display: flex; justify-content: space-between; }
+  .sign-box { width: 45%; }
+  .sign-line { border-top: 1px solid #000; margin-top: 50px; padding-top: 6px; font-size: 10pt; }
+  .fill { font-weight: bold; }
+  .small { font-size: 9pt; color: #555; }
+</style>
+</head>
+<body>
+
+<h1>Contrato Macro de Prestación de Servicios</h1>
+<p class="subtitle">Plataforma Creditia — Servicios de Estudio y Análisis de Crédito</p>
+
+<p>Entre los suscritos a saber, de una parte <span class="fill">{{PROVEEDOR_RAZON_SOCIAL}}</span>,
+sociedad legalmente constituida bajo las leyes de la República de Colombia, identificada con
+NIT <span class="fill">{{PROVEEDOR_NIT}}</span>, con domicilio principal en
+<span class="fill">{{PROVEEDOR_CIUDAD}}</span>, representada legalmente por
+<span class="fill">{{PROVEEDOR_REPRESENTANTE}}</span>, mayor de edad, identificado(a) como
+aparece al pie de su firma, quien en adelante y para todos los efectos del presente contrato
+se denominará <strong>EL PROVEEDOR</strong> o <strong>CREDITIA</strong>; y de la otra parte
+<span class="fill">{{CLIENTE_RAZON_SOCIAL}}</span>, identificada con NIT
+<span class="fill">{{CLIENTE_NIT}}</span>, con domicilio en la ciudad de
+<span class="fill">{{CLIENTE_CIUDAD}}</span>, <span class="fill">{{CLIENTE_DEPARTAMENTO}}</span>,
+en la dirección <span class="fill">{{CLIENTE_DIRECCION}}</span>, representada legalmente por
+<span class="fill">{{CLIENTE_REPRESENTANTE}}</span>, identificado(a) con
+<span class="fill">{{CLIENTE_TIPO_DOC}}</span> No.
+<span class="fill">{{CLIENTE_NUM_DOC}}</span>, quien en adelante se denominará
+<strong>EL CLIENTE</strong>; hemos acordado celebrar el presente Contrato Macro de Prestación
+de Servicios, que se regirá por las siguientes cláusulas, previas las siguientes:</p>
+
+<h2>Consideraciones</h2>
+<p>1. Que EL PROVEEDOR es titular y operador de la plataforma tecnológica <strong>Creditia</strong>,
+por medio de la cual presta servicios de estudio, análisis y evaluación de crédito.</p>
+<p>2. Que EL CLIENTE está interesado en acceder a dichos servicios bajo las condiciones generales
+que aquí se establecen, las cuales aplicarán a todas las operaciones que se realicen a través
+de la plataforma durante la vigencia de este contrato.</p>
+
+<h2>Cláusulas</h2>
+
+<p><span class="clause-title">PRIMERA. OBJETO.</span> El presente contrato tiene por objeto
+establecer las condiciones generales bajo las cuales EL PROVEEDOR pondrá a disposición de
+EL CLIENTE los servicios de la plataforma Creditia, incluyendo la generación de estudios de
+crédito, el análisis financiero automatizado y demás funcionalidades contratadas a través de
+las bolsas de análisis o planes que EL CLIENTE adquiera.</p>
+
+<p><span class="clause-title">SEGUNDA. ALCANCE.</span> Este es un contrato marco. Las
+operaciones particulares (cada estudio de crédito, consulta o análisis) que EL CLIENTE realice
+a través de la plataforma se entenderán amparadas por las condiciones aquí pactadas, sin
+necesidad de suscribir un nuevo contrato por cada operación.</p>
+
+<p><span class="clause-title">TERCERA. CONTRAPRESTACIÓN.</span> EL CLIENTE pagará a EL PROVEEDOR
+el valor correspondiente a las bolsas de análisis o servicios que adquiera, de acuerdo con las
+tarifas vigentes publicadas en la plataforma al momento de cada compra. Los pagos se realizarán
+a través de la pasarela de pagos habilitada por EL PROVEEDOR.</p>
+
+<p><span class="clause-title">CUARTA. OBLIGACIONES DEL CLIENTE.</span> EL CLIENTE se obliga a:
+(i) suministrar información veraz, completa y actualizada; (ii) usar la plataforma conforme a la
+ley y a los términos y condiciones de uso; (iii) custodiar sus credenciales de acceso; y
+(iv) pagar oportunamente los servicios adquiridos.</p>
+
+<p><span class="clause-title">QUINTA. OBLIGACIONES DEL PROVEEDOR.</span> EL PROVEEDOR se obliga a:
+(i) prestar los servicios contratados con diligencia; (ii) mantener la disponibilidad razonable
+de la plataforma; y (iii) proteger la información de EL CLIENTE conforme a la política de
+tratamiento de datos.</p>
+
+<p><span class="clause-title">SEXTA. TRATAMIENTO DE DATOS PERSONALES.</span> Las partes tratarán
+los datos personales a los que tengan acceso con ocasión de este contrato conforme a la Ley 1581
+de 2012 y demás normas aplicables. EL CLIENTE autoriza a EL PROVEEDOR el tratamiento de sus datos
+para la ejecución del presente contrato y la prestación de los servicios.</p>
+
+<p><span class="clause-title">SÉPTIMA. CONFIDENCIALIDAD.</span> Las partes se obligan a mantener
+la confidencialidad de la información que intercambien con ocasión de este contrato, obligación
+que subsistirá aún después de su terminación.</p>
+
+<p><span class="clause-title">OCTAVA. VIGENCIA.</span> El presente contrato tendrá una vigencia
+indefinida a partir de la fecha de su firma, y podrá ser terminado por cualquiera de las partes
+mediante aviso escrito con una antelación no menor a treinta (30) días.</p>
+
+<p><span class="clause-title">NOVENA. FIRMA ELECTRÓNICA.</span> Las partes aceptan que el presente
+contrato se suscribe mediante firma electrónica, la cual reconocen como válida y vinculante de
+conformidad con la Ley 527 de 1999 y el Decreto 2364 de 2012.</p>
+
+<p><span class="clause-title">DÉCIMA. LEY APLICABLE Y JURISDICCIÓN.</span> Este contrato se rige
+por las leyes de la República de Colombia. Cualquier controversia se resolverá ante la
+jurisdicción ordinaria colombiana.</p>
+
+<p>En constancia de lo anterior, las partes firman electrónicamente el presente documento en la
+fecha de suscripción registrada por la plataforma de firma electrónica.</p>
+
+<!--
+  ZONA DE FIRMAS
+  ==============
+  NO uses variables {{}} aquí. En Zapsign, al crear la plantilla, coloca:
+    - Un campo de FIRMA para el firmante "Creditia" sobre la línea izquierda.
+    - Un campo de FIRMA para el firmante "Cliente" sobre la línea derecha.
+  El nombre del representante y NIT sí son variables (se rellenan vía API).
+-->
+<div class="signatures">
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL PROVEEDOR — CREDITIA</strong><br />
+      {{PROVEEDOR_REPRESENTANTE}}<br />
+      {{PROVEEDOR_RAZON_SOCIAL}}<br />
+      NIT {{PROVEEDOR_NIT}}
+    </div>
+  </div>
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL CLIENTE</strong><br />
+      {{CLIENTE_REPRESENTANTE}}<br />
+      {{CLIENTE_RAZON_SOCIAL}}<br />
+      NIT {{CLIENTE_NIT}}
+    </div>
+  </div>
+</div>
+
+<p class="small" style="margin-top:40px;">
+  Documento firmado electrónicamente a través de la plataforma Creditia (Zapsign).
+  La fecha, hora, identidad de los firmantes y evidencias de la firma constan en el
+  certificado de finalización adjunto a este documento.
+</p>
+
+</body>
+</html>

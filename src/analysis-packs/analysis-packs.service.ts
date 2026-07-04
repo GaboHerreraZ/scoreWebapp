@@ -16,6 +16,7 @@ import { PlatformAdminRepository } from '../common/auth/platform-admin.repositor
 import { PaymentAlertsService } from '../payment-alerts/payment-alerts.service.js';
 import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import { MailService } from '../mail/mail.service.js';
+import { MacroContractService } from '../documents/macro-contract/macro-contract.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -40,6 +41,7 @@ export class AnalysisPacksService {
     private readonly paymentAlertsService: PaymentAlertsService,
     private readonly promoCodesService: PromoCodesService,
     private readonly mailService: MailService,
+    private readonly macroContractService: MacroContractService,
   ) {}
 
   /**
@@ -679,6 +681,23 @@ export class AnalysisPacksService {
       } catch (e) {
         this.logger.error(
           `No se pudo marcar el onboarding como listo para la empresa ${pack.companyId}: ${
+            (e as Error).message
+          }`,
+        );
+      }
+
+      // Contrato macro: al confirmarse el pago, la cuenta NO queda activa aún —
+      // se envía el contrato macro para firma (Creditia firma por API y el
+      // cliente recibe el sign_url). La cuenta se activará cuando el webhook de
+      // Zapsign confirme la firma del cliente. sendContractForCompany es
+      // idempotente (uno por empresa): en pagos posteriores no reenvía nada.
+      // Best-effort: un fallo aquí no debe romper el webhook ni la activación
+      // de la bolsa; el contrato queda pendiente y puede reintentarse.
+      try {
+        await this.macroContractService.sendContractForCompany(pack.companyId);
+      } catch (e) {
+        this.logger.error(
+          `No se pudo enviar el contrato macro para la empresa ${pack.companyId}: ${
             (e as Error).message
           }`,
         );
