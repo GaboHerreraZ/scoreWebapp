@@ -24,10 +24,10 @@ import {
 import type { Request } from 'express';
 import { PromissoryNotesService } from './promissory-notes.service.js';
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
-import type { DocuSealWebhookPayload } from './dto/docuseal-webhook.dto.js';
-import { Public } from '../common/decorators/public.decorator.js';
-import { DocuSealWebhookGuard } from './guards/docuseal-webhook.guard.js';
-import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
+import type { DocuSealWebhookPayload } from '../signing/dto/docuseal-webhook.dto.js';
+import { Public } from '../../common/decorators/public.decorator.js';
+import { DocuSealWebhookGuard } from '../signing/guards/docuseal-webhook.guard.js';
+import { CompanyScoped } from '../../common/decorators/company-scoped.decorator.js';
 
 // ── Spanish-message pipes reused across this controller ──
 const companyIdPipe = new ParseUUIDPipe({
@@ -49,7 +49,7 @@ export class PromissoryNotesController {
     private readonly promissoryNotesService: PromissoryNotesService,
   ) {}
 
-  @Post('companies/:companyId/promissory-notes')
+  @Post('companies/:companyId/documents/promissory-notes')
   @ApiOperation({
     summary: 'Crea un pagaré y lo envía al cliente vía DocuSeal para su firma',
   })
@@ -76,7 +76,7 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.create(companyId, userId, dto);
   }
 
-  @Post('companies/:companyId/promissory-notes/html')
+  @Post('companies/:companyId/documents/promissory-notes/html')
   @ApiOperation({
     summary:
       'Crea un pagaré desde un template HTML y lo envía al cliente vía DocuSeal para su firma',
@@ -104,7 +104,7 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.createFromHtml(companyId, userId, dto);
   }
 
-  @Post('companies/:companyId/promissory-notes/preview')
+  @Post('companies/:companyId/documents/promissory-notes/preview')
   @ApiOperation({
     summary:
       'Retorna un preview del pagaré como HTML con los valores resaltados en negrita',
@@ -125,7 +125,7 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.preview(companyId, dto);
   }
 
-  @Patch('companies/:companyId/promissory-notes/:id/decline')
+  @Patch('companies/:companyId/documents/promissory-notes/:id/decline')
   @ApiOperation({
     summary:
       'Declina un pagaré pendiente de firma y revierte el estudio de crédito a estudio realizado',
@@ -146,7 +146,7 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.decline(id, companyId);
   }
 
-  @Get('companies/:companyId/promissory-notes')
+  @Get('companies/:companyId/documents/promissory-notes')
   @ApiOperation({ summary: 'Lista los pagarés de una empresa' })
   findAll(
     @Param('companyId', companyIdPipe) companyId: string,
@@ -160,7 +160,7 @@ export class PromissoryNotesController {
     );
   }
 
-  @Get('companies/:companyId/promissory-notes/:id')
+  @Get('companies/:companyId/documents/promissory-notes/:id')
   @ApiOperation({ summary: 'Obtiene un pagaré por ID' })
   findById(
     @Param('companyId', companyIdPipe) companyId: string,
