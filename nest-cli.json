@@ -11,7 +11,7 @@
         "watchAssets": true
       },
       {
-        "include": "promissory-notes/templates/**/*.html",
+        "include": "documents/promissory-notes/templates/**/*.html",
         "outDir": "dist/src",
         "watchAssets": true
       }
