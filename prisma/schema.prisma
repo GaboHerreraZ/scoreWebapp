@@ -56,6 +56,7 @@ model Parameter {
   supportTicketsByStatus                SupportTicket[]       @relation("SupportTicketStatus")
   blogPostsByCategory                   BlogPost[]            @relation("BlogPostCategory")
   blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
+  contractSignaturesByStatus            ContractSignature[]   @relation("ContractSignatureStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -164,6 +165,7 @@ model Company {
   invitations          Invitation[]
   customers            Customer[]
   creditStudies        CreditStudy[]
+  contractSignature    ContractSignature?
   aiAnalyses           AiAnalysis[]
   promissoryNotes      PromissoryNote[]
   notifications        Notification[]
@@ -590,6 +592,56 @@ model PromissoryNote {
   @@index([customerId])
   @@index([docusealSubmissionId])
   @@map("promissory_notes")
+}
+
+// ─── Contrato Macro (firma electrónica vía Zapsign) ─────────
+// Contrato marco Creditia ↔ empresa cliente que se firma UNA vez en la vida de
+// la empresa (companyId único). Se dispara cuando el primer pago se confirma:
+// Creditia firma por API automáticamente y el cliente recibe el sign_url. La
+// cuenta NO queda activa hasta que el cliente firma (status='signed'), momento
+// en que el webhook de Zapsign descarga el PDF firmado a Supabase Storage
+// (respaldo) y deja la referencia del documento en Zapsign para servirlo luego.
+// status es Parameter 'company_contract_status': pending_contract | signed |
+// refused | expired.
+
+model ContractSignature {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @unique @map("company_id") @db.Uuid // uno por empresa
+  templateId String @map("template_id") @db.VarChar(100) // modelo de Zapsign usado
+  statusId   Int    @map("status_id")
+
+  // ── Datos Zapsign ──────────────────────────────────
+  zapsignDocToken    String  @unique @map("zapsign_doc_token") @db.VarChar(100)
+  clientSignerToken  String? @map("client_signer_token") @db.VarChar(100)
+  signUrl            String? @map("sign_url") @db.VarChar(500)
+  signedDocumentUrl  String? @map("signed_document_url") @db.VarChar(500) // último signed_file de Zapsign
+  signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500) // respaldo en Supabase Storage
+
+  // ── Snapshot del firmante cliente (trazabilidad) ────
+  signerName  String @map("signer_name") @db.VarChar(255)
+  signerEmail String @map("signer_email") @db.VarChar(255)
+
+  // ── Auditoría de firma ─────────────────────────────
+  sentAt        DateTime? @map("sent_at")
+  signedAt      DateTime? @map("signed_at")
+  refusedAt     DateTime? @map("refused_at")
+  refusedReason String?   @map("refused_reason") @db.VarChar(1000) // motivo del cliente al rechazar
+
+  // ── Visualización del cliente (seguimiento comercial) ──
+  // Se alimenta del webhook doc_viewed, filtrando por el firmante cliente
+  // (Creditia firma por API, no "ve"). Útil para detectar "lo abrió pero no firma".
+  firstViewedAt DateTime? @map("first_viewed_at")
+  lastViewedAt  DateTime? @map("last_viewed_at")
+  viewCount     Int       @default(0) @map("view_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company   @relation(fields: [companyId], references: [id])
+  status  Parameter @relation("ContractSignatureStatus", fields: [statusId], references: [id])
+
+  @@index([statusId])
+  @@map("contract_signatures")
 }
 
 // ─── Notificaciones in-app ──────────────────────────────────

@@ -4,6 +4,7 @@ import { AdminGuard } from './admin.guard.js';
 import { PlatformAdminRepository } from './platform-admin.repository.js';
 import { CompanyAccessGuard } from './company-access.guard.js';
 import { CompanyAccessRepository } from './company-access.repository.js';
+import { ContractSignedGuard } from './contract-signed.guard.js';
 
 /**
  * Módulo de autorización compartido y global.
@@ -25,12 +26,14 @@ import { CompanyAccessRepository } from './company-access.repository.js';
     PlatformAdminRepository,
     CompanyAccessGuard,
     CompanyAccessRepository,
+    ContractSignedGuard,
   ],
   exports: [
     AdminGuard,
     PlatformAdminRepository,
     CompanyAccessGuard,
     CompanyAccessRepository,
+    ContractSignedGuard,
   ],
 })
 export class AuthorizationModule {}

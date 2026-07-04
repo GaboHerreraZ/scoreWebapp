@@ -10,6 +10,7 @@ import { EpaycoModule } from '../epayco/epayco.module.js';
 import { PaymentAlertsModule } from '../payment-alerts/payment-alerts.module.js';
 import { PromoCodesModule } from '../promo-codes/promo-codes.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { MacroContractModule } from '../documents/macro-contract/macro-contract.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MailModule } from '../mail/mail.module.js';
     PaymentAlertsModule,
     PromoCodesModule,
     MailModule,
+    MacroContractModule,
   ],
   controllers: [
     AnalysisPacksController,
