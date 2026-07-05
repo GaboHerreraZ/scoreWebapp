@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-/** Un firmante tal como lo devuelve Zapsign en la respuesta de crear documento. */
 export interface ZapsignSigner {
   token: string;
   name: string | null;
@@ -14,13 +13,11 @@ export interface ZapsignSigner {
   sign_url: string | null;
 }
 
-/** Resultado de crear un documento a partir de una plantilla. */
 export interface ZapsignCreateDocResult {
   docToken: string;
   signers: ZapsignSigner[];
 }
 
-/** Estado autoritativo de un documento (consultado a Zapsign). */
 export interface ZapsignDocState {
   token: string;
   status: string; // 'pending' | 'signed'
@@ -30,10 +27,8 @@ export interface ZapsignDocState {
 
 export interface CreateDocFromTemplateParams {
   templateId: string;
-  /** Firmante principal (el cliente). */
   signerName: string;
   signerEmail: string;
-  /** Variables {{...}} de la plantilla → valor. */
   data: Record<string, string>;
 }
 
@@ -51,19 +46,27 @@ export class ZapsignService {
   private readonly logger = new Logger(ZapsignService.name);
   private readonly apiUrl: string;
   private readonly apiToken: string;
-  /** Token del usuario Creditia (Settings → firma vía API) para batch sign. */
-  private readonly creditiaUserToken: string;
+  /**
+   * Flag sandbox de Zapsign (por documento, no un entorno/URL/token aparte).
+   * sandbox=true crea documentos de PRUEBA: no gastan cuota ni producen firmas
+   * con validez legal. Debe ir en TRUE en staging/desarrollo y FALSE en
+   * producción (si no, los contratos reales quedarían marcados como prueba).
+   */
+  private readonly sandbox: boolean;
 
   constructor(private readonly configService: ConfigService) {
+    this.sandbox =
+      this.configService.get<string>('ZAPSIGN_SANDBOX', 'false') === 'true';
     this.apiUrl =
       this.configService.get<string>('ZAPSIGN_API_URL') ??
       'https://api.zapsign.com.br/api/v1';
     this.apiToken = this.configService.get<string>('ZAPSIGN_API_TOKEN') ?? '';
-    this.creditiaUserToken =
-      this.configService.get<string>('ZAPSIGN_CREDITIA_USER_TOKEN') ?? '';
 
     if (!this.apiToken) {
       this.logger.warn('ZAPSIGN_API_TOKEN is not configured');
+    }
+    if (this.sandbox) {
+      this.logger.warn('ZapsignService en modo SANDBOX (pruebas)');
     }
   }
 
@@ -87,6 +90,8 @@ export class ZapsignService {
       template_id: params.templateId,
       signer_name: params.signerName,
       signer_email: params.signerEmail,
+      sandbox: this.sandbox,
+      send_automatic_email: true,
       data: Object.entries(params.data).map(([key, value]) => ({
         de: `{{${key}}}`,
         para: value,
@@ -99,10 +104,23 @@ export class ZapsignService {
         headers: this.authHeaders(),
         body: JSON.stringify(body),
       });
-      const json: any = await res.json();
+
+      const raw = await res.text();
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        json = null;
+      }
+
       if (!res.ok || !json?.token) {
-        this.logger.error('Zapsign create-doc falló', json);
-        throw new Error(json?.message ?? 'No se obtuvo token del documento');
+        const detail = json?.message ?? json?.detail ?? raw ?? '(sin cuerpo)';
+        this.logger.error(
+          `Zapsign create-doc falló (HTTP ${res.status}): ${detail}`,
+        );
+        throw new InternalServerErrorException(
+          `No se pudo crear el contrato en Zapsign: ${detail}`,
+        );
       }
 
       return {
@@ -110,50 +128,12 @@ export class ZapsignService {
         signers: (json.signers ?? []) as ZapsignSigner[],
       };
     } catch (err) {
+      if (err instanceof InternalServerErrorException) throw err;
       this.logger.error(
         `Zapsign createDocFromTemplate failed: ${(err as Error).message}`,
       );
       throw new InternalServerErrorException(
         'No se pudo crear el contrato en Zapsign.',
-      );
-    }
-  }
-
-  /**
-   * Firma programáticamente uno o más firmantes vía API (sin interacción
-   * humana). Se usa para que Creditia firme su parte al instante después de
-   * crear el documento. Requiere ZAPSIGN_CREDITIA_USER_TOKEN (usuario con firma
-   * vía API habilitada y cuyo email coincide con el firmante de Creditia en la
-   * plantilla). No consume créditos.
-   * POST /sign/
-   */
-  async batchSign(signerTokens: string[]): Promise<void> {
-    if (!this.creditiaUserToken) {
-      this.logger.warn(
-        'ZAPSIGN_CREDITIA_USER_TOKEN no configurado: se omite la firma automática de Creditia',
-      );
-      return;
-    }
-    if (signerTokens.length === 0) return;
-
-    try {
-      const res = await fetch(`${this.apiUrl}/sign/`, {
-        method: 'POST',
-        headers: this.authHeaders(),
-        body: JSON.stringify({
-          user_token: this.creditiaUserToken,
-          signer_tokens: signerTokens,
-        }),
-      });
-      if (!res.ok) {
-        const json: any = await res.json().catch(() => ({}));
-        this.logger.error('Zapsign batch sign falló', json);
-        throw new Error(json?.message ?? `HTTP ${res.status}`);
-      }
-    } catch (err) {
-      this.logger.error(`Zapsign batchSign failed: ${(err as Error).message}`);
-      throw new InternalServerErrorException(
-        'No se pudo firmar la parte de Creditia en Zapsign.',
       );
     }
   }
