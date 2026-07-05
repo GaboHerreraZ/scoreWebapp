@@ -411,16 +411,17 @@ export class AnalysisPacksService {
   }
 
   /**
-   * Estado/recibo de una compra por la referencia de ePayco (x_ref_payco), para
-   * la pantalla de resultado del pago. El front llega a /pago/resultado?ref_payco=...
-   * y consulta por ahí (con polling corto): la referencia vive en la URL, así que
-   * sobrevive a refrescos sin depender de memoria/localStorage. El webhook de
-   * ePayco puede tardar unos segundos en activar la bolsa, así que el front verá
-   * pending_payment (o 404 si el ref aún no se guardó) y luego active/cancelled.
+   * Estado/recibo de una compra para la pantalla de resultado del pago. La
+   * referencia puede ser el id propio de la bolsa (UUID, lo ideal: el front lo
+   * conoce desde el purchase) o el x_ref_payco del webhook. Se prefiere el UUID
+   * porque el ref_payco que ePayco pone en la URL de redirección (Checkout v2)
+   * NO coincide con el x_ref_payco del webhook, así que no sirve para cruzar.
+   * El webhook puede tardar unos segundos en activar la bolsa: con el UUID el
+   * front puede consultar de una (verá pending_payment y luego active/cancelled).
    * Requiere login y que el usuario tenga acceso a la empresa de la bolsa.
    */
-  async getStatusByReference(refPayco: string, userId: string) {
-    const pack = await this.repository.findByEpaycoRef(refPayco);
+  async getStatusByReference(ref: string, userId: string) {
+    const pack = await this.repository.findByReceiptRef(ref);
     if (!pack) {
       throw new NotFoundException('No se encontró una compra con esa referencia');
     }
@@ -448,7 +449,7 @@ export class AnalysisPacksService {
    */
   private buildReceipt(
     pack: NonNullable<
-      Awaited<ReturnType<AnalysisPacksRepository['findByEpaycoRef']>>
+      Awaited<ReturnType<AnalysisPacksRepository['findByReceiptRef']>>
     >,
   ) {
     const subtotal = pack.unitPricePaid * pack.quantityPurchased;

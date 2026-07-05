@@ -139,6 +139,37 @@ export class AnalysisPacksRepository {
     });
   }
 
+  /**
+   * Bolsa para la pantalla de resultado, resuelta por una referencia flexible:
+   * el id propio de la bolsa (UUID, que el front conoce desde el purchase) o
+   * el x_ref_payco del webhook. Se prioriza el UUID porque es fiable — el
+   * ref_payco de la redirección de ePayco v2 NO coincide con el x_ref_payco del
+   * webhook, así que no sirve para cruzar. Incluye la empresa para acceso/recibo.
+   */
+  async findByReceiptRef(ref: string) {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        ref,
+      );
+    const include = {
+      ...this.defaultInclude,
+      company: { select: { id: true, name: true, nit: true } },
+    };
+    if (isUuid) {
+      const byId = await this.prisma.analysisPack.findUnique({
+        where: { id: ref },
+        include,
+      });
+      if (byId) return byId;
+    }
+    // Fallback: por x_ref_payco (compatibilidad con el flujo anterior).
+    return this.prisma.analysisPack.findFirst({
+      where: { epaycoRef: ref },
+      orderBy: { createdAt: 'desc' },
+      include,
+    });
+  }
+
   /** Bolsas de una empresa (historial), más recientes primero. */
   async findByCompany(companyId: string) {
     return this.prisma.analysisPack.findMany({
