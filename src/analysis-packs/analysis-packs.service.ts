@@ -213,7 +213,12 @@ export class AnalysisPacksService {
       !dto.redirectPath.startsWith('//')
         ? dto.redirectPath
         : '/pago/resultado';
-    const responseUrl = `${frontendUrl}${safePath}`;
+    // Anexamos NUESTRA propia referencia (el id de la bolsa) a la URL de retorno.
+    // El ref_payco que ePayco añade en la redirección (Checkout v2) NO coincide
+    // con el x_ref_payco del webhook, así que es inservible para cruzar. El front
+    // debe leer `ref` (no `ref_payco`) y consultar by-reference con ese id.
+    const sep = safePath.includes('?') ? '&' : '?';
+    const responseUrl = `${frontendUrl}${safePath}${sep}ref=${pack.id}`;
 
     const billingName = [company.billingName, company.billingLastName]
       .filter(Boolean)
