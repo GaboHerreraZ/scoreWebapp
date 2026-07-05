@@ -9,10 +9,12 @@ import {
 import { AnalysisPacksService } from './analysis-packs.service.js';
 
 /**
- * Consulta de una compra por la referencia de ePayco (x_ref_payco). Pensado para
- * la pantalla de resultado del pago: ePayco redirige al front a
- * /pago/resultado?ref_payco=... y el front consulta aquí. La referencia viaja en
- * la URL, así que sobrevive a refrescos sin depender de memoria/localStorage.
+ * Consulta de una compra por referencia, para la pantalla de resultado del pago.
+ * La referencia puede ser el id de la bolsa (UUID, recomendado: el front lo
+ * conoce desde el purchase) o el x_ref_payco del webhook. Se prefiere el UUID
+ * porque el ref_payco de la redirección de ePayco v2 NO coincide con el
+ * x_ref_payco del webhook. El front debería redirigir con el analysisPackId que
+ * devolvió el purchase, no con el ref_payco de la URL de ePayco.
  *
  * No usa @CompanyScoped() porque la ruta no lleva :companyId — el acceso se
  * valida en el service contra la empresa de la bolsa (miembro activo o admin).

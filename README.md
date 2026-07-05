@@ -149,7 +149,6 @@ Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `D
 | `EPAYCO_TEST` | ePayco test mode (`true`/`false`) | No |
 | `FRONTEND_URL` | Frontend URL for CORS and emails | No |
 | `BACKEND_PUBLIC_URL` | Public URL of this API (without trailing slash). Used to build the ePayco confirmation webhook URL (`/api/webhooks/epayco`). Defaults to `http://localhost:3000` | No |
-| `CRON_SECRET` | Shared secret for the cron job endpoints (`/api/jobs/*`), sent in the `X-Cron-Secret` header. If empty, the endpoints are blocked | No |
 | `PORT` | Server port (default: `3000`) | No |
 
 ## Database - Prisma Migrations
