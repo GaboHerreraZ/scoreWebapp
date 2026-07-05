@@ -8,6 +8,7 @@ import {
   ZapsignWebhookPayload,
   extractDocToken,
 } from '../signing/dto/zapsign-webhook.dto.js';
+import { CREDITIA_PARTY } from './creditia.constants.js';
 
 /**
  * Orquesta el contrato macro Creditia ↔ empresa cliente:
@@ -24,13 +25,8 @@ export class MacroContractService {
   private readonly logger = new Logger(MacroContractService.name);
   private readonly templateId: string;
   private readonly storageBucket: string;
-  private readonly creditia: {
-    legalName: string;
-    nit: string;
-    city: string;
-    signerName: string;
-    signerEmail: string;
-  };
+  private readonly creditia = CREDITIA_PARTY;
+  private readonly logoUrl: string;
 
   constructor(
     private readonly repository: MacroContractRepository,
@@ -44,19 +40,9 @@ export class MacroContractService {
     this.storageBucket =
       this.configService.get<string>('SUPABASE_STORAGE_BUCKET_CONTRACTS') ??
       'macro-contracts';
-    this.creditia = {
-      legalName:
-        this.configService.get<string>('ZAPSIGN_CREDITIA_LEGAL_NAME') ??
-        'Creditia S.A.S.',
-      nit: this.configService.get<string>('ZAPSIGN_CREDITIA_NIT') ?? '900000000-0',
-      city: this.configService.get<string>('ZAPSIGN_CREDITIA_CITY') ?? 'Bogotá',
-      signerName:
-        this.configService.get<string>('ZAPSIGN_CREDITIA_SIGNER_NAME') ??
-        'Representante Legal Creditia',
-      signerEmail:
-        this.configService.get<string>('ZAPSIGN_CREDITIA_SIGNER_EMAIL') ??
-        'legal@creditia.co',
-    };
+    this.logoUrl =
+      this.configService.get<string>('LOGO_URL') ??
+      'https://creditia.co/logo.png';
   }
 
   /**
@@ -110,6 +96,7 @@ export class MacroContractService {
 
     const signerName = [admin.name, admin.lastName].filter(Boolean).join(' ');
     const data: Record<string, string> = {
+      LOGO_URL: this.logoUrl,
       // Cliente
       CLIENTE_RAZON_SOCIAL: company.name,
       CLIENTE_NIT: company.nit,
@@ -135,30 +122,14 @@ export class MacroContractService {
       data,
     });
 
-    // 2. Identificar quién es Creditia y quién el cliente entre los firmantes.
-    const creditiaSigner = doc.signers.find(
-      (s) => s.email?.toLowerCase() === this.creditia.signerEmail.toLowerCase(),
-    );
+    // 2. El único firmante electrónico es el CLIENTE. Creditia NO firma: su
+    //    firma/sello va pre-impresa en la plantilla (Creditia emite el contrato;
+    //    el cliente lo acepta firmando). Así el documento queda 'signed' apenas
+    //    el cliente firma (un solo firmante = completo).
     const clientSigner =
       doc.signers.find(
         (s) => s.email?.toLowerCase() === admin.email!.toLowerCase(),
-      ) ?? doc.signers.find((s) => s.token !== creditiaSigner?.token);
-
-    // 3. Firmar automáticamente la parte de Creditia (best-effort: si falla, el
-    //    contrato queda válido pero pendiente de la firma manual de Creditia).
-    if (creditiaSigner) {
-      try {
-        await this.zapsign.batchSign([creditiaSigner.token]);
-      } catch (e) {
-        this.logger.error(
-          `No se pudo firmar automáticamente la parte de Creditia (doc=${doc.docToken}): ${(e as Error).message}`,
-        );
-      }
-    } else {
-      this.logger.warn(
-        `No se identificó el firmante de Creditia en el doc ${doc.docToken} (email ${this.creditia.signerEmail}); se omite firma automática`,
-      );
-    }
+      ) ?? doc.signers[0];
 
     // 4. Registrar el contrato en estado pending_contract.
     const pendingStatus = await this.repository.findParameterByTypeAndCode(
