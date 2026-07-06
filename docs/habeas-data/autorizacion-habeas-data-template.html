@@ -1,0 +1,152 @@
+<!--
+  AUTORIZACIÓN DE HABEAS DATA — CENTRALES DE RIESGO (LEY 1266 DE 2008) — CREDITIA
+  ==============================================================================
+
+  Documento que firma el TITULAR CONSULTADO autorizando la CONSULTA y el REPORTE
+  de su información crediticia ante las centrales de riesgo (DataCrédito-Experian,
+  TransUnion-CIFIN, etc.), conforme a la Ley 1266 de 2008 (Habeas Data financiero).
+
+  Alcance separado del documento de tratamiento de datos (Ley 1581): aquí SOLO
+  se cubre lo relativo a centrales de riesgo. El logo va por {{LOGO_URL}}.
+  Por ahora es SOLO el documento (no se integra con Zapsign todavía).
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Autorización de Habeas Data — Centrales de Riesgo — Creditia</title>
+<style>
+  :root {
+    --brand: #2563eb; --brand-dark: #1e3a8a; --accent: #f5a623;
+    --ink: #1a1a1a; --muted: #6b7c8f; --line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Calibri", "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.55; color: var(--ink); max-width: 820px; margin: 0 auto; padding: 0 44px 40px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 14px; border-bottom: 3px solid var(--brand); margin-bottom: 6px; }
+  .header img { height: 54px; width: auto; }
+  .header .meta { text-align: right; font-size: 8pt; color: var(--muted); line-height: 1.4; }
+  .header .meta strong { color: var(--ink); }
+  .doc-title { text-align: center; margin: 26px 0 4px; }
+  .doc-title h1 { font-size: 15pt; color: var(--brand-dark); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; }
+  .doc-title .subtitle { font-size: 9.5pt; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .doc-title .rule { width: 60px; height: 3px; background: var(--accent); margin: 12px auto 0; border-radius: 2px; }
+  h2 { font-size: 11pt; color: var(--brand); margin: 22px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  p { text-align: justify; margin: 7px 0; }
+  .titular { background: #f8fafc; border-left: 3px solid var(--brand); padding: 12px 16px; border-radius: 0 6px 6px 0; }
+  .clause-title { font-weight: bold; color: var(--brand-dark); }
+  .fill { font-weight: bold; color: var(--ink); }
+  ul { margin: 6px 0 6px 4px; padding-left: 18px; }
+  li { margin: 4px 0; text-align: justify; }
+  .notice { margin-top: 18px; background: #f1f5fd; border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; font-size: 9.5pt; }
+  .notice h3 { margin: 0 0 6px; font-size: 10.5pt; color: var(--brand-dark); }
+  .signatures { margin-top: 50px; }
+  .sign-box { width: 55%; }
+  .sign-line { border-top: 1.5px solid var(--ink); margin-top: 46px; padding-top: 8px; font-size: 9pt; line-height: 1.5; }
+  .sign-box strong { color: var(--brand-dark); font-size: 9.5pt; }
+  .footer { margin-top: 42px; padding-top: 14px; border-top: 2px solid var(--line); font-size: 8pt; color: var(--muted); text-align: center; line-height: 1.6; }
+  .footer .brand { font-weight: bold; color: var(--brand); }
+  .footer a { color: var(--brand); text-decoration: none; }
+  .footer .links { margin-top: 4px; }
+  .footer .links span { margin: 0 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="{{LOGO_URL}}" alt="Creditia" />
+  <div class="meta">
+    <strong>CREDITIA S.A.S.</strong><br />
+    NIT {{PROVEEDOR_NIT}}<br />
+    {{PROVEEDOR_CIUDAD}}, Colombia<br />
+    creditia.co
+  </div>
+</div>
+
+<div class="doc-title">
+  <h1>Autorización de Habeas Data para Consulta y Reporte<br />ante Centrales de Riesgo</h1>
+  <div class="subtitle">Ley 1266 de 2008 · Habeas Data Financiero</div>
+  <div class="rule"></div>
+</div>
+
+<div class="titular">
+<p>Yo, <span class="fill">{{TITULAR_NOMBRE}}</span>, identificado(a) con
+<span class="fill">{{TITULAR_TIPO_DOC}}</span> No. <span class="fill">{{TITULAR_NUM_DOC}}</span>,
+con domicilio en <span class="fill">{{TITULAR_CIUDAD}}</span> (en adelante, el <strong>TITULAR</strong>),
+de manera libre, previa, expresa e informada, <strong>AUTORIZO</strong> de forma permanente e
+irrevocable —mientras subsista alguna obligación o relación comercial— a
+<span class="fill">{{EMPRESA_RAZON_SOCIAL}}</span>, identificada con NIT
+<span class="fill">{{EMPRESA_NIT}}</span> (en adelante, la <strong>EMPRESA</strong>), y a
+<strong>CREDITIA S.A.S.</strong>, NIT {{PROVEEDOR_NIT}}, como operador tecnológico de la EMPRESA,
+para consultar, solicitar, suministrar, reportar, procesar y divulgar mi información ante las
+centrales de información financiera, crediticia, comercial y de servicios.</p>
+</div>
+
+<h2>Primera. Objeto de la autorización</h2>
+<p>La presente autorización se otorga en los términos de la <strong>Ley 1266 de 2008</strong> y
+permite el manejo de mi información en los siguientes operadores de bancos de datos y centrales de
+riesgo, sin limitarse a ellos: <strong>DataCrédito – Experian Colombia</strong>,
+<strong>TransUnion – CIFIN</strong> y demás centrales de información legalmente autorizadas.</p>
+
+<h2>Segunda. Facultades autorizadas</h2>
+<ul>
+  <li><strong>Consultar</strong>, en cualquier tiempo, mi comportamiento crediticio, financiero,
+    comercial y de servicios, así como mi historial y hábitos de pago.</li>
+  <li><strong>Reportar</strong> a las centrales de riesgo datos veraces sobre el nacimiento,
+    modificación, cumplimiento, incumplimiento, mora o extinción de mis obligaciones.</li>
+  <li><strong>Solicitar y procesar</strong> mi información para la evaluación y el otorgamiento de
+    crédito, cupos, garantías o condiciones comerciales.</li>
+  <li><strong>Compartir</strong> la información entre la EMPRESA, CREDITIA y las centrales de
+    riesgo durante todos los ciclos de la operación: originación, seguimiento y cobranza.</li>
+</ul>
+
+<h2>Tercera. Permanencia del dato</h2>
+<p>Declaro conocer que la información positiva permanecerá de manera indefinida y que la información
+negativa se sujeta a los términos de permanencia y caducidad del dato negativo establecidos en la
+Ley 1266 de 2008, según la cual el término de permanencia del dato negativo no podrá exceder el
+doble del tiempo de la mora, con un máximo de cuatro (4) años.</p>
+
+<h2>Cuarta. Derechos del titular ante las centrales</h2>
+<p>Como titular, tengo derecho a conocer, actualizar y rectificar mi información; a ser informado
+sobre el uso dado a mis datos; a presentar reclamos ante las fuentes, operadores y ante la
+Superintendencia de Industria y Comercio; y a acudir a los mecanismos de consulta y reclamo
+previstos en la Ley 1266 de 2008.</p>
+
+<div class="notice">
+  <h3>Aviso</h3>
+  <p style="margin-top:0;">Esta autorización de Habeas Data es independiente y complementaria de la
+  Autorización para el Tratamiento de Datos Personales (Ley 1581 de 2012). Para consultas o para
+  ejercer sus derechos, el titular puede escribir a
+  <a href="mailto:soporte@creditia.co">soporte@creditia.co</a> o acudir a
+  <a href="https://creditia.co">creditia.co</a>.</p>
+</div>
+
+<p style="margin-top:16px;">Declaro que he leído y entendido esta autorización y que la otorgo de
+manera libre y voluntaria mediante firma electrónica, reconocida como válida y vinculante conforme
+a la Ley 527 de 1999 y el Decreto 2364 de 2012.</p>
+
+<div class="signatures">
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL TITULAR</strong><br />
+      {{TITULAR_NOMBRE}}<br />
+      {{TITULAR_TIPO_DOC}} No. {{TITULAR_NUM_DOC}}<br />
+      {{TITULAR_EMAIL}}
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span class="brand">CREDITIA</span> — Plataforma de Estudio y Análisis de Crédito
+  <div class="links">
+    <span>🌐 <a href="https://creditia.co">creditia.co</a></span>
+    <span>✉️ <a href="mailto:soporte@creditia.co">soporte@creditia.co</a></span>
+    <span>🔒 Ley 1266 de 2008 · Habeas Data</span>
+  </div>
+  <div style="margin-top:6px;">
+    La fecha, hora, identidad del titular y evidencias de la firma constan en el
+    certificado de finalización adjunto a este documento.
+  </div>
+</div>
+
+</body>
+</html>
