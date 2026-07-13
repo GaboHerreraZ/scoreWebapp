@@ -2,32 +2,21 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Param,
   Query,
   Req,
   Res,
   ParseUUIDPipe,
-  UseInterceptors,
-  UploadedFile,
-  BadRequestException,
 } from '@nestjs/common';
-import type { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
-  ApiConsumes,
-  ApiBody,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
 import { AiAnalysesService } from './ai-analyses.service.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
-import { ExtractPdfCreateStudyDto } from './dto/extract-pdf-create-study.dto.js';
-import { CreditStudiesService } from '../credit-studies/credit-studies.service.js';
-import type { CreateCreditStudyDto } from '../credit-studies/dto/create-credit-study.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('AI Analyses')
@@ -35,113 +24,26 @@ import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js'
 @CompanyScoped()
 @Controller('companies/:companyId/ai-analyses')
 export class AiAnalysesController {
-  constructor(
-    private readonly aiAnalysesService: AiAnalysesService,
-    private readonly creditStudiesService: CreditStudiesService,
-  ) {}
+  constructor(private readonly aiAnalysesService: AiAnalysesService) {}
 
-  @Post('extract-pdf')
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({
-    summary:
-      'Extract financial data + reliability flags from a PDF and create the credit study',
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-          description: 'PDF file with financial statements',
-        },
-        customerId: { type: 'string', format: 'uuid' },
-        studyDate: { type: 'string', example: '2026-06-08' },
-        notes: { type: 'string' },
-        requestedTerm: { type: 'number', example: 60 },
-        requestedCreditLine: { type: 'number', example: 50000000 },
-        incomeStatementId: { type: 'number', example: 1 },
-      },
-      required: ['file', 'customerId', 'studyDate'],
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description:
-      'PDF read once: financial data + reliability flags extracted and credit study created',
-  })
-  @ApiResponse({
-    status: 400,
-    description:
-      'Invalid file, subscription limit reached, or extraction failed',
-  })
-  async extractPdf(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: ExtractPdfCreateStudyDto,
-    @Req() req: Request,
-  ) {
-    if (!file) {
-      throw new BadRequestException('El archivo PDF es requerido');
-    }
-    if (file.mimetype !== 'application/pdf') {
-      throw new BadRequestException('Solo se aceptan archivos en formato PDF');
-    }
-    const userId = (req as any).user.id as string;
-
-    // 1. La IA lee el PDF UNA sola vez: extrae datos financieros + red flags.
-    const { financialData, reliabilityFlags, extractionId } =
-      await this.aiAnalysesService.extractPdf(file.buffer, companyId, userId);
-
-    // 2. Se crea el estudio de inmediato con los datos del usuario + los
-    //    extraidos, persistiendo las red flags de fiabilidad. Asi no se pierde
-    //    la lectura del PDF si el usuario refresca la pantalla.
-    const { balanceSheetDate, ...financialFields } = financialData as Record<
-      string,
-      unknown
-    >;
-    const createDto = {
-      customerId: dto.customerId,
-      studyDate: dto.studyDate,
-      notes: dto.notes,
-      requestedTerm: dto.requestedTerm,
-      requestedCreditLine: dto.requestedCreditLine,
-      incomeStatementId: dto.incomeStatementId,
-      ...financialFields,
-      balanceSheetDate:
-        typeof balanceSheetDate === 'string' && balanceSheetDate
-          ? new Date(balanceSheetDate)
-          : undefined,
-    } as CreateCreditStudyDto;
-
-    const study = await this.creditStudiesService.createFromExtraction(
-      companyId,
-      userId,
-      createDto,
-      reliabilityFlags,
-    );
-
-    // 3. Vincular la extracción (creada en el paso 1, antes del estudio) al
-    //    estudio recién creado, para poder saber qué estudio tuvo extracción PDF.
-    await this.aiAnalysesService.linkExtractionToCreditStudy(
-      extractionId,
-      study.id,
-    );
-
-    return study;
-  }
+  // NOTA: la extracción de PDF de estados financieros se movió a
+  // FinancialStatementsController (POST .../credit-studies/:id/financial-statements/
+  // extract-pdf). Este módulo conserva AiAnalysesService.extractPdf como la
+  // corrida IA + log en la tabla AiAnalysis, que financial-statements consume.
 
   @Post('credit-studies/:creditStudyId')
-  @ApiOperation({ summary: 'Run AI analysis on a credit study' })
+  @ApiOperation({
+    summary: 'Generar el informe ejecutivo IA de un estudio ya realizado',
+    description:
+      'Requiere que el estudio ya tenga el análisis de viabilidad (POST .../perform). Arma un prompt v2 con las 7 dimensiones ponderadas, el monto aprobado (techo de la central), ambas fuentes de EEFF, el score de la central y las dos capas de red flags; genera un informe narrativo consciente del tipo de persona (PN/PJ).',
+  })
   @ApiResponse({
     status: 201,
-    description: 'AI analysis completed and saved successfully',
+    description: 'Informe IA generado y guardado',
   })
   @ApiResponse({
     status: 400,
-    description:
-      'Study not performed, subscription limit reached, or AI call failed',
+    description: 'El estudio no ha sido realizado, o la llamada a la IA falló',
   })
   @ApiResponse({
     status: 404,

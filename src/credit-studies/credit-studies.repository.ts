@@ -116,6 +116,161 @@ export class CreditStudiesRepository {
     });
   }
 
+  /**
+   * Datos para armar el stepper del front. Trae el estudio con:
+   *  - customer: identidad + perfil de bureau (bureauProfile) para el step1.
+   *  - status: el estado del estudio, para el nivel raíz de la respuesta.
+   * Acotado a la empresa (pertenencia). null si no existe.
+   */
+  async findStepsData(id: string, companyId: string) {
+    return this.prisma.creditStudy.findFirst({
+      where: { id, companyId },
+      select: {
+        id: true,
+        studyDate: true,
+        requestedTerm: true,
+        requestedCreditLine: true,
+        recommendedTerm: true,
+        recommendedCreditLine: true,
+        viabilityScore: true,
+        viabilityStatus: true,
+        viabilityConditions: true,
+        resolutionDate: true,
+        customer: {
+          select: {
+            id: true,
+            companyId: true,
+            personTypeId: true,
+            identificationTypeId: true,
+            businessName: true,
+            identificationNumber: true,
+            verificationDigit: true,
+            personType: {
+              select: { id: true, code: true, label: true },
+            },
+            firstName: true,
+            secondName: true,
+            firstLastName: true,
+            secondLastName: true,
+            email: true,
+            phone: true,
+            city: true,
+            state: true,
+            address: true,
+            birthDate: true,
+            birthCity: true,
+            gender: true,
+            ageRange: true,
+            documentStatus: true,
+            bureauProfile: true,
+            bureauCreated: true,
+            lastConsultedAt: true,
+          },
+        },
+        status: {
+          select: {
+            id: true,
+            type: true,
+            code: true,
+            label: true,
+            parentId: true,
+            isActive: true,
+          },
+        },
+        // Informe IA (creditReview) exitoso más reciente del estudio, si existe.
+        // Se expone en el step3 para que el front lo muestre sin otra llamada.
+        aiAnalyses: {
+          where: { type: { code: 'creditReview' }, status: 'success' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            result: true,
+            model: true,
+            createdAt: true,
+            performedBy: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Datos necesarios para REALIZAR el análisis de viabilidad de un estudio:
+   *  - el estudio con su solicitud (cupo/plazo) y customerId,
+   *  - los análisis financieros congelados (pdf_upload / datacredito) con sus
+   *    períodos (2 más recientes),
+   *  - el último snapshot de riesgo de la central del cliente (nivel, sector,
+   *    score, montoSugerido, comportamiento de pago para detectar mora),
+   *  - la configuración de scoring vigente de la empresa.
+   * Todo acotado a la empresa. null si el estudio no existe.
+   */
+  async findAnalysisInputs(creditStudyId: string, companyId: string) {
+    const study = await this.prisma.creditStudy.findFirst({
+      where: { id: creditStudyId, companyId },
+      select: {
+        id: true,
+        companyId: true,
+        customerId: true,
+        requestedTerm: true,
+        requestedCreditLine: true,
+        status: { select: { code: true } },
+        customer: {
+          select: {
+            personTypeId: true,
+            personType: { select: { code: true } },
+            // Perfil de bureau: trae registration.status (matrícula) e
+            // inLiquidation, señales legales que pueden ser eliminatorias.
+            bureauProfile: true,
+          },
+        },
+      },
+    });
+    if (!study) return null;
+
+    const [analyses, riskSnapshot, scoringConfig] = await Promise.all([
+      this.findFrozenAnalyses(creditStudyId),
+      this.prisma.customerRiskSnapshot.findFirst({
+        where: { customerId: study.customerId },
+        orderBy: { createdAt: 'desc' },
+      }),
+      // Config del tipo de persona del cliente (PN o PJ).
+      this.prisma.scoringConfiguration.findFirst({
+        where: {
+          companyId,
+          personTypeId: study.customer.personTypeId,
+          isActive: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return { study, analyses, riskSnapshot, scoringConfig };
+  }
+
+  /**
+   * Análisis financieros congelados en un estudio (vía la join), con sus períodos
+   * (2 más recientes por análisis, fiscalYear DESC) e indicadores/ratios. Alimenta
+   * el step2 del stepper: una "fuente" por análisis (pdf_upload / datacredito).
+   */
+  async findFrozenAnalyses(creditStudyId: string) {
+    const rows = await this.prisma.creditStudyFinancialAnalysis.findMany({
+      where: { creditStudyId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        financialAnalysis: {
+          include: {
+            periods: {
+              orderBy: { fiscalYear: 'desc' },
+              take: 2,
+            },
+          },
+        },
+      },
+    });
+    return rows.map((r) => r.financialAnalysis);
+  }
+
   async update(id: string, data: Prisma.CreditStudyUncheckedUpdateInput) {
     return this.prisma.creditStudy.update({
       where: { id },
@@ -137,7 +292,6 @@ export class CreditStudiesRepository {
           select: { id: true, businessName: true, identificationNumber: true },
         },
         status: { select: { id: true, label: true, code: true } },
-        incomeStatement: { select: { id: true, label: true } },
       },
     });
   }

@@ -31,11 +31,10 @@ model Parameter {
   profilesByIdentificationType          Profile[]             @relation("ProfileIdentificationType")
   userCompaniesByRole                   UserCompany[]         @relation("UserCompanyRole")
   creditStudiesByStatus                 CreditStudy[]         @relation("CreditStudyStatus")
-  creditStudiesByIncomeStatement        CreditStudy[]         @relation("CreditStudyIncomeStatement")
+  financialStatementsByIncomeStatement  FinancialStatementPeriod[] @relation("FinancialStatementIncomeStatement")
   aiAnalysesByType                      AiAnalysis[]          @relation("AiAnalysisType")
   invitationsByStatus                   Invitation[]          @relation("InvitationStatus")
   customersByIdentificationType         Customer[]            @relation("CustomerIdentificationType")
-  customersByLegalRepIdentificationType Customer[]            @relation("CustomerLegalRepIdentificationType")
   companiesByAccountType                Company[]             @relation("CompanyAccountType")
   companiesByAccountBank                Company[]             @relation("CompanyAccountBank")
   companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
@@ -57,6 +56,7 @@ model Parameter {
   blogPostsByCategory                   BlogPost[]            @relation("BlogPostCategory")
   blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
   contractSignaturesByStatus            ContractSignature[]   @relation("ContractSignatureStatus")
+  scoringConfigurationsByPersonType     ScoringConfiguration[] @relation("ScoringConfigurationPersonType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -96,6 +96,10 @@ model Profile {
   promoRedemptions          PromoCodeRedemption[] @relation("PromoCodeRedemptionRedeemedBy")
   promoRedeemedPacks        AnalysisPack[]      @relation("AnalysisPackPromoRedeemedBy")
   createdSupportTickets     SupportTicket[]     @relation("SupportTicketCreatedBy")
+  bureauConsultations       CreditBureauConsultation[] @relation("CreditBureauConsultationCreatedBy")
+  createdFinancialStatements FinancialStatementPeriod[] @relation("FinancialStatementCreatedBy")
+  createdFinancialAnalyses   FinancialAnalysis[]        @relation("FinancialAnalysisCreatedBy")
+  createdScoringConfigurations ScoringConfiguration[]   @relation("ScoringConfigurationCreatedBy")
 
   @@map("profiles")
 }
@@ -176,8 +180,56 @@ model Company {
   promoCodes           PromoCode[] // códigos atados a esta empresa (scope=company)
   promoRedemptions     PromoCodeRedemption[]
   supportTickets       SupportTicket[]
+  bureauConsultations  CreditBureauConsultation[]
+  financialPeriods     FinancialStatementPeriod[]
+  financialAnalyses    FinancialAnalysis[]
+  scoringConfigurations ScoringConfiguration[]
 
   @@map("companies")
+}
+
+// ─── Configuración de scoring del estudio (pesos por dimensión) ─────────
+// Los pesos de las dimensiones del análisis de viabilidad NO son fijos: cada
+// empresa define qué prioriza (capacidad de pago, veracidad, riesgo de central…)
+// según su apetito de riesgo. Es VERSIONADA: una empresa acumula varias
+// configuraciones en el tiempo (historial); una sola vigente (isActive=true).
+// Al realizar un estudio se graba el id de la config vigente en el CreditStudy,
+// congelando por referencia: reconfigurar después NO recalcula estudios viejos.
+//
+// Los pesos son columnas fijas (una por dimensión), deben sumar 100 y cada uno
+// respeta un mínimo (MIN_WEIGHT) para que ninguna dimensión quede apagada. Los
+// umbrales de veredicto (approved/conditional) NO se configuran: son fijos.
+
+model ScoringConfiguration {
+  id           String @id @default(uuid()) @db.Uuid
+  companyId    String @map("company_id") @db.Uuid
+  // Tipo de persona al que aplica esta config (Parameter person_type:
+  // naturalPerson | legalEntity). PN y PJ son perfiles de riesgo distintos: en PJ
+  // pesa la veracidad (hay dos fuentes de EEFF); en PN pesa el riesgo de central
+  // (no hay contraste posible). Cada empresa tiene UNA config vigente por tipo.
+  personTypeId Int    @map("person_type_id")
+
+  // Pesos por dimensión (0-100). Suman 100 según el tipo: PJ usa las 7; PN usa 6
+  // (veracity=0, no evaluable sin contraste). Cada peso activo >= MIN_WEIGHT.
+  weightFinancialHealth    Int @map("weight_financial_health")    // Dim 1: salud financiera (Z-Altman)
+  weightPaymentCapacity    Int @map("weight_payment_capacity")    // Dim 2: capacidad de pago
+  weightTermCoherence      Int @map("weight_term_coherence")      // Dim 3: coherencia de plazos
+  weightCreditLineAdequacy Int @map("weight_credit_line_adequacy") // Dim 4: adecuación del cupo
+  weightCapitalExposure    Int @map("weight_capital_exposure")    // Dim 5: exposición del capital
+  weightVeracity           Int @map("weight_veracity")            // Dim 6: veracidad (0 en PN)
+  weightCentralRisk        Int @map("weight_central_risk")        // Dim 7: riesgo de la central
+
+  isActive  Boolean  @default(true) @map("is_active") // config vigente (por empresa+tipo)
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  personType    Parameter     @relation("ScoringConfigurationPersonType", fields: [personTypeId], references: [id])
+  createdByUser Profile       @relation("ScoringConfigurationCreatedBy", fields: [createdBy], references: [id])
+  creditStudies CreditStudy[]
+
+  @@index([companyId, personTypeId, isActive])
+  @@map("scoring_configurations")
 }
 
 // ─── Admin de plataforma (equipo Creditia / portal admin) ───
@@ -358,53 +410,92 @@ model UserCompany {
 
 // ─── Cliente (ficha propia por empresa) ─────────────────────
 
+// El Customer NACE de una consulta a DataCrédito (no lo captura el usuario).
+// Guarda la identidad estable del cliente + su "último estado ligero" conocido:
+// datosBasicos (ambos tipos) e informacionDemografica (solo PN; en PJ va null).
+// Los datos pesados de PJ (perfilGeneral, matrícula, rep. legal, junta, socios,
+// malla, estados financieros) NO se normalizan aquí: viven en el snapshot crudo
+// (CreditBureauConsultation.rawResponse) y, los que la app consume, en tablas de
+// dominio (CustomerRiskSnapshot, FinancialStatement). Los campos con forma de
+// proveedor los traduce experian.mapper.ts, nunca la app directamente.
+
 model Customer {
-  id                           String   @id @default(uuid()) @db.Uuid
-  companyId                    String   @map("company_id") @db.Uuid
-  personTypeId                 Int      @map("person_type_id")
-  identificationTypeId         Int?     @map("identification_type_id")
-  businessName                 String   @map("business_name") @db.VarChar(255)
-  identificationNumber         String   @map("identification_number") @db.VarChar(50)
-  legalRepName                 String?  @map("legal_rep_name") @db.VarChar(255)
-  legalRepId                   String?  @map("legal_rep_id") @db.VarChar(50)
-  legalRepIdentificationTypeId Int?     @map("legal_rep_identification_type_id")
-  legalRepEmail                String?  @map("legal_rep_email") @db.VarChar(255)
-  legalRepPhone                String?  @map("legal_rep_phone") @db.VarChar(50)
-  economicActivityId           Int?     @map("economic_activity_id")
-  email                        String?  @db.VarChar(255)
-  phone                        String?  @db.VarChar(50)
-  secondaryPhone               String?  @map("secondary_phone") @db.VarChar(50)
-  city                         String?  @db.VarChar(150)
-  state                        String?  @db.VarChar(150)
-  address                      String?  @db.VarChar(255)
-  seniority                    Int?
-  commercialRef1Name           String?  @map("commercial_ref1_name") @db.VarChar(255)
-  commercialRef1Contact        String?  @map("commercial_ref1_contact") @db.VarChar(255)
-  commercialRef1Phone          String?  @map("commercial_ref1_phone") @db.VarChar(50)
-  commercialRef2Name           String?  @map("commercial_ref2_name") @db.VarChar(255)
-  commercialRef2Contact        String?  @map("commercial_ref2_contact") @db.VarChar(255)
-  commercialRef2Phone          String?  @map("commercial_ref2_phone") @db.VarChar(50)
-  observations                 String?  @db.Text
-  createdBy                    String   @map("created_by") @db.Uuid
-  updatedBy                    String   @map("updated_by") @db.Uuid
-  createdAt                    DateTime @default(now()) @map("created_at")
-  updatedAt                    DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(uuid()) @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  personTypeId         Int      @map("person_type_id")
+  identificationTypeId Int?     @map("identification_type_id")
+  businessName         String   @map("business_name") @db.VarChar(255) // razonSocial (PJ) o nombre completo (PN)
+  identificationNumber String   @map("identification_number") @db.VarChar(50)
+  verificationDigit    String?  @map("verification_digit") @db.VarChar(2) // dígito de verificación del NIT (PJ)
+  economicActivityId   Int?     @map("economic_activity_id")
 
-  company                    Company          @relation(fields: [companyId], references: [id])
-  personType                 Parameter        @relation("CustomerPersonType", fields: [personTypeId], references: [id])
-  identificationType         Parameter?       @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
-  legalRepIdentificationType Parameter?       @relation("CustomerLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
-  economicActivity           Parameter?       @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
-  createdByUser              Profile          @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser              Profile          @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
-  creditStudies              CreditStudy[]
-  aiAnalyses                 AiAnalysis[]
-  promissoryNotes            PromissoryNote[]
+  // ── Nombres desglosados (PN; en PJ van null) ──────────
+  firstName      String? @map("first_name") @db.VarChar(150)
+  secondName     String? @map("second_name") @db.VarChar(150)
+  firstLastName  String? @map("first_last_name") @db.VarChar(150)
+  secondLastName String? @map("second_last_name") @db.VarChar(150)
 
+  // ── Contacto (datosContacto PJ; PN puede ir null) ─────
+  email   String? @db.VarChar(255)
+  phone   String? @db.VarChar(50)
+  city    String? @db.VarChar(150)
+  state   String? @db.VarChar(150)
+  address String? @db.VarChar(255)
+
+  // ── Información demográfica (solo PN; en PJ va null) ───
+  birthDate      DateTime? @map("birth_date") @db.Date
+  birthCity      String?   @map("birth_city") @db.VarChar(150)
+  gender         String?   @db.VarChar(5)
+  ageRange       String?   @map("age_range") @db.VarChar(10)
+  documentStatus String?   @map("document_status") @db.VarChar(50) // estadoDocumento: Vigente, Cancelada...
+
+  // ── Perfil PJ del bureau (solo PJ; en PN va null) ─────
+  // Bloque de dominio (perfil general, matrícula, rep. legal, junta, revisoría,
+  // socios, contacto) armado por el mapper con nombres propios (NO crudo del
+  // proveedor). Es "estado actual" del cliente: se refresca en cada consulta.
+  // El historial inmutable sigue en CreditBureauConsultation.rawResponse.
+  bureauProfile   Json?     @map("bureau_profile") @db.JsonB
+
+  // ── Trazabilidad de la consulta ───────────────────────
+  bureauCreated   Boolean   @default(true) @map("bureau_created") // nació de una consulta al bureau
+  lastConsultedAt DateTime? @map("last_consulted_at") // = última consultaAt exitosa
+
+  createdBy String   @map("created_by") @db.Uuid
+  updatedBy String   @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company            Company                     @relation(fields: [companyId], references: [id])
+  personType         Parameter                   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
+  identificationType Parameter?                  @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
+  economicActivity   Parameter?                  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
+  createdByUser      Profile                     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser      Profile                     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
+  creditStudies      CreditStudy[]
+  aiAnalyses         AiAnalysis[]
+  promissoryNotes    PromissoryNote[]
+  bureauConsultations CreditBureauConsultation[]
+  riskSnapshots      CustomerRiskSnapshot[]
+  financialPeriods   FinancialStatementPeriod[]
+  financialAnalyses  FinancialAnalysis[]
+
+  // Un cliente por identificación dentro de una empresa. Soporta el upsert de la
+  // consulta al bureau (refrescar si existe, crear si no) de forma race-safe.
+  @@unique([companyId, identificationNumber])
   @@map("customers")
 }
 
 // ─── Estudio de crédito ─────────────────────────────────────
+
+// El estudio de crédito ya NO guarda las cifras crudas ni los indicadores
+// derivados: las cifras viven en FinancialStatementPeriod (una fila por
+// año/fuente, colgando del Customer) y los indicadores en FinancialAnalysis (un
+// cálculo por par de períodos). El estudio CONGELA qué análisis usó mediante la
+// join CreditStudyFinancialAnalysis (trazabilidad: si el cliente cambia su salud
+// financiera en una consulta posterior, el estudio viejo sigue apuntando a los
+// que se usaron cuando se hizo). Aquí quedan solo la SOLICITUD (cupo/plazo
+// pedido) y el RESULTADO (viabilidad), que dependen de la solicitud y no del
+// EEFF. La viabilidad se calcula en un endpoint separado.
 
 model CreditStudy {
   id             String    @id @default(uuid()) @db.Uuid
@@ -423,72 +514,280 @@ model CreditStudy {
   requestedTerm       Int?   @map("requested_term") // Plazo solicitado
   requestedCreditLine Float? @map("requested_credit_line") // Cupo total solicitado
 
-  // ── Balance General ────────────────────────────────────
-  balanceSheetDate              DateTime? @map("balance_sheet_date") // Balance sheet date
-  cashAndEquivalents            Float?    @map("cash_and_equivalents") // Efectivo y equivalentes
-  accountsReceivable1           Float?    @map("accounts_receivable_1") // Cuentas por cobrar 1
-  accountsReceivable2           Float?    @map("accounts_receivable_2") // Cuentas por cobrar 2
-  inventories1                  Float?    @map("inventories_1") // Inventarios 1
-  inventories2                  Float?    @map("inventories_2") // Inventarios 2
-  totalCurrentAssets            Float?    @map("total_current_assets") // Total activo corriente
-  fixedAssetsProperty           Float?    @map("fixed_assets_property") // Activos fijos / propiedad
-  totalNonCurrentAssets         Float?    @map("total_non_current_assets") // Total activo no corriente
-  totalAssets                   Float?    @map("total_assets") // Total activo
-  shortTermFinancialLiabilities Float?    @map("short_term_financial_liabilities") // Obligaciones financieras CP
-  suppliers1                    Float?    @map("suppliers_1") // Proveedores 1
-  suppliers2                    Float?    @map("suppliers_2") // Proveedores 2
-  totalCurrentLiabilities       Float?    @map("total_current_liabilities") // Total pasivo corriente
-  longTermFinancialLiabilities  Float?    @map("long_term_financial_liabilities") // Obligaciones financieras LP
-  totalNonCurrentLiabilities    Float?    @map("total_non_current_liabilities") // Total pasivo no corriente
-  totalLiabilities              Float?    @map("total_liabilities") // Total pasivo
-  retainedEarnings              Float?    @map("retained_earnings") // Ganancias acumuladas
-  equity                        Float?    @map("equity") // Patrimonio
-
-  // ── Estado de Resultados ───────────────────────────────
-  incomeStatementId       Int?   @map("income_statement_id") // Estado de resultados (ID parámetro)
-  ordinaryActivityRevenue Float? @map("ordinary_activity_revenue") // Ingresos actividades ordinarias
-  costOfSales             Float? @map("cost_of_sales") // Costo de ventas
-  grossProfit             Float? @map("gross_profit") // Utilidad bruta
-  administrativeExpenses  Float? @map("administrative_expenses") // Gastos de administración
-  sellingExpenses         Float? @map("selling_expenses") // Gastos de ventas
-  depreciation            Float? @map("depreciation") // Depreciación
-  amortization            Float? @map("amortization") // Amortización
-  financialExpenses       Float? @map("financial_expenses") // Gastos financieros
-  taxes                   Float? @map("taxes") // Impuestos
-  netIncome               Float? @map("net_income") // Utilidad neta
-
-  // ── Indicadores calculados ─────────────────────────────
-  stabilityFactor            Float? @map("stability_factor") // Factor de estabilidad
-  ebitda                     Float? @map("ebitda") // EBITDA
-  adjustedEbitda             Float? @map("adjusted_ebitda") // EBITDA ajustado
-  currentDebtService         Float? @map("current_debt_service") // Servicio de deuda actual
-  annualPaymentCapacity      Float? @map("annual_payment_capacity") // Capacidad de pago anual
-  monthlyPaymentCapacity     Float? @map("monthly_payment_capacity") // Capacidad de pago mensual
-  accountsReceivableTurnover Float? @map("accounts_receivable_turnover") // Rotación de cartera
-  inventoryTurnover          Float? @map("inventory_turnover") // Rotación de inventarios
-  suppliersTurnover          Float? @map("suppliers_turnover") // Rotación de proveedores
-  paymentTimeSuppliers       Float? @map("payment_time_suppliers") // Tiempo de pago a proveedores (dias)
-  accountsPayableTurnover    Float? @map("accounts_payable_turnover") // Rotacion de cuentas por pagar
-
-  // ── Viabilidad ────────────────────────────────────────
+  // ── Resultado / Viabilidad (lo llena el endpoint de cálculo) ──
   recommendedTerm       Int?    @map("recommended_term") // Plazo recomendado (días)
   recommendedCreditLine Float?  @map("recommended_credit_line") // Cupo recomendado ($)
   viabilityScore        Int?    @map("viability_score") // Score 0-100
   viabilityStatus       String? @map("viability_status") // 'approved' | 'conditional' | 'rejected'
   viabilityConditions   Json?   @map("viability_conditions") // JSON con dimensiones, alertas y resumen
-  reliabilityFlags      Json?   @map("reliability_flags") // Red flags de fiabilidad de los EEFF (detectadas por IA al extraer el PDF)
 
-  customer        Customer         @relation(fields: [customerId], references: [id])
-  company         Company          @relation(fields: [companyId], references: [id])
-  status          Parameter        @relation("CreditStudyStatus", fields: [statusId], references: [id])
-  incomeStatement Parameter?       @relation("CreditStudyIncomeStatement", fields: [incomeStatementId], references: [id])
-  createdByUser   Profile          @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser   Profile          @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
-  aiAnalyses      AiAnalysis[]
-  promissoryNotes PromissoryNote[]
+  // Config de scoring con la que se realizó el análisis. Se graba al REALIZAR el
+  // estudio (no al crearlo); nullable hasta entonces. Congela por referencia los
+  // pesos usados → reconfigurar la empresa no recalcula este estudio.
+  scoringConfigurationId String? @map("scoring_configuration_id") @db.Uuid
+
+  customer            Customer                       @relation(fields: [customerId], references: [id])
+  company             Company                        @relation(fields: [companyId], references: [id])
+  status              Parameter                      @relation("CreditStudyStatus", fields: [statusId], references: [id])
+  createdByUser       Profile                        @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser       Profile                        @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
+  scoringConfiguration ScoringConfiguration?         @relation(fields: [scoringConfigurationId], references: [id])
+  aiAnalyses          AiAnalysis[]
+  promissoryNotes     PromissoryNote[]
   analysisConsumption AnalysisConsumption?
+  financialAnalyses   CreditStudyFinancialAnalysis[]
 
   @@map("credit_studies")
+}
+
+// ─── Período financiero del cliente (cifras crudas de UN año) ───────────
+// EL HECHO: el balance/EERR de UN año fiscal, de UNA fuente. Pertenece al
+// CLIENTE, no al estudio. Un cliente acumula varios: los que carga vía PDF y los
+// que llegan de DataCrédito (o futuras fuentes). Append-only: cada extracción
+// inserta filas nuevas aunque repitan año+fuente (trazabilidad de qué cifras se
+// vieron en cada momento). Solo guarda cifras CRUDAS — NADA de indicadores: los
+// indicadores dependen de DOS períodos y viven en FinancialAnalysis.
+
+model FinancialStatementPeriod {
+  id         String @id @default(uuid()) @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  companyId  String @map("company_id") @db.Uuid
+
+  // Origen de las cifras. 'pdf_upload' (cargado por el usuario) | 'datacredito'
+  // (extraído de la respuesta MiDecisor) | otras fuentes futuras.
+  source     String  @db.VarChar(30)
+  fiscalYear Int     @map("fiscal_year") // año fiscal del estado (2024, 2023...)
+  // Período del estado de resultados (mensual/anual): rige la anualización de
+  // los cálculos. Parameter (income_statement).
+  incomeStatementId Int?      @map("income_statement_id")
+  balanceSheetDate  DateTime? @map("balance_sheet_date") @db.Date
+
+  // Si vino de una consulta al bureau, se ata al snapshot que lo originó
+  // (trazabilidad de "estas cifras salieron de esta consulta").
+  consultationId String? @map("consultation_id") @db.Uuid
+
+  // Análisis al que pertenece este período. N períodos cuelgan de un análisis
+  // (la extracción trae 2, 3 o más años). El corriente/anterior para los
+  // indicadores se resuelve por fiscalYear DESC (no hay campo que los marque).
+  analysisId String? @map("analysis_id") @db.Uuid
+
+  // ── Balance General (cifras crudas) ────────────────────
+  cashAndEquivalents            Float? @map("cash_and_equivalents")
+  accountsReceivable            Float? @map("accounts_receivable")
+  inventories                   Float? @map("inventories")
+  totalCurrentAssets            Float? @map("total_current_assets")
+  fixedAssetsProperty           Float? @map("fixed_assets_property")
+  totalNonCurrentAssets         Float? @map("total_non_current_assets")
+  totalAssets                   Float? @map("total_assets")
+  shortTermFinancialLiabilities Float? @map("short_term_financial_liabilities")
+  suppliers                     Float? @map("suppliers")
+  totalCurrentLiabilities       Float? @map("total_current_liabilities")
+  longTermFinancialLiabilities  Float? @map("long_term_financial_liabilities")
+  totalNonCurrentLiabilities    Float? @map("total_non_current_liabilities")
+  totalLiabilities              Float? @map("total_liabilities")
+  retainedEarnings              Float? @map("retained_earnings")
+  equity                        Float? @map("equity")
+
+  // ── Estado de Resultados (cifras crudas) ───────────────
+  ordinaryActivityRevenue Float? @map("ordinary_activity_revenue")
+  costOfSales             Float? @map("cost_of_sales")
+  grossProfit             Float? @map("gross_profit")
+  administrativeExpenses  Float? @map("administrative_expenses")
+  sellingExpenses         Float? @map("selling_expenses")
+  depreciation            Float? @map("depreciation")
+  amortization            Float? @map("amortization")
+  financialExpenses       Float? @map("financial_expenses")
+  taxes                   Float? @map("taxes")
+  netIncome               Float? @map("net_income")
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer        Customer                  @relation(fields: [customerId], references: [id])
+  company         Company                   @relation(fields: [companyId], references: [id])
+  incomeStatement Parameter?                @relation("FinancialStatementIncomeStatement", fields: [incomeStatementId], references: [id])
+  consultation    CreditBureauConsultation? @relation(fields: [consultationId], references: [id])
+  createdByUser   Profile                   @relation("FinancialStatementCreatedBy", fields: [createdBy], references: [id])
+  analysis        FinancialAnalysis?        @relation("FinancialAnalysisPeriods", fields: [analysisId], references: [id])
+
+  @@index([customerId, fiscalYear])
+  @@index([companyId, createdAt])
+  @@index([analysisId])
+  @@map("financial_statement_periods")
+}
+
+// ─── Análisis financiero (indicadores de un PAR de períodos) ────────────
+// EL CÁLCULO: los indicadores (EBITDA, factor de estabilidad, rotaciones,
+// capacidad de pago) NO dependen de un año sino de DOS — el período corriente
+// (EERR + saldos de cierre) y el anterior (saldo de apertura para promediar
+// rotaciones). Por eso viven aquí y no en FinancialStatementPeriod. priorPeriod
+// es opcional: si la fuente solo trajo un año, el anterior se toma como ceros.
+// Los indicadores se derivan con computeFinancialIndicators (algoritmo Altman).
+
+model FinancialAnalysis {
+  id         String @id @default(uuid()) @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  companyId  String @map("company_id") @db.Uuid
+
+  // De qué fuente salió el conjunto de períodos (redundante con los períodos,
+  // pero práctico para filtrar). 'pdf_upload' | 'datacredito' | ...
+  source String @db.VarChar(30)
+
+  // Los períodos (N años) cuelgan del análisis vía FinancialStatementPeriod.
+  // analysisId. El corriente/anterior para los indicadores se resuelve por
+  // fiscalYear DESC (los 2 más recientes). No hay FK fija a un par.
+
+  // Red flags de fiabilidad detectadas por la IA al extraer el PDF. Atadas al
+  // análisis que las originó (source='pdf_upload'). Vacío/null para datacredito.
+  reliabilityFlags Json? @map("reliability_flags")
+
+  // Ratios financieros estándar de presentación (ROA, ROE, márgenes, razón
+  // corriente, prueba ácida, apalancamiento, crecimiento, variaciones, etc.).
+  // NO alimentan la viabilidad: son para lectura del analista en el step2. Se
+  // calculan igual para PDF y DataCrédito (columnas comparables). JSONB porque
+  // es un bloque de display de forma evolutiva, no filtrable.
+  ratios Json? @map("ratios")
+
+  // ── Indicadores derivados del par de períodos ──────────
+  stabilityFactor            Float? @map("stability_factor") // Factor de estabilidad (Z-score de Altman → escalón)
+  ebitda                     Float? @map("ebitda")
+  adjustedEbitda             Float? @map("adjusted_ebitda")
+  currentDebtService         Float? @map("current_debt_service")
+  annualPaymentCapacity      Float? @map("annual_payment_capacity")
+  monthlyPaymentCapacity     Float? @map("monthly_payment_capacity")
+  accountsReceivableTurnover Float? @map("accounts_receivable_turnover")
+  inventoryTurnover          Float? @map("inventory_turnover")
+  suppliersTurnover          Float? @map("suppliers_turnover")
+  paymentTimeSuppliers       Float? @map("payment_time_suppliers")
+  accountsPayableTurnover    Float? @map("accounts_payable_turnover")
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer      Customer                 @relation(fields: [customerId], references: [id])
+  company       Company                  @relation(fields: [companyId], references: [id])
+  createdByUser Profile                  @relation("FinancialAnalysisCreatedBy", fields: [createdBy], references: [id])
+  periods       FinancialStatementPeriod[] @relation("FinancialAnalysisPeriods")
+  creditStudies CreditStudyFinancialAnalysis[]
+
+  @@index([customerId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("financial_analyses")
+}
+
+// ─── Join: qué análisis financieros usó cada estudio (congelación) ──────
+// N:M explícita entre CreditStudy y FinancialAnalysis. Al crear el estudio se
+// listan aquí los análisis que se consideraron; queda CONGELADO: aunque después
+// lleguen EEFF nuevos al cliente, el estudio sigue apuntando a los suyos.
+
+model CreditStudyFinancialAnalysis {
+  id                  String   @id @default(uuid()) @db.Uuid
+  creditStudyId       String   @map("credit_study_id") @db.Uuid
+  financialAnalysisId String   @map("financial_analysis_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  creditStudy       CreditStudy       @relation(fields: [creditStudyId], references: [id])
+  financialAnalysis FinancialAnalysis @relation(fields: [financialAnalysisId], references: [id])
+
+  @@unique([creditStudyId, financialAnalysisId])
+  @@index([financialAnalysisId])
+  @@map("credit_study_financial_analyses")
+}
+
+// ─── Consulta a central de riesgo (snapshot crudo, append-only) ─────────
+// CAPA DE ARCHIVO de la integración con DataCrédito Experian (MiDecisor). Una
+// fila por cada llamada que devolvió información. Es la prueba literal de qué
+// dijo la central ese día: rawResponse guarda la respuesta COMPLETA sin trocear
+// ni interpretar, de modo que absorbe cambios de forma del proveedor sin
+// migración. La app NUNCA lee de aquí para operar: para eso están las tablas de
+// dominio (Customer, CustomerRiskSnapshot, FinancialStatement), pobladas por el
+// traductor experian.mapper.ts. Nunca se actualiza. Solo se escribe cuando la
+// consulta trajo datos (conInformacion=true); sin datos → no se persiste nada.
+
+model CreditBureauConsultation {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @map("company_id") @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  createdBy  String @map("created_by") @db.Uuid
+  provider   String @default("experian") @db.VarChar(30)
+
+  personType String @map("person_type") @db.VarChar(5) // 'PN' | 'PJ'
+
+  // ── infoTransaccion (metadata de la llamada / bitácora) ──
+  consultaAt       DateTime @map("consulta_at") // fecha/hora de la consulta según la central
+  tipoIdDigitado   String   @map("tipo_id_digitado") @db.VarChar(10)
+  numeroIdDigitado String   @map("numero_id_digitado") @db.VarChar(50)
+  txCode           String?  @map("tx_code") @db.VarChar(5) // codigosRespuesta TX (02, 17...)
+  codigosRespuesta Json?    @map("codigos_respuesta") @db.JsonB // [{clave,valor}] CC/HC/DE/SS...
+  // Tabla 1: [{clave,valor,descripcion}] — descripción del manual solo para clave TX.
+  codigosRespuestaLabeled Json? @map("codigos_respuesta_labeled") @db.JsonB
+  httpStatus       Int      @map("http_status")
+
+  // ── Archivo crudo (respuesta COMPLETA, literal) ──
+  rawResponse Json @map("raw_response") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company             Company              @relation(fields: [companyId], references: [id])
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  createdByUser       Profile              @relation("CreditBureauConsultationCreatedBy", fields: [createdBy], references: [id])
+  riskSnapshot        CustomerRiskSnapshot?
+  financialPeriods    FinancialStatementPeriod[]
+
+  @@index([customerId, consultaAt]) // "última consulta de este customer"
+  @@index([companyId, createdAt])
+  @@map("credit_bureau_consultations")
+}
+
+// ─── Foto de riesgo del cliente por consulta (dominio, inmutable) ───────
+// CAPA DE DOMINIO: los campos de riesgo/comportamiento que la app consume,
+// traducidos a nombres propios por experian.mapper.ts (no dialecto del
+// proveedor). Una fila 1:1 con cada consulta → historial de cómo evolucionó el
+// riesgo del cliente. "Riesgo actual" = el snapshot más reciente. Promoción
+// incremental: solo se traduce lo que la app usa hoy; el resto queda dormido en
+// CreditBureauConsultation.rawResponse, listo para promoverse después.
+
+model CustomerRiskSnapshot {
+  id             String @id @default(uuid()) @db.Uuid
+  consultationId String @unique @map("consultation_id") @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+
+  // Campos promovidos (algunos aplican solo a PN o solo a PJ → el otro va null)
+  score           Int? // PN: informacionRiesgo.score / PJ: puntajeScore
+  viabilidad      String? @db.VarChar(20) // PN
+  ratingRecaudos  String? @map("rating_recaudos") @db.VarChar(5) // PN
+  nivelRiesgo     String? @map("nivel_riesgo") @db.VarChar(20) // PJ: nivel
+  ratingSectorial String? @map("rating_sectorial") @db.VarChar(20) // PJ
+  montoSugerido   Float?  @map("monto_sugerido")
+  saldoActual     Float?  @map("saldo_actual") // indicadoresValores.saldoActual
+  porcentajeDeuda Float?  @map("porcentaje_deuda")
+  saldoMora       Float?  @map("saldo_mora")
+  hasAlertas      Boolean @default(false) @map("has_alertas")
+
+  // Descripciones del manual Experian para los códigos escalares de riesgo
+  // (Tablas 11-14). El código crudo vive en su columna; el label es puro display.
+  viabilidadLabel      String? @map("viabilidad_label") @db.VarChar(80) // Tabla 11 (PN)
+  ratingRecaudosLabel  String? @map("rating_recaudos_label") @db.VarChar(255) // Tabla 12 (PN)
+  nivelRiesgoLabel     String? @map("nivel_riesgo_label") @db.VarChar(80) // Tabla 13 (PJ)
+  ratingSectorialLabel String? @map("rating_sectorial_label") @db.VarChar(80) // Tabla 14 (PJ)
+
+  // Bloques temporales de la consulta (listas/árbol con su descripción). JSONB
+  // porque cambian por consulta y su forma es una lista; se archivan aquí para
+  // conservar el histórico por snapshot (no en Customer, que se sobrescribe).
+  creditPortfolio Json? @map("credit_portfolio") // Tabla 8  (PJ): tipos de crédito
+  paymentBehavior Json? @map("payment_behavior") // Tabla 9  (PN+PJ): vector mensual
+  creditSectors   Json? @map("credit_sectors") // Tabla 10 (PN+PJ): sectores
+  linkNetwork     Json? @map("link_network") // Tabla 15 (PJ): malla de vínculos
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  consultation CreditBureauConsultation @relation(fields: [consultationId], references: [id])
+  customer     Customer                 @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("customer_risk_snapshots")
 }
 
 // ─── Análisis de IA ──────────────────────────────────────────

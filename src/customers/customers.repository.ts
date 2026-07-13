@@ -6,13 +6,6 @@ import { Prisma } from '../../generated/prisma/client.js';
 export class CustomersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.CustomerUncheckedCreateInput) {
-    return this.prisma.customer.create({
-      data,
-      include: { personType: true, company: true },
-    });
-  }
-
   async findAll(params: {
     skip: number;
     take: number;
@@ -38,33 +31,13 @@ export class CustomersRepository {
   async findById(id: string, companyId: string) {
     return this.prisma.customer.findFirst({
       where: { id, companyId },
-      include: { personType: true, company: true, economicActivity: true },
+      include: {
+        personType: true,
+        company: true,
+        economicActivity: true,
+        identificationType: true,
+      },
     });
-  }
-
-  async findByIdentification(identificationNumber: string, companyId: string) {
-    return this.prisma.customer.findFirst({
-      where: { identificationNumber, companyId },
-    });
-  }
-
-  async update(id: string, data: Prisma.CustomerUncheckedUpdateInput) {
-    return this.prisma.customer.update({
-      where: { id },
-      data,
-      include: { personType: true, company: true },
-    });
-  }
-
-  async delete(id: string) {
-    return this.prisma.customer.delete({ where: { id } });
-  }
-
-  async hasCreditStudies(id: string): Promise<boolean> {
-    const count = await this.prisma.creditStudy.count({
-      where: { customerId: id },
-    });
-    return count > 0;
   }
 
   async findCreditStudiesByCustomerId(params: {
@@ -88,7 +61,6 @@ export class CustomersRepository {
       include: {
         personType: true,
         identificationType: true,
-        legalRepIdentificationType: true,
         economicActivity: true,
       },
     });

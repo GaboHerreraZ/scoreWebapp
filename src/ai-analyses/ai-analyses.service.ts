@@ -8,13 +8,92 @@ import { AiAnalysesRepository } from './ai-analyses.repository.js';
 import { AiService } from '../ai/ai.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import {
+  FINANCIAL_PDF_EXTRACTION_PROMPT,
   CREDIT_STUDY_SYSTEM_PROMPT,
   buildCreditStudyUserMessage,
-  FINANCIAL_PDF_EXTRACTION_PROMPT,
+  type CreditStudyPromptInput,
+  type PromptFinancialSource,
 } from '../ai/prompts/credit-study-analysis.prompt.js';
+import { scoreToBand } from '../scoring/scoring.constants.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+
+/** Red flag de fiabilidad que la IA detecta al analizar el PDF. */
+export interface ReliabilityFlag {
+  severity: string;
+  category: string;
+  title: string;
+  detail: string;
+}
+
+/** Forma cruda que devuelve la IA al extraer el PDF (antes de normalizar). */
+interface ExtractPdfResponse {
+  financialData?: Record<string, unknown>;
+  reliabilityFlags?: ReliabilityFlag[];
+}
+
+/** Resultado de extractPdf: cifras normalizadas + red flags. */
+export interface ExtractPdfResult {
+  financialData: Record<string, unknown>;
+  reliabilityFlags: ReliabilityFlag[];
+  extractionId: string;
+}
+
+/**
+ * Forma (parcial) del ScoringResult persistido en CreditStudy.viabilityConditions
+ * por performStudy. Solo lo que el prompt IA consume; se lee como JSON.
+ */
+interface ScoringResultShape {
+  dimensions: Record<
+    string,
+    {
+      label: string;
+      ratio: number | null;
+      weight: number;
+      contribution: number;
+      status: string;
+      evaluable: boolean;
+    }
+  >;
+  alerts: Array<{ type: string; dimension: string; message: string }>;
+  approvedCreditLine?: {
+    amount: number | null;
+    requested: number | null;
+    suggestedByBureau: number | null;
+    cappedByBureau: boolean;
+  };
+  keyFigures?: {
+    monthlyPaymentCapacity: number;
+    annualPaymentCapacity: number;
+    estimatedMonthlyQuota: number;
+    paymentCoverageRatio: number | null;
+    currentDebtService: number;
+    ebitda: number;
+    accountsReceivableTurnover: number;
+    inventoryTurnover: number;
+    paymentTimeSuppliers: number;
+    cashConversionCycle: number;
+    stabilityFactor: number;
+  };
+  summary?: {
+    calculationSource: 'datacredito' | 'pdf' | 'none';
+    financialsVerified: boolean;
+    eliminatoryReason?: string | null;
+  };
+  pdfReliabilityFlags?: Array<{
+    severity: string;
+    category: string;
+    title: string;
+    detail: string;
+  }>;
+  centralRiskFlags?: Array<{
+    severity: string;
+    category: string;
+    title: string;
+    detail: string;
+  }>;
+}
 
 @Injectable()
 export class AiAnalysesService {
@@ -37,24 +116,33 @@ export class AiAnalysesService {
     return param.id;
   }
 
+  /**
+   * Genera el INFORME EJECUTIVO IA de un estudio ya realizado (modelo v2). Lee el
+   * ScoringResult persistido (viabilityConditions: score, 7 dimensiones
+   * ponderadas, alertas, monto aprobado, red flags del PDF), las dos fuentes de
+   * EEFF (PDF y/o DataCrédito) y el snapshot de la central, y arma un prompt
+   * consciente del tipo de persona (PN/PJ). Registra la corrida en AiAnalysis.
+   */
   async analyze(creditStudyId: string, companyId: string, userId: string) {
-    // 1. Get analysis type parameter
+    // 1. Tipo de análisis (creditReview).
     const typeId = await this.getTypeId('creditReview');
 
-    // 2. Validate credit study exists and belongs to company
-    const study = await this.repository.findCreditStudyWithCustomer(
+    // 2. Cargar el estudio con todo lo necesario para el modelo v2.
+    const inputs = await this.repository.findStudyForAiAnalysis(
       creditStudyId,
       companyId,
     );
-    if (!study) {
+    if (!inputs) {
       throw new NotFoundException(
         `Estudio de credito con id=${creditStudyId} no encontrado en esta empresa`,
       );
     }
+    const { study, analyses, riskSnapshot } = inputs;
+    const customer = study.customer;
 
-    // 3. Validate study has been performed (has viability data)
+    // 3. El estudio debe estar realizado (tiene el ScoringResult persistido).
     if (
-      !study.viabilityScore ||
+      study.viabilityScore === null ||
       !study.viabilityStatus ||
       !study.viabilityConditions
     ) {
@@ -66,52 +154,78 @@ export class AiAnalysesService {
     // 4. El IA va incluido en el estudio: el crédito ya se consumió al crear el
     //    CreditStudy (modelo de bolsas). No hay límite adicional por suscripción.
 
-    // 5. Build the prompt
-    const customer = study.customer;
-    const viabilityConditions = study.viabilityConditions as {
-      dimensions: Record<
-        string,
-        { score: number; maxScore: number; status: string; label: string }
-      >;
-      alerts: Array<{ type: string; dimension: string; message: string }>;
-      summary: { totalScore: number; maxScore: number; status: string };
-    };
+    // 5. Armar la entrada del prompt desde el ScoringResult + fuentes + central.
+    const result = study.viabilityConditions as unknown as ScoringResultShape;
+    const isLegalEntity = customer.personType?.code === 'legalEntity';
 
-    const userMessage = buildCreditStudyUserMessage({
+    const financialSources: PromptFinancialSource[] = analyses.map((a) => ({
+      source: a.source === 'datacredito' ? 'datacredito' : 'pdf_upload',
+      periods: a.periods.map((p) => ({
+        fiscalYear: p.fiscalYear,
+        ordinaryActivityRevenue: p.ordinaryActivityRevenue,
+        costOfSales: p.costOfSales,
+        grossProfit: p.grossProfit,
+        netIncome: p.netIncome,
+        totalAssets: p.totalAssets,
+        totalLiabilities: p.totalLiabilities,
+        equity: p.equity,
+      })),
+      indicators: {
+        ebitda: a.ebitda,
+        adjustedEbitda: a.adjustedEbitda,
+        stabilityFactor: a.stabilityFactor,
+        currentDebtService: a.currentDebtService,
+        monthlyPaymentCapacity: a.monthlyPaymentCapacity,
+        annualPaymentCapacity: a.annualPaymentCapacity,
+        accountsReceivableTurnover: a.accountsReceivableTurnover,
+        inventoryTurnover: a.inventoryTurnover,
+        paymentTimeSuppliers: a.paymentTimeSuppliers,
+      },
+    }));
+
+    const promptInput: CreditStudyPromptInput = {
       customerName: customer.businessName,
       customerCity: customer.city ?? 'No especificada',
-      seniority: customer.seniority ?? 0,
+      isLegalEntity,
+      personTypeLabel:
+        customer.personType?.description ??
+        customer.personType?.label ??
+        (isLegalEntity ? 'Persona Juridica' : 'Persona Natural'),
       requestedTerm: study.requestedTerm ?? 0,
       requestedCreditLine: study.requestedCreditLine ?? 0,
       viabilityScore: study.viabilityScore,
       viabilityStatus: study.viabilityStatus,
-      recommendedTerm: study.recommendedTerm ?? 0,
-      recommendedCreditLine: study.recommendedCreditLine ?? 0,
-      monthlyPaymentCapacity: study.monthlyPaymentCapacity ?? 0,
-      annualPaymentCapacity: study.annualPaymentCapacity ?? 0,
-      ebitda: study.ebitda ?? 0,
-      adjustedEbitda: study.adjustedEbitda ?? 0,
-      stabilityFactor: study.stabilityFactor ?? 0,
-      currentDebtService: study.currentDebtService ?? 0,
-      totalAssets: study.totalAssets ?? 0,
-      totalLiabilities: study.totalLiabilities ?? 0,
-      equity: study.equity ?? 0,
-      ordinaryActivityRevenue: study.ordinaryActivityRevenue ?? 0,
-      costOfSales: study.costOfSales ?? 0,
-      grossProfit: study.grossProfit ?? 0,
-      netIncome: study.netIncome ?? 0,
-      accountsReceivableTurnover: study.accountsReceivableTurnover ?? 0,
-      inventoryTurnover: study.inventoryTurnover ?? 0,
-      paymentTimeSuppliers: study.paymentTimeSuppliers ?? 0,
-      viabilityConditions,
-      reliabilityFlags: study.reliabilityFlags as Array<{
-        severity: string;
-        category: string;
-        title: string;
-        detail: string;
-      }> | null,
-    });
+      approvedCreditLine: result.approvedCreditLine ?? {
+        amount: study.recommendedCreditLine ?? null,
+        requested: study.requestedCreditLine ?? null,
+        suggestedByBureau: riskSnapshot?.montoSugerido ?? null,
+        cappedByBureau: false,
+      },
+      calculationSource: result.summary?.calculationSource ?? 'none',
+      financialsVerified: result.summary?.financialsVerified ?? false,
+      keyFigures: result.keyFigures,
+      financialSources,
+      centralRisk: riskSnapshot
+        ? {
+            score: riskSnapshot.score,
+            scoreBandLabel:
+              riskSnapshot.score !== null
+                ? scoreToBand(riskSnapshot.score).label
+                : null,
+            nivelRiesgo: riskSnapshot.nivelRiesgo,
+            ratingSectorial: riskSnapshot.ratingSectorial,
+            hasArrears: this.detectArrears(riskSnapshot.paymentBehavior),
+            montoSugerido: riskSnapshot.montoSugerido,
+          }
+        : null,
+      dimensions: result.dimensions ?? {},
+      alerts: result.alerts ?? [],
+      eliminatoryReason: result.summary?.eliminatoryReason ?? null,
+      pdfReliabilityFlags: result.pdfReliabilityFlags ?? [],
+      centralRiskFlags: result.centralRiskFlags ?? [],
+    };
 
+    const userMessage = buildCreditStudyUserMessage(promptInput);
     const fullPrompt = `[SYSTEM]\n${CREDIT_STUDY_SYSTEM_PROMPT}\n\n[USER]\n${userMessage}`;
 
     // 6. Call Claude AI
@@ -183,36 +297,25 @@ export class AiAnalysesService {
   }
 
   /**
-   * Vincula la fila de extracción PDF (creada antes del estudio) a su
-   * CreditStudy. Best-effort: si falla, no rompe el flujo de creación del estudio.
+   * Corre la extracción IA sobre un PDF de estados financieros y registra la
+   * corrida en la tabla AiAnalysis (log central de IA: tokens, costo, PDF
+   * binario). Devuelve las cifras y las red flags para que el llamador
+   * (FinancialStatementsService) las persista como períodos + análisis.
+   *
+   * El estudio ya existe en el flujo nuevo, así que la fila de AiAnalysis nace
+   * ya ligada a él (creditStudyId/customerId). El crédito se consumió al crear
+   * el estudio (modelo de bolsas), así que aquí no hay cobro.
    */
-  async linkExtractionToCreditStudy(
-    extractionId: string,
-    creditStudyId: string,
-  ) {
-    try {
-      await this.repository.linkToCreditStudy(extractionId, creditStudyId);
-    } catch (error) {
-      this.logger.warn(
-        `No se pudo vincular la extracción ${extractionId} al estudio ${creditStudyId}: ${
-          error instanceof Error ? error.message : 'error desconocido'
-        }`,
-      );
-    }
-  }
-
-  async extractPdf(pdfBuffer: Buffer, companyId: string, userId: string) {
+  async extractPdf(
+    pdfBuffer: Buffer,
+    companyId: string,
+    userId: string,
+    context?: { creditStudyId?: string; customerId?: string },
+  ): Promise<ExtractPdfResult> {
     // 1. Get extraction type parameter
     const typeId = await this.getTypeId('financialStatementsPdfUpload');
 
-    // 2. La extracción va incluida en el crédito del estudio (modelo de bolsas):
-    //    el cobro ocurre al crear el CreditStudy en createFromExtraction, que
-    //    consume 1 crédito (sin saldo → 409). No hay límite por suscripción.
-    //    NOTA: la extracción IA corre antes de crear el estudio; si el estudio
-    //    falla por falta de crédito, esta extracción no quedó cobrada (borde
-    //    menor a revisar en el refactor del flujo de extracción).
-
-    // 3. Call Claude AI to extract data from PDF
+    // 2. Call Claude AI to extract data from PDF
     try {
       const aiResult = await this.aiService.extractFromPdf(
         pdfBuffer,
@@ -231,17 +334,15 @@ export class AiAnalysesService {
       if (jsonBlockMatch) {
         rawContent = jsonBlockMatch[1].trim();
       }
-      const parsed = JSON.parse(rawContent);
+      const parsed = JSON.parse(rawContent) as ExtractPdfResponse;
 
       // The prompt returns { financialData, reliabilityFlags }. Fall back to the
       // old flat shape (financial fields at the top level) for resilience.
-      const financialData = parsed.financialData ?? parsed;
-      const reliabilityFlags: Array<{
-        severity: string;
-        category: string;
-        title: string;
-        detail: string;
-      }> = Array.isArray(parsed.reliabilityFlags)
+      const financialData: Record<string, unknown> =
+        parsed.financialData ?? (parsed as Record<string, unknown>);
+      const reliabilityFlags: ReliabilityFlag[] = Array.isArray(
+        parsed.reliabilityFlags,
+      )
         ? parsed.reliabilityFlags
         : [];
 
@@ -252,12 +353,13 @@ export class AiAnalysesService {
         }
       }
 
-      // 4. Save the extraction record with the PDF file. La fila nace sin
-      //    creditStudyId (el estudio aún no existe); createFromExtraction lo
-      //    vincula después con el id que devolvemos aquí (extractionId).
+      // 3. Save the extraction record with the PDF file. En el flujo nuevo el
+      //    estudio ya existe, así que la fila queda ligada a él de una vez.
       const extraction = await this.repository.create({
         typeId,
         companyId,
+        creditStudyId: context?.creditStudyId,
+        customerId: context?.customerId,
         performedBy: userId,
         prompt: FINANCIAL_PDF_EXTRACTION_PROMPT,
         pdfFile: new Uint8Array(pdfBuffer),
@@ -318,6 +420,21 @@ export class AiAnalysesService {
       );
     }
     return analysis.pdfFile;
+  }
+
+  /**
+   * ¿El vector de comportamiento de pago de la central muestra mora? Mora = algún
+   * mes con código distinto de 'N' (al día) y de '-'/' ' (sin información). Misma
+   * regla que credit-studies (catálogo PAYMENT_BEHAVIOR).
+   */
+  private detectArrears(paymentBehavior: unknown): boolean {
+    if (!Array.isArray(paymentBehavior)) return false;
+    const items = paymentBehavior as Array<{ comportamiento?: unknown }>;
+    return items.some((item) => {
+      const raw = item?.comportamiento;
+      const code = (typeof raw === 'string' ? raw : '').trim().toUpperCase();
+      return code !== '' && code !== 'N' && code !== '-';
+    });
   }
 
   private emitNotification(
@@ -407,5 +524,4 @@ export class AiAnalysesService {
     }
     return analysis;
   }
-
 }

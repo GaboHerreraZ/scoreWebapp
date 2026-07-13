@@ -1,17 +1,10 @@
 import {
   Controller,
   Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
   Param,
   Query,
-  Req,
   Res,
   ParseUUIDPipe,
-  HttpCode,
-  HttpStatus,
   StreamableFile,
 } from '@nestjs/common';
 import {
@@ -20,12 +13,12 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { CustomersService } from './customers.service.js';
-import { CreateCustomerDto } from './dto/create-customer.dto.js';
-import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { FilterCustomerDto } from './dto/filter-customer.dto.js';
 import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
+import { CustomerDetailResponseDto } from './dto/customer-detail-response.dto.js';
+import { CustomerStatsResponseDto } from './dto/customer-stats-response.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Customers')
@@ -35,22 +28,8 @@ import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js'
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Create a customer in a company' })
-  @ApiResponse({ status: 201, description: 'Customer created successfully' })
-  @ApiResponse({
-    status: 409,
-    description:
-      'Customer with that identification already exists in this company',
-  })
-  create(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Body() dto: CreateCustomerDto,
-    @Req() req: Request,
-  ) {
-    const userId = (req as any).user.id as string;
-    return this.customersService.create(companyId, userId, dto);
-  }
+  // El alta manual de clientes (POST) se retiró: el Customer nace de una consulta
+  // a DataCrédito (módulo credit-bureau). Igual el PATCH de edición manual.
 
   @Get('export')
   @ApiOperation({ summary: 'Export customers of a company to Excel' })
@@ -98,7 +77,11 @@ export class CustomersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a customer by ID within a company' })
-  @ApiResponse({ status: 200, description: 'Customer found' })
+  @ApiResponse({
+    status: 200,
+    description: 'Customer found (PN or PJ)',
+    type: CustomerDetailResponseDto,
+  })
   @ApiResponse({
     status: 404,
     description: 'Customer not found in this company',
@@ -108,6 +91,27 @@ export class CustomersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.customersService.findById(id, companyId);
+  }
+
+  @Get(':id/stats')
+  @ApiOperation({
+    summary:
+      'Quick-glance credit behavior stats of a customer within the company',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Aggregated stats over the customer credit studies',
+    type: CustomerStatsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
+  getStats(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.customersService.getStats(id, companyId);
   }
 
   @Get(':id/credit-studies')
@@ -122,45 +126,5 @@ export class CustomersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.customersService.findCreditStudies(id, companyId);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Partially update a customer' })
-  @ApiResponse({ status: 200, description: 'Customer updated successfully' })
-  @ApiResponse({
-    status: 404,
-    description: 'Customer not found in this company',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Identification uniqueness conflict',
-  })
-  update(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCustomerDto,
-    @Req() req: Request,
-  ) {
-    const userId = (req as any).user.id as string;
-    return this.customersService.update(id, companyId, userId, dto);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a customer' })
-  @ApiResponse({ status: 204, description: 'Customer deleted successfully' })
-  @ApiResponse({
-    status: 404,
-    description: 'Customer not found in this company',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Cannot delete: has credit studies',
-  })
-  remove(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.customersService.remove(id, companyId);
   }
 }

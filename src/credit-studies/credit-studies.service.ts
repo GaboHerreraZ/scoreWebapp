@@ -4,16 +4,31 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { CreditStudiesRepository } from './credit-studies.repository.js';
-import { CreateCreditStudyDto } from './dto/create-credit-study.dto.js';
-import { UpdateCreditStudyDto } from './dto/update-credit-study.dto.js';
 import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
+import { CreateStudyFromBureauDto } from './dto/create-study-from-bureau.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
-import { getMonthsFromPeriod } from '../common/enums/income-statement-period.enum.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
 import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
+import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
+import { runScoring } from '../scoring/scoring.engine.js';
+import {
+  defaultWeightsFor,
+  PDF_RELIABILITY_FLAG_CATEGORY_LABEL,
+  type ScoringDimension,
+  type PersonTypeCode,
+} from '../scoring/scoring.constants.js';
+import type {
+  ScoringEngineInput,
+  ScoringIndicators,
+  GrossFigures,
+  CentralRiskInput,
+  PdfReliabilityFlag,
+  PaymentBehaviorMonth,
+  LegalStatusInput,
+} from '../scoring/scoring.types.js';
 
 interface ViabilityDimension {
   score?: number;
@@ -43,6 +58,16 @@ interface ViabilityConditionsShape {
   };
 }
 
+// Estados desde los que el estudio queda BLOQUEADO para editar/eliminar: una vez
+// el usuario confirma (o rechaza) el estudio realizado, ya no se toca. Cubre el
+// resto del flujo de cierre/firma.
+const LOCKED_STUDY_STATUSES = new Set([
+  'confirmed',
+  'rejected',
+  'pendingSignature',
+  'closed',
+]);
+
 @Injectable()
 export class CreditStudiesService {
   constructor(
@@ -51,100 +76,462 @@ export class CreditStudiesService {
     private readonly notificationsService: NotificationsService,
     private readonly excelService: ExcelService,
     private readonly analysisPacksService: AnalysisPacksService,
+    private readonly creditBureauService: CreditBureauService,
   ) {}
 
-  async create(companyId: string, userId: string, dto: CreateCreditStudyDto) {
-    const customerBelongs = await this.repository.customerBelongsToCompany(
-      dto.customerId,
+  /**
+   * ÚNICA entrada para crear un estudio de crédito. Consulta al cliente en la
+   * central (reusando caché si su última consulta sigue vigente) — lo que
+   * crea/actualiza el Customer — y con ese cliente crea el estudio, consumiendo
+   * 1 crédito de una bolsa vigente. El estudio nace "vacío" (solo la solicitud);
+   * los estados financieros y la viabilidad se completan después.
+   *
+   * Estado inicial: TODO estudio (PN y PJ) nace en pendingFinancialStatements —
+   * ambos deben cargar EEFF (en PN se obligó a subir PDF) antes de analizar. El
+   * flujo avanza: pendingFinancialStatements → (extract-pdf) pendingStudyAnalysis
+   * → (perform) studyCompleted.
+   */
+  async createFromBureau(
+    companyId: string,
+    userId: string,
+    dto: CreateStudyFromBureauDto,
+  ) {
+    // 1. Consultar la central (crea/actualiza el Customer). Si no hay info, el
+    //    servicio de bureau lanza 404 "cliente no existe".
+    const { customer } = await this.creditBureauService.consult(
       companyId,
+      userId,
+      dto,
     );
-    if (!customerBelongs) {
-      throw new BadRequestException('El cliente no pertenece a esta empresa');
+
+    // 2. Estado inicial: TODO estudio (PN y PJ) exige estados financieros antes
+    //    de analizar. Para PN, como Experian no reporta EEFF, el análisis corre
+    //    sobre el PDF que el usuario debe cargar → mismo estado inicial que PJ.
+    const initialStatus = await this.parametersRepository.findByCode(
+      'pendingFinancialStatements',
+    );
+    if (!initialStatus) {
+      throw new BadRequestException(
+        `No se encontró el estado inicial "pendingFinancialStatements" en parámetros.`,
+      );
     }
 
-    const { customerId, studyDate, resolutionDate, ...rest } = dto;
-
-    const newStatus = await this.parametersRepository.findByCode('inReview');
-
-    // Consume 1 crédito de una bolsa vigente y crea el estudio en la misma
-    // transacción (FIFO + lock anti doble-venta). Sin saldo → 409.
-    return this.analysisPacksService.consumeCreditForStudy({
+    // 3. Crear el estudio consumiendo 1 crédito (FIFO + lock anti doble-venta).
+    //    Sin saldo → 409. studyDate = hoy.
+    const study = await this.analysisPacksService.consumeCreditForStudy({
       companyId,
       consumedBy: userId,
       createStudy: (tx) =>
         this.repository.create(
           {
-            ...rest,
-            customerId,
+            customerId: customer.id,
             companyId,
-            studyDate: new Date(studyDate),
-            resolutionDate: resolutionDate
-              ? new Date(resolutionDate)
-              : undefined,
+            studyDate: new Date(),
+            requestedTerm: dto.requestedTerm,
+            requestedCreditLine: dto.requestedCreditLine,
             createdBy: userId,
             updatedBy: userId,
-            statusId: newStatus!.id,
+            statusId: initialStatus.id,
           },
           tx,
         ),
     });
+
+    // 4. El front consume el stepper vía GET /:id/steps (única fuente de verdad).
+    //    Aquí solo se devuelve el id del estudio recién creado.
+    return { creditStudyId: study.id };
   }
 
   /**
-   * Crea un estudio a partir de los datos extraidos de un PDF por IA.
-   * Reutiliza la validacion de create() y persiste las red flags de fiabilidad
-   * de los estados financieros detectadas durante la extraccion.
-   *
-   * La responsabilidad de leer el PDF y obtener financialData + reliabilityFlags
-   * es del AiAnalysesService; este metodo solo persiste el estudio.
+   * Datos del stepper de un estudio, consultado por id. Es la ÚNICA fuente que
+   * arma la vista del wizard del front:
+   *  - step1: identidad del cliente + su perfil de bureau (lo que trajo la
+   *    consulta a la central). Siempre presente (el estudio nace de una consulta).
+   *  - step2: estados financieros. null hasta que se carguen/extraigan.
+   *  - step3: estudio de viabilidad. null hasta que se realice.
+   * El `status` del estudio va al nivel raíz (no dentro de un step).
    */
-  async createFromExtraction(
-    companyId: string,
-    userId: string,
-    dto: CreateCreditStudyDto,
-    reliabilityFlags?: Array<{
-      severity: string;
-      category: string;
-      title: string;
-      detail: string;
-    }> | null,
-  ) {
-    const customerBelongs = await this.repository.customerBelongsToCompany(
-      dto.customerId,
-      companyId,
-    );
-    if (!customerBelongs) {
-      throw new BadRequestException('El cliente no pertenece a esta empresa');
+  async getSteps(id: string, companyId: string) {
+    const study = await this.repository.findStepsData(id, companyId);
+    if (!study) {
+      throw new NotFoundException(
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
+      );
     }
 
-    const { customerId, studyDate, resolutionDate, ...rest } = dto;
+    // Flag directo del tipo de persona para el front (evita comparar strings o
+    // resolver el id opaco). El objeto customer.personType (code/label) queda
+    // igual para mostrarlo legible.
+    const isLegalEntity = study.customer?.personType?.code === 'legalEntity';
 
-    const newStatus = await this.parametersRepository.findByCode('inReview');
+    // step2: estados financieros por fuente (pdf_upload / datacredito). Cada
+    // fuente trae sus 2 años más recientes (cifras crudas) + indicadores del
+    // núcleo + ratios de presentación. null si aún no hay ningún análisis.
+    const step2 = await this.buildFinancialStep(id);
 
-    // Igual que create(): un estudio desde extracción también consume 1 crédito.
-    return this.analysisPacksService.consumeCreditForStudy({
-      companyId,
-      consumedBy: userId,
-      createStudy: (tx) =>
-        this.repository.create(
-          {
-            ...rest,
-            customerId,
-            companyId,
-            studyDate: new Date(studyDate),
-            resolutionDate: resolutionDate
-              ? new Date(resolutionDate)
-              : undefined,
-            createdBy: userId,
-            updatedBy: userId,
-            statusId: newStatus!.id,
-            reliabilityFlags:
-              reliabilityFlags && reliabilityFlags.length > 0
-                ? (reliabilityFlags as unknown as Prisma.InputJsonValue)
-                : undefined,
-          },
-          tx,
-        ),
+    // step3: análisis de viabilidad realizado (score + dimensiones + veredicto).
+    // null hasta que se realiza el estudio (POST /:id/perform). El núcleo se arma
+    // con el MISMO builder que usa el perform → idéntico en ambos endpoints. Si
+    // además ya existe informe IA (creditReview) para el estudio, se adjunta aquí
+    // (el perform no lo trae porque en ese momento aún no se ha generado).
+    const base = this.buildStep3(study);
+    const aiRow = study.aiAnalyses?.[0] ?? null;
+    const step3 = base
+      ? {
+          ...base,
+          aiAnalysis: aiRow
+            ? {
+                id: aiRow.id,
+                result: aiRow.result,
+                model: aiRow.model,
+                createdAt: aiRow.createdAt,
+                performedBy: aiRow.performedBy,
+              }
+            : null,
+        }
+      : null;
+
+    return {
+      creditStudyId: study.id,
+      status: study.status,
+      // Información básica del estudio (la solicitud), al mismo nivel que el id
+      // para que el front la muestre en la cabecera sin abrir un step. NO es el
+      // resultado del análisis (eso vive en step3).
+      studyDate: study.studyDate,
+      request: {
+        requestedTerm: study.requestedTerm,
+        requestedCreditLine: study.requestedCreditLine,
+      },
+      step1: { isLegalEntity, customer: study.customer },
+      step2,
+      step3,
+    };
+  }
+
+  /**
+   * Arma el bloque step3 (resultado del análisis de viabilidad) a partir de un
+   * estudio. ÚNICA fuente del shape: lo usan tanto GET /:id/steps como
+   * POST /:id/perform, para que ambos devuelvan un objeto IDÉNTICO. Devuelve null
+   * si el estudio aún no fue analizado (sin viabilityConditions).
+   */
+  private buildStep3(study: {
+    viabilityScore: number | null;
+    viabilityStatus: string | null;
+    recommendedCreditLine: number | null;
+    recommendedTerm: number | null;
+    resolutionDate: Date | null;
+    viabilityConditions: unknown;
+  }) {
+    if (!study.viabilityConditions) return null;
+    return {
+      viabilityScore: study.viabilityScore,
+      viabilityStatus: study.viabilityStatus,
+      recommendedCreditLine: study.recommendedCreditLine,
+      recommendedTerm: study.recommendedTerm,
+      resolutionDate: study.resolutionDate,
+      result: study.viabilityConditions,
+    };
+  }
+
+  /**
+   * Arma el step2 (estados financieros) de un estudio a partir de sus análisis
+   * congelados. Devuelve una lista `sources`, una por análisis, con sus períodos
+   * crudos (2 años), los indicadores del núcleo y los ratios. Devuelve null si el
+   * estudio aún no tiene análisis (paso no iniciado).
+   */
+  private async buildFinancialStep(creditStudyId: string) {
+    const analyses = await this.repository.findFrozenAnalyses(creditStudyId);
+    if (analyses.length === 0) return null;
+
+    const sources = analyses.map((a) => {
+      const { ratios, periods, ...indicators } = a;
+      return {
+        source: indicators.source,
+        analysisId: indicators.id,
+        periods,
+        ratios: ratios ?? null,
+        indicators: {
+          stabilityFactor: indicators.stabilityFactor,
+          ebitda: indicators.ebitda,
+          adjustedEbitda: indicators.adjustedEbitda,
+          currentDebtService: indicators.currentDebtService,
+          annualPaymentCapacity: indicators.annualPaymentCapacity,
+          monthlyPaymentCapacity: indicators.monthlyPaymentCapacity,
+          accountsReceivableTurnover: indicators.accountsReceivableTurnover,
+          inventoryTurnover: indicators.inventoryTurnover,
+          suppliersTurnover: indicators.suppliersTurnover,
+          paymentTimeSuppliers: indicators.paymentTimeSuppliers,
+          accountsPayableTurnover: indicators.accountsPayableTurnover,
+        },
+        reliabilityFlags: indicators.reliabilityFlags ?? null,
+      };
+    });
+
+    return { sources };
+  }
+
+  /**
+   * REALIZA el análisis de viabilidad de un estudio (step3). Corre el motor de
+   * scoring de 7 dimensiones sobre la FUENTE DE VERDAD (DataCrédito) con fallback
+   * al PDF, contrasta veracidad PDF↔DataCrédito, pondera con la config vigente de
+   * la empresa, graba esa config en el estudio (congelación) y persiste el
+   * resultado (viabilityConditions + score + status). Devuelve el estudio con el
+   * análisis realizado.
+   */
+  async performStudy(id: string, companyId: string, userId: string) {
+    const inputs = await this.repository.findAnalysisInputs(id, companyId);
+    if (!inputs) {
+      throw new NotFoundException(
+        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
+      );
+    }
+    const { study, analyses, riskSnapshot, scoringConfig } = inputs;
+
+    // Bloquear si ya está confirmado/cerrado.
+    if (study.status?.code && LOCKED_STUDY_STATUSES.has(study.status.code)) {
+      throw new BadRequestException(
+        'No se puede re-analizar un estudio ya confirmado o cerrado.',
+      );
+    }
+
+    // Fuente de verdad = DataCrédito; fallback = PDF. Cada uno es un análisis
+    // congelado con sus indicadores/ratios y sus períodos (año corriente).
+    const datacredito = analyses.find((a) => a.source === 'datacredito');
+    const pdf = analyses.find((a) => a.source === 'pdf_upload');
+    const truthAnalysis = datacredito ?? pdf;
+
+    if (!truthAnalysis) {
+      throw new BadRequestException(
+        'No hay estados financieros (ni de DataCrédito ni de PDF) para analizar este estudio. Cargue el PDF de estados financieros primero.',
+      );
+    }
+
+    // Config de scoring: la vigente de la empresa PARA EL TIPO DE PERSONA del
+    // cliente; si no hay (empresa antigua sin config), se usan los pesos default
+    // del tipo en memoria (no se congela id).
+    const personTypeCode = (study.customer.personType?.code ??
+      'legalEntity') as PersonTypeCode;
+    const weights = scoringConfig
+      ? this.configToWeights(scoringConfig)
+      : defaultWeightsFor(personTypeCode);
+
+    // Armar la entrada del motor.
+    const engineInput: ScoringEngineInput = {
+      weights,
+      personType: personTypeCode,
+      request: {
+        requestedTerm: study.requestedTerm,
+        requestedCreditLine: study.requestedCreditLine,
+      },
+      indicators: this.analysisToIndicators(truthAnalysis),
+      truthFigures: datacredito
+        ? this.analysisToGrossFigures(datacredito)
+        : null,
+      pdfFigures: pdf ? this.analysisToGrossFigures(pdf) : null,
+      centralRisk: this.riskToCentralInput(riskSnapshot),
+      legalStatus: this.toLegalStatus(study.customer.bureauProfile),
+    };
+
+    const result = runScoring(engineInput);
+
+    // Inyectar las red flags de FIABILIDAD del PDF (auditan el PDF contra sí
+    // mismo; las genera la IA al extraer los EEFF). El motor no las conoce: viven
+    // en el análisis de fuente 'pdf'. Se copian al resultado para que el estudio
+    // muestre TODO junto (fiabilidad del PDF + contraste con la central).
+    result.pdfReliabilityFlags = this.extractReliabilityFlags(pdf);
+
+    // Avanzar el flujo: al realizar el análisis el estudio pasa a
+    // "Estudio Realizado" (studyCompleted). La confirmación/rechazo posterior es
+    // otro paso. Si el parámetro no existe, se deja el estado como está (no
+    // rompe el análisis).
+    const completedStatus =
+      await this.parametersRepository.findByCode('studyCompleted');
+
+    // Persistir: score/status/config congelada + el JSON de viabilidad + el
+    // avance de estado del flujo. Aquí se marca la resolución.
+    const updated = await this.repository.update(id, {
+      viabilityScore: result.summary.totalScore,
+      viabilityStatus: result.summary.status,
+      viabilityConditions: result as unknown as Prisma.InputJsonValue,
+      // Monto que Creditia avala (nunca por encima del techo de la central).
+      recommendedCreditLine: result.approvedCreditLine.amount,
+      recommendedTerm: study.requestedTerm,
+      scoringConfigurationId: scoringConfig?.id ?? null,
+      ...(completedStatus ? { statusId: completedStatus.id } : {}),
+      resolutionDate: new Date(),
+      updatedBy: userId,
+    });
+
+    // Devolver el MISMO objeto que expone GET /:id/steps → step3. Así el front
+    // reutiliza un solo mapper para el resultado del análisis, venga del perform
+    // o del stepper.
+    return this.buildStep3(updated);
+  }
+
+  // ── Helpers del análisis ─────────────────────────────────
+
+  /** Pesos de la config (columnas) → mapa por dimensión que consume el motor. */
+  private configToWeights(config: {
+    weightFinancialHealth: number;
+    weightPaymentCapacity: number;
+    weightTermCoherence: number;
+    weightCreditLineAdequacy: number;
+    weightCapitalExposure: number;
+    weightVeracity: number;
+    weightCentralRisk: number;
+  }): Record<ScoringDimension, number> {
+    return {
+      financialHealth: config.weightFinancialHealth,
+      paymentCapacity: config.weightPaymentCapacity,
+      termCoherence: config.weightTermCoherence,
+      creditLineAdequacy: config.weightCreditLineAdequacy,
+      capitalExposure: config.weightCapitalExposure,
+      veracity: config.weightVeracity,
+      centralRisk: config.weightCentralRisk,
+    };
+  }
+
+  /** Indicadores del análisis (columnas de FinancialAnalysis) → entrada del motor. */
+  private analysisToIndicators(analysis: {
+    monthlyPaymentCapacity: number | null;
+    annualPaymentCapacity: number | null;
+    currentDebtService: number | null;
+    ebitda: number | null;
+    accountsReceivableTurnover: number | null;
+    inventoryTurnover: number | null;
+    paymentTimeSuppliers: number | null;
+    stabilityFactor: number | null;
+  }): ScoringIndicators {
+    return {
+      monthlyPaymentCapacity: analysis.monthlyPaymentCapacity ?? 0,
+      annualPaymentCapacity: analysis.annualPaymentCapacity ?? 0,
+      currentDebtService: analysis.currentDebtService ?? 0,
+      ebitda: analysis.ebitda ?? 0,
+      accountsReceivableTurnover: analysis.accountsReceivableTurnover ?? 0,
+      inventoryTurnover: analysis.inventoryTurnover ?? 0,
+      paymentTimeSuppliers: analysis.paymentTimeSuppliers ?? 0,
+      stabilityFactor: analysis.stabilityFactor ?? 0,
+    };
+  }
+
+  /** Cifras gruesas del año corriente (el período más reciente) de un análisis. */
+  private analysisToGrossFigures(analysis: {
+    periods: Array<{
+      fiscalYear: number;
+      ordinaryActivityRevenue: number | null;
+      totalAssets: number | null;
+      totalLiabilities: number | null;
+      equity: number | null;
+      netIncome: number | null;
+    }>;
+  }): GrossFigures | null {
+    // periods ya viene ordenado fiscalYear DESC (el [0] es el corriente).
+    const current = analysis.periods[0];
+    if (!current) return null;
+    return {
+      ordinaryActivityRevenue: current.ordinaryActivityRevenue,
+      totalAssets: current.totalAssets,
+      totalLiabilities: current.totalLiabilities,
+      equity: current.equity,
+      netIncome: current.netIncome,
+    };
+  }
+
+  /**
+   * Red flags de fiabilidad del PDF (columna JSONB del análisis 'pdf'). Se
+   * normalizan al shape estable de salida. Si no hubo PDF o no hay flags → [].
+   */
+  private extractReliabilityFlags(
+    pdf: { reliabilityFlags: unknown } | undefined,
+  ): PdfReliabilityFlag[] {
+    const raw = pdf?.reliabilityFlags;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((f) => {
+      const flag = f as Partial<PdfReliabilityFlag>;
+      const category = flag.category ?? 'otro';
+      return {
+        severity: flag.severity ?? 'info',
+        category,
+        categoryLabel:
+          PDF_RELIABILITY_FLAG_CATEGORY_LABEL[category] ?? category,
+        title: flag.title ?? '',
+        detail: flag.detail ?? '',
+      };
+    });
+  }
+
+  /** Snapshot de riesgo → entrada de la Dim 7. Trae el vector de mora completo. */
+  private riskToCentralInput(
+    snapshot: {
+      nivelRiesgo: string | null;
+      ratingSectorial: string | null;
+      score: number | null;
+      montoSugerido: number | null;
+      porcentajeDeuda: number | null;
+      saldoMora: number | null;
+      paymentBehavior: unknown;
+    } | null,
+  ): CentralRiskInput | null {
+    if (!snapshot) return null;
+    return {
+      nivelRiesgo: snapshot.nivelRiesgo,
+      ratingSectorial: snapshot.ratingSectorial,
+      score: snapshot.score,
+      montoSugerido: snapshot.montoSugerido,
+      porcentajeDeuda: snapshot.porcentajeDeuda,
+      saldoMora: snapshot.saldoMora,
+      hasArrears: this.hasArrears(snapshot.paymentBehavior),
+      paymentBehavior: this.toPaymentBehavior(snapshot.paymentBehavior),
+    };
+  }
+
+  /** Normaliza el vector de comportamiento de pago del snapshot al shape del motor. */
+  private toPaymentBehavior(raw: unknown): PaymentBehaviorMonth[] | null {
+    if (!Array.isArray(raw)) return null;
+    return (raw as Array<{ anioMes?: unknown; comportamiento?: unknown }>).map(
+      (m) => ({
+        anioMes: typeof m?.anioMes === 'string' ? m.anioMes : null,
+        comportamiento:
+          typeof m?.comportamiento === 'string' ? m.comportamiento : null,
+      }),
+    );
+  }
+
+  /**
+   * Estado legal del cliente (matrícula / liquidación) desde el bureauProfile
+   * (JSONB del Customer). Alimenta la regla eliminatoria del motor. null si no
+   * hay perfil (p. ej. PN sin perfil de bureau).
+   */
+  private toLegalStatus(bureauProfile: unknown): LegalStatusInput | null {
+    if (!bureauProfile || typeof bureauProfile !== 'object') return null;
+    const p = bureauProfile as {
+      registration?: { status?: unknown };
+      generalProfile?: { inLiquidation?: unknown };
+    };
+    const registrationStatus =
+      typeof p.registration?.status === 'string'
+        ? p.registration.status
+        : null;
+    const inLiquidation =
+      typeof p.generalProfile?.inLiquidation === 'string'
+        ? p.generalProfile.inLiquidation
+        : null;
+    if (registrationStatus === null && inLiquidation === null) return null;
+    return { registrationStatus, inLiquidation };
+  }
+
+  /**
+   * ¿El vector de comportamiento de pago muestra mora? Mora = algún mes con
+   * código distinto de 'N' (al día) y de '-'/' ' (sin información). Los códigos
+   * 1-6, C, D son mora (ver catálogo PAYMENT_BEHAVIOR).
+   */
+  private hasArrears(paymentBehavior: unknown): boolean {
+    if (!Array.isArray(paymentBehavior)) return false;
+    const items = paymentBehavior as Array<{ comportamiento?: unknown }>;
+    return items.some((item) => {
+      const raw = item?.comportamiento;
+      const code = (typeof raw === 'string' ? raw : '').trim().toUpperCase();
+      return code !== '' && code !== 'N' && code !== '-';
     });
   }
 
@@ -226,742 +613,13 @@ export class CreditStudiesService {
     return { ...study, hasAiAnalysis, hasPdfExtraction };
   }
 
-  async update(
-    id: string,
-    companyId: string,
-    userId: string,
-    dto: UpdateCreditStudyDto,
-  ) {
-    const current = await this.repository.findById(id, companyId);
-    if (!current) {
-      throw new NotFoundException(
-        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
-      );
-    }
-
-    if (current.status?.code === 'studyClosed') {
-      throw new BadRequestException(
-        'No se puede modificar un estudio de crédito que ya fue completado.',
-      );
-    }
-
-    if (dto.customerId && dto.customerId !== current.customerId) {
-      const customerBelongs = await this.repository.customerBelongsToCompany(
-        dto.customerId,
-        companyId,
-      );
-      if (!customerBelongs) {
-        throw new BadRequestException('El cliente no pertenece a esta empresa');
-      }
-    }
-
-    const { customerId, studyDate, resolutionDate, ...rest } = dto;
-
-    return this.repository.update(id, {
-      ...rest,
-      studyDate: studyDate ? new Date(studyDate) : undefined,
-      resolutionDate: resolutionDate ? new Date(resolutionDate) : undefined,
-      updatedBy: userId,
-    });
-  }
-
-  async remove(id: string, companyId: string) {
-    const study = await this.repository.findById(id, companyId);
-    if (!study) {
-      throw new NotFoundException(
-        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
-      );
-    }
-
-    if (study.status?.code === 'studyClosed') {
-      throw new BadRequestException(
-        'No se puede eliminar un estudio de crédito que ya fue completado.',
-      );
-    }
-
-    return this.repository.delete(id);
-  }
-
-  async getCreditStudyPerform(id: string, companyId: string, userId: string) {
-    const study = await this.repository.findById(id, companyId);
-    if (!study) {
-      throw new NotFoundException(
-        `Estudio de crédito con id=${id} no encontrado en esta empresa`,
-      );
-    }
-
-    if (study.status?.code === 'studyClosed') {
-      throw new BadRequestException(
-        'No se puede recalcular un estudio de crédito que ya fue completado.',
-      );
-    }
-
-    //parameters
-    const period = await this.parametersRepository.findById(
-      study.incomeStatementId!,
-    );
-
-    const periodMonths = getMonthsFromPeriod(period?.label ?? '12');
-
-    // calculos
-    const totalAssets = study.totalAssets ?? 1;
-    const x1 =
-      ((study.totalCurrentAssets ?? 0) - (study.totalCurrentLiabilities ?? 0)) /
-      totalAssets;
-    const x2 = (study.retainedEarnings ?? 0) / totalAssets;
-    // x3 = utilidad operacional / activo total
-    // Utilidad operacional = grossProfit - administrativeExpenses - sellingExpenses
-    const x3 =
-      ((study.grossProfit ?? 0) -
-        (study.administrativeExpenses ?? 0) -
-        (study.sellingExpenses ?? 0)) /
-      totalAssets;
-    const x4 = (study.equity ?? 0) / (study.totalLiabilities ?? 1);
-    const x5 = (study.ordinaryActivityRevenue ?? 0) / totalAssets;
-
-    const result = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + x5;
-
-    const stabilityFactor = result > 3 ? 1 : result > 1.8 ? 0.66 : 0.33;
-    const ebitda =
-      (study.ordinaryActivityRevenue ?? 0) -
-      (study.costOfSales ?? 0) -
-      (study.administrativeExpenses ?? 0) -
-      (study.sellingExpenses ?? 0) +
-      (study.depreciation ?? 0) +
-      (study.amortization ?? 0);
-
-
-    const adjustedEbitda = ebitda * stabilityFactor;
-    const currentDebtSevice =
-      (study.shortTermFinancialLiabilities ?? 0) +
-      (study.financialExpenses ?? 0);
-    const annualPaymentCapacity = adjustedEbitda - currentDebtSevice;
-
-    const monthlyPaymentCapacity = Math.round(
-      annualPaymentCapacity / periodMonths,
-    );
-
-    const accountsReceivableTurnover = Math.round(
-      (((study.accountsReceivable1 ?? 0) + (study.accountsReceivable2 ?? 0)) /
-        2 /
-        (study.ordinaryActivityRevenue ?? 1)) *
-        365,
-    );
-
-    const inventoryTurnover = Math.round(
-      (((study.inventories1 ?? 0) + (study.inventories2 ?? 0)) /
-        2 /
-        (study.costOfSales ?? 1)) *
-        365,
-    );
-
-    const accountsPayableTurnover1 =
-      ((study.suppliers1 ?? 0) + (study.suppliers2 ?? 0)) / 2;
-    const accountsPayableTurnover2 =
-      (study.costOfSales ?? 0) +
-      (study.inventories2 ?? 0) +
-      (study.administrativeExpenses ?? 0) +
-      (study.sellingExpenses ?? 0) -
-      (study.inventories1 ?? 0);
-
-    const accountsPayableTurnover =
-      accountsPayableTurnover1 / accountsPayableTurnover2;
-
-    const paymentTimeSuppliers = Math.round(accountsPayableTurnover * 365);
-
-    const suppliersTurnover = -paymentTimeSuppliers;
-
-    // ── Viabilidad ──────────────────────────────────────────
-    const zScore = result;
-    const alerts: Array<{ type: string; dimension: string; message: string }> =
-      [];
-    const dimensions: Record<string, any> = {};
-
-    // ── Dimension 1: Salud Financiera (Z-Score de Altman) — 20 pts ──
-    if (zScore > 3.0) {
-      dimensions.financialHealth = {
-        score: 20,
-        maxScore: 20,
-        status: 'healthy',
-        label: 'Salud Financiera',
-        reason:
-          'Los indicadores de liquidez, rentabilidad y apalancamiento situan a la empresa en zona segura.',
-      };
-      alerts.push({
-        type: 'success',
-        dimension: 'financialHealth',
-        message:
-          'La empresa presenta indicadores financieros solidos con baja probabilidad de riesgo.',
-      });
-    } else if (zScore > 1.8) {
-      dimensions.financialHealth = {
-        score: 10,
-        maxScore: 20,
-        status: 'gray_zone',
-        label: 'Salud Financiera',
-        reason:
-          'Los indicadores financieros situan a la empresa en zona de observacion. Se penaliza parcialmente la capacidad proyectada.',
-      };
-      alerts.push({
-        type: 'warning',
-        dimension: 'financialHealth',
-        message:
-          'La empresa se encuentra en zona de observacion. Se recomienda monitoreo periodico de sus estados financieros.',
-      });
-    } else {
-      dimensions.financialHealth = {
-        score: 0,
-        maxScore: 20,
-        status: 'critical',
-        label: 'Salud Financiera',
-        reason:
-          'Los indicadores financieros muestran alta probabilidad de dificultades. Se reduce significativamente la capacidad proyectada.',
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'financialHealth',
-        message:
-          'La empresa presenta indicadores financieros criticos con alta probabilidad de incumplimiento.',
-      });
-    }
-
-    // ── Dimension 2: Capacidad de Pago ──
-    // requestedCreditLine = cupo TOTAL solicitado (no mensual)
-    // La obligación mensual = cupo / (plazo en días / 30)
-    const requestedCredit = study.requestedCreditLine ?? 0;
-    const requestedTerm = study.requestedTerm ?? 0;
-    const termInMonths = requestedTerm > 0 ? requestedTerm / 30 : 1;
-    const monthlyObligation = requestedCredit / termInMonths;
-
-    const paymentRatio =
-      monthlyObligation > 0 ? monthlyPaymentCapacity / monthlyObligation : 0;
-    const marginPercent = Math.round((paymentRatio - 1) * 1000) / 10;
-
-    if (monthlyPaymentCapacity <= 0) {
-      dimensions.paymentCapacity = {
-        score: 0,
-        maxScore: 20,
-        status: 'insufficient',
-        ratio: 0,
-        marginPercent: 0,
-        monthlyObligation: Math.round(monthlyObligation),
-        label: 'Capacidad de Pago',
-        reason:
-          'La empresa no genera flujo libre de efectivo despues de cubrir deudas actuales. El EBITDA ajustado no supera el servicio de deuda.',
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'paymentCapacity',
-        message: `El cliente no cuenta con capacidad de pago. El servicio de deuda actual ($${currentDebtSevice.toLocaleString('es-CO')}) supera el EBITDA ajustado.`,
-      });
-    } else if (paymentRatio >= 1.2) {
-      dimensions.paymentCapacity = {
-        score: 20,
-        maxScore: 20,
-        status: 'comfortable',
-        ratio: Math.round(paymentRatio * 1000) / 1000,
-        marginPercent,
-        monthlyObligation: Math.round(monthlyObligation),
-        label: 'Capacidad de Pago',
-        reason: `La capacidad de pago mensual supera la cuota estimada con un margen del ${marginPercent}%. Ratio: ${(Math.round(paymentRatio * 1000) / 1000).toFixed(2)}x.`,
-      };
-      alerts.push({
-        type: 'success',
-        dimension: 'paymentCapacity',
-        message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) supera la cuota mensual estimada ($${Math.round(monthlyObligation).toLocaleString('es-CO')}) con un margen del ${marginPercent}%.`,
-      });
-    } else if (paymentRatio >= 1.0) {
-      dimensions.paymentCapacity = {
-        score: 12,
-        maxScore: 20,
-        status: 'tight',
-        ratio: Math.round(paymentRatio * 1000) / 1000,
-        marginPercent,
-        monthlyObligation: Math.round(monthlyObligation),
-        label: 'Capacidad de Pago',
-        reason: `La capacidad cubre la cuota pero con margen ajustado del ${marginPercent}%. Ratio: ${(Math.round(paymentRatio * 1000) / 1000).toFixed(2)}x. No se recomienda incrementar.`,
-      };
-      alerts.push({
-        type: 'warning',
-        dimension: 'paymentCapacity',
-        message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) cubre la cuota mensual estimada ($${Math.round(monthlyObligation).toLocaleString('es-CO')}) con un margen ajustado del ${marginPercent}%. Se recomienda no incrementar el cupo.`,
-      });
-    } else {
-      const deficit = Math.round((1 - paymentRatio) * 1000) / 10;
-      dimensions.paymentCapacity = {
-        score: 0,
-        maxScore: 20,
-        status: 'insufficient',
-        ratio: Math.round(paymentRatio * 1000) / 1000,
-        marginPercent: -deficit,
-        monthlyObligation: Math.round(monthlyObligation),
-        label: 'Capacidad de Pago',
-        reason: `La cuota mensual estimada ($${Math.round(monthlyObligation).toLocaleString('es-CO')}) supera la capacidad de pago ($${monthlyPaymentCapacity.toLocaleString('es-CO')}). Deficit del ${deficit}%.`,
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'paymentCapacity',
-        message: `La capacidad de pago mensual ($${monthlyPaymentCapacity.toLocaleString('es-CO')}) es insuficiente para cubrir la cuota mensual estimada ($${Math.round(monthlyObligation).toLocaleString('es-CO')}). Deficit del ${deficit}%.`,
-      });
-    }
-
-    // ── Dimension 3: Coherencia de Plazos — 20 pts — RIESGO DEL CLIENTE ──
-    // Mide el riesgo de impago: si el credito vence antes de que el cliente
-    // cobre a sus propios clientes, no tendra flujo para pagar.
-    // IMPORTANTE: esta dimension NO empuja el plazo recomendado hacia arriba.
-    // El credito es comercial SIN intereses, por lo que ampliar el plazo es
-    // perjudicial para el prestamista. El desajuste solo se reporta como alerta.
-    const realTerm =
-      accountsReceivableTurnover > 0
-        ? accountsReceivableTurnover
-        : requestedTerm;
-
-    if (accountsReceivableTurnover <= 0) {
-      alerts.push({
-        type: 'info',
-        dimension: 'termCoherence',
-        message: `No se pudo calcular la rotacion de cartera. Se usa el plazo solicitado como referencia.`,
-      });
-    }
-
-    if (
-      paymentTimeSuppliers > 0 &&
-      paymentTimeSuppliers > accountsReceivableTurnover
-    ) {
-      alerts.push({
-        type: 'info',
-        dimension: 'termCoherence',
-        message: `El tiempo de pago a proveedores (${paymentTimeSuppliers} dias) es mayor que la rotacion de cartera (${accountsReceivableTurnover} dias). La empresa paga a proveedores mas lento de lo que cobra a clientes.`,
-      });
-    }
-
-    if (requestedTerm >= realTerm) {
-      dimensions.termCoherence = {
-        score: 20,
-        maxScore: 20,
-        status: 'coherent',
-        requestedTerm,
-        realTerm,
-        label: 'Coherencia de Plazos',
-        reason: `El plazo solicitado (${requestedTerm}d) iguala o supera la rotacion de cartera (${realTerm}d). El cliente cobra antes de que venza el credito.`,
-      };
-      alerts.push({
-        type: 'success',
-        dimension: 'termCoherence',
-        message: `El plazo solicitado (${requestedTerm} dias) es coherente con los tiempos de operacion del cliente (${realTerm} dias).`,
-      });
-    } else if (requestedTerm >= realTerm * 0.7) {
-      dimensions.termCoherence = {
-        score: 10,
-        maxScore: 20,
-        status: 'risky',
-        requestedTerm,
-        realTerm,
-        label: 'Coherencia de Plazos',
-        reason: `El plazo solicitado (${requestedTerm}d) es inferior a la rotacion de cartera (${realTerm}d) pero cubre al menos el 70%. Riesgo moderado de cobro tardio.`,
-      };
-      alerts.push({
-        type: 'warning',
-        dimension: 'termCoherence',
-        message: `El plazo solicitado (${requestedTerm} dias) es inferior a la rotacion de cartera del cliente (${realTerm} dias). Existe riesgo de que el cliente aun no haya cobrado al vencer el credito.`,
-      });
-    } else {
-      dimensions.termCoherence = {
-        score: 0,
-        maxScore: 20,
-        status: 'incoherent',
-        requestedTerm,
-        realTerm,
-        label: 'Coherencia de Plazos',
-        reason: `El plazo solicitado (${requestedTerm}d) es menor al 70% de la rotacion de cartera (${realTerm}d). El credito vence antes de que el cliente cobre a sus clientes.`,
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'termCoherence',
-        message: `El plazo solicitado (${requestedTerm} dias) es significativamente inferior a la rotacion de cartera del cliente (${realTerm} dias). Alto riesgo de incumplimiento por cobro tardio.`,
-      });
-    }
-
-    // ── Ciclo de Conversion de Efectivo (CCC) ──
-    // Plazo natural del negocio del cliente, derivado de sus estados financieros.
-    // CCC = rotacion de cartera + rotacion de inventarios - tiempo de pago a proveedores
-    // Se usa como umbral de exposicion (Dimension 5) y para el plazo recomendado.
-    //
-    // Si paymentTimeSuppliers es negativo (dato atipico de la formula de rotacion
-    // de proveedores), se trata como 0 para no inflar artificialmente el CCC ni
-    // el umbral de exposicion. Un proveedor negativo no debe extender el ciclo.
-    const supplierDays = Math.max(paymentTimeSuppliers, 0);
-    const cashConversionCycle =
-      accountsReceivableTurnover + inventoryTurnover - supplierDays;
-
-    // ── Plazo recomendado ──
-    // Credito comercial SIN intereses: el plazo recomendado NUNCA amplia el
-    // solicitado (ampliar inmoviliza capital del prestamista sin compensacion).
-    // Solo puede igualarlo o reducirlo:
-    //  - nunca mayor al solicitado
-    //  - puede ser menor si el ciclo de caja del cliente (CCC) es mas corto:
-    //    recuperar el capital antes reduce la exposicion del prestamista
-    //  - piso minimo de 30 dias: un credito comercial no baja de un mes
-    const MIN_RECOMMENDED_TERM = 30;
-    const cicloRef = Math.max(cashConversionCycle, MIN_RECOMMENDED_TERM);
-    const recommendedTerm =
-      requestedTerm > 0 ? Math.min(requestedTerm, cicloRef) : cicloRef;
-
-    // ── Cupo recomendado ──
-    // Nunca recomendar más de lo que el cliente solicita
-    // Si puede pagar más, simplemente se aprueba lo solicitado
-    const maxAffordableCredit =
-      monthlyPaymentCapacity > 0
-        ? Math.round(monthlyPaymentCapacity * (recommendedTerm / 30))
-        : 0;
-    const recommendedCreditLine =
-      maxAffordableCredit > 0
-        ? Math.min(requestedCredit, maxAffordableCredit)
-        : 0;
-
-    // ── Dimension 4: Adecuacion del Cupo — 20 pts ──
-    // Cupo maximo pagable manteniendo el plazo solicitado.
-    const maxCreditForRequestedTerm =
-      monthlyPaymentCapacity > 0
-        ? Math.round(monthlyPaymentCapacity * termInMonths)
-        : 0;
-    if (monthlyPaymentCapacity <= 0) {
-      dimensions.creditLineAdequacy = {
-        score: 0,
-        maxScore: 20,
-        status: 'not_applicable',
-        ratio: 0,
-        label: 'Adecuacion del Cupo',
-        reason:
-          'No evaluable: la capacidad de pago es negativa, no es posible determinar un cupo viable.',
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'creditLineAdequacy',
-        message:
-          'No es posible recomendar un cupo de credito dado que la capacidad de pago es negativa.',
-      });
-    } else {
-      const creditRatio =
-        maxCreditForRequestedTerm > 0
-          ? requestedCredit / maxCreditForRequestedTerm
-          : 0;
-
-      if (creditRatio <= 1.0) {
-        dimensions.creditLineAdequacy = {
-          score: 20,
-          maxScore: 20,
-          status: 'adequate',
-          ratio: Math.round(creditRatio * 1000) / 1000,
-          maxCreditForRequestedTerm,
-          label: 'Adecuacion del Cupo',
-          reason: `El cupo solicitado ($${requestedCredit.toLocaleString('es-CO')}) no supera el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}).`,
-        };
-        alerts.push({
-          type: 'success',
-          dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado ($${requestedCredit.toLocaleString('es-CO')}) esta dentro de la capacidad de pago para ${requestedTerm} dias (maximo: $${maxCreditForRequestedTerm.toLocaleString('es-CO')}).`,
-        });
-      } else if (creditRatio <= 1.3) {
-        const exceso = Math.round((creditRatio - 1) * 1000) / 10;
-        dimensions.creditLineAdequacy = {
-          score: 12,
-          maxScore: 20,
-          status: 'slightly_exceeded',
-          ratio: Math.round(creditRatio * 1000) / 1000,
-          maxCreditForRequestedTerm,
-          label: 'Adecuacion del Cupo',
-          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda reducir el cupo.`,
-        };
-        alerts.push({
-          type: 'warning',
-          dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Considere un cupo de hasta $${maxCreditForRequestedTerm.toLocaleString('es-CO')}.`,
-        });
-      } else {
-        const exceso = Math.round((creditRatio - 1) * 1000) / 10;
-        dimensions.creditLineAdequacy = {
-          score: 0,
-          maxScore: 20,
-          status: 'excessive',
-          ratio: Math.round(creditRatio * 1000) / 1000,
-          maxCreditForRequestedTerm,
-          label: 'Adecuacion del Cupo',
-          reason: `El cupo excede un ${exceso}% el maximo pagable en ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Es inviable sin reducir el cupo.`,
-        };
-        alerts.push({
-          type: 'danger',
-          dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado excede en un ${exceso}% el cupo maximo para ${requestedTerm} dias ($${maxCreditForRequestedTerm.toLocaleString('es-CO')}). Se recomienda reducirlo.`,
-        });
-      }
-    }
-
-    // ── Dimension 5: Exposicion / Eficiencia del Capital — 20 pts ──
-    // Perspectiva del PRESTAMISTA en un credito comercial SIN intereses.
-    // Mide cuanto capital propio queda inmovilizado y por cuanto tiempo,
-    // relativo al ciclo de caja del cliente (CCC). Un credito puede ser
-    // pagable por el cliente y aun asi ser mal negocio si la exposicion es alta.
-    // El umbral es el propio ciclo del cliente (derivado de datos, sin numeros
-    // fijos), por lo que el ratio es adimensional: funciona igual para $5M o $500M.
-    const exposureMonths =
-      monthlyPaymentCapacity > 0 ? requestedCredit / monthlyPaymentCapacity : 0;
-    const healthyExposure = monthlyPaymentCapacity * (cicloRef / 30);
-    const exposureRatio =
-      healthyExposure > 0 ? requestedCredit / healthyExposure : 0;
-
-    if (monthlyPaymentCapacity <= 0) {
-      dimensions.capitalExposure = {
-        score: 0,
-        maxScore: 20,
-        status: 'not_applicable',
-        ratio: 0,
-        exposureMonths: 0,
-        cashConversionCycle,
-        label: 'Exposicion / Eficiencia del Capital',
-        reason:
-          'No evaluable: la capacidad de pago es negativa, no es posible medir la exposicion del capital.',
-      };
-    } else if (exposureRatio <= 1.0) {
-      dimensions.capitalExposure = {
-        score: 20,
-        maxScore: 20,
-        status: 'efficient',
-        ratio: Math.round(exposureRatio * 1000) / 1000,
-        exposureMonths: Math.round(exposureMonths * 100) / 100,
-        cashConversionCycle,
-        label: 'Exposicion / Eficiencia del Capital',
-        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) respeta el ciclo de operacion del cliente. El capital prestado rota de forma eficiente.`,
-      };
-      alerts.push({
-        type: 'success',
-        dimension: 'capitalExposure',
-        message:
-          'El credito respeta el ciclo de caja del cliente. El capital prestado rota de forma eficiente.',
-      });
-    } else if (exposureRatio <= 1.5) {
-      dimensions.capitalExposure = {
-        score: 12,
-        maxScore: 20,
-        status: 'acceptable',
-        ratio: Math.round(exposureRatio * 1000) / 1000,
-        exposureMonths: Math.round(exposureMonths * 100) / 100,
-        cashConversionCycle,
-        label: 'Exposicion / Eficiencia del Capital',
-        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) supera levemente el ciclo de operacion del cliente. Tolerable.`,
-      };
-      alerts.push({
-        type: 'warning',
-        dimension: 'capitalExposure',
-        message:
-          'El credito supera levemente el ciclo de caja del cliente. La exposicion del capital es algo mayor a lo ideal.',
-      });
-    } else {
-      dimensions.capitalExposure = {
-        score: 0,
-        maxScore: 20,
-        status: 'excessive',
-        ratio: Math.round(exposureRatio * 1000) / 1000,
-        exposureMonths: Math.round(exposureMonths * 100) / 100,
-        cashConversionCycle,
-        label: 'Exposicion / Eficiencia del Capital',
-        reason: `La exposicion (${(Math.round(exposureMonths * 100) / 100).toFixed(2)} meses de caja) supera ampliamente el ciclo de operacion del cliente. Mal negocio para el prestamista aunque el cliente pudiera pagar.`,
-      };
-      alerts.push({
-        type: 'danger',
-        dimension: 'capitalExposure',
-        message:
-          'El credito inmoviliza capital muy por encima del ciclo de caja del cliente. Exposicion excesiva para un credito sin intereses, incluso si el cliente pudiera pagar.',
-      });
-    }
-
-    // ── Score y status final ──
-    // Se calcula ANTES de las sugerencias de pago, porque las sugerencias
-    // solo tienen sentido cuando el estudio es viable (aprobado o condicionado).
-    const viabilityScore =
-      dimensions.financialHealth.score +
-      dimensions.paymentCapacity.score +
-      dimensions.termCoherence.score +
-      dimensions.creditLineAdequacy.score +
-      dimensions.capitalExposure.score;
-
-    let viabilityStatus: string;
-    if (monthlyPaymentCapacity <= 0) {
-      viabilityStatus = 'rejected';
-    } else if (viabilityScore >= 75) {
-      viabilityStatus = 'approved';
-    } else if (viabilityScore >= 40) {
-      viabilityStatus = 'conditional';
-    } else {
-      viabilityStatus = 'rejected';
-    }
-
-    // ── Sugerencias de Pago ──
-    // Genera alternativas con cuotas y plazos explícitos.
-    // Solo se generan cuando el estudio NO está rechazado: si el cliente fue
-    // rechazado (por capacidad nula o por score insuficiente) no se ofrecen
-    // alternativas de pago, ya que la solicitud no es viable y debe rehacerse.
-    //
-    // Credito comercial SIN intereses: el sistema NUNCA sugiere ampliar el plazo
-    // (la antigua sugerencia 'adjusted_term' fue eliminada). Las unicas palancas
-    // son: reducir el cupo manteniendo el plazo, o reducir el plazo cuando el
-    // ciclo de caja del cliente lo permite (recuperar antes el capital).
-    const paymentSuggestions: Array<{
-      type: string;
-      suggestedTerm: number;
-      suggestedCredit: number;
-      numberOfPayments: number;
-      paymentAmount: number;
-      description: string;
-    }> = [];
-
-    if (viabilityStatus !== 'rejected' && monthlyPaymentCapacity > 0) {
-      const buildSuggestion = (
-        type: string,
-        days: number,
-        credit: number,
-        desc: string,
-      ) => {
-        const payments = Math.ceil(days / 30);
-        const amount = Math.round(credit / payments);
-        paymentSuggestions.push({
-          type,
-          suggestedTerm: days,
-          suggestedCredit: credit,
-          numberOfPayments: payments,
-          paymentAmount: amount,
-          description: desc,
-        });
-      };
-
-      // Sugerencia 1: Mismo plazo, cupo reducido (solo si excede capacidad)
-      if (maxCreditForRequestedTerm < requestedCredit) {
-        const payments = Math.ceil(requestedTerm / 30);
-        const amount = Math.round(maxCreditForRequestedTerm / payments);
-        buildSuggestion(
-          'adjusted_credit',
-          requestedTerm,
-          maxCreditForRequestedTerm,
-          `Mantener plazo de ${requestedTerm} dias reduciendo cupo a $${maxCreditForRequestedTerm.toLocaleString('es-CO')}: ${payments} cuotas de $${amount.toLocaleString('es-CO')}.`,
-        );
-      }
-
-      // Sugerencia 2: Plazo recomendado MENOR (solo si el ciclo del cliente
-      // permite recuperar antes el capital). Nunca amplia el plazo solicitado.
-      if (recommendedTerm < requestedTerm) {
-        const maxCreditWithRecommendedTerm = Math.round(
-          monthlyPaymentCapacity * (recommendedTerm / 30),
-        );
-        const suggestedCredit = Math.min(
-          requestedCredit,
-          maxCreditWithRecommendedTerm,
-        );
-        const payments = Math.ceil(recommendedTerm / 30);
-        const amount = Math.round(suggestedCredit / payments);
-        buildSuggestion(
-          'recommended_term',
-          recommendedTerm,
-          suggestedCredit,
-          `Con plazo de ${recommendedTerm} dias (ciclo de caja del cliente): cupo de $${suggestedCredit.toLocaleString('es-CO')} en ${payments} cuotas de $${amount.toLocaleString('es-CO')}. Recuperar antes reduce la exposicion del capital.`,
-        );
-      }
-    }
-
-    dimensions.paymentSuggestions = {
-      label: 'Sugerencias de Pago',
-      suggestions: paymentSuggestions,
-    };
-
-    // ── Alertas cross-dimension ──
-    if (viabilityStatus === 'conditional') {
-      alerts.push({
-        type: 'info',
-        dimension: 'general',
-        message:
-          'El estudio es aprobable sujeto a las condiciones indicadas. Revise las recomendaciones de plazo y cupo.',
-      });
-    }
-
-    if (inventoryTurnover === 0) {
-      alerts.push({
-        type: 'info',
-        dimension: 'general',
-        message:
-          'No se registra rotacion de inventarios. Verifique si el tipo de negocio del cliente aplica para este indicador.',
-      });
-    }
-
-    const viabilityConditions = {
-      dimensions,
-      alerts,
-      summary: {
-        totalScore: viabilityScore,
-        maxScore: 100,
-        status: viabilityStatus,
-        recommendedTerm,
-        recommendedCreditLine,
-        cashConversionCycle,
-        monthlyPaymentCapacity,
-        annualPaymentCapacity: Math.round(annualPaymentCapacity),
-      },
-    };
-
-    const newStatus =
-      await this.parametersRepository.findByCode('studyCompleted');
-
-    const updated = await this.repository.update(id, {
-      ebitda,
-      adjustedEbitda,
-      currentDebtService: currentDebtSevice,
-      annualPaymentCapacity,
-      monthlyPaymentCapacity,
-      accountsReceivableTurnover,
-      inventoryTurnover,
-      suppliersTurnover,
-      paymentTimeSuppliers,
-      stabilityFactor,
-      updatedBy: userId,
-      accountsPayableTurnover,
-      recommendedTerm,
-      recommendedCreditLine,
-      viabilityScore,
-      viabilityStatus,
-      viabilityConditions,
-      statusId: newStatus?.id,
-      resolutionDate: new Date(),
-    });
-
-    const notificationType = await this.parametersRepository.findByTypeAndCode(
-      'notification_type',
-      'credit_study',
-    );
-
-    if (notificationType) {
-      const customerName = study.customer?.businessName ?? 'Cliente';
-      const statusLabel =
-        viabilityStatus === 'approved'
-          ? 'Aprobado'
-          : viabilityStatus === 'conditional'
-            ? 'Condicionado'
-            : 'Rechazado';
-
-      this.notificationsService
-        .create(userId, {
-          companyId,
-          typeId: notificationType.id,
-          title: `Estudio de crédito ${statusLabel.toLowerCase()}`,
-          message: `El estudio de crédito de ${customerName} fue analizado. Resultado: ${statusLabel} (${viabilityScore}/100).`,
-          route: `/app/credit-study/detail/${id}`,
-        })
-        .catch(() => {});
-    }
-
-    return updated;
-  }
-
   async exportToExcel(companyId: string) {
     const studies = await this.repository.findAllForExport(companyId);
 
+    // NOTA: las cifras crudas de estados financieros (balance/EERR) ya no viven
+    // en CreditStudy sino en FinancialStatement. El export de esas columnas se
+    // reincorporará cuando se defina el flujo nuevo (join estudio↔EEFF). Por
+    // ahora el export cubre identidad, solicitud y resultado/viabilidad.
     const mainRows = studies.map((s) => ({
       studyDate: s.studyDate,
       resolutionDate: s.resolutionDate,
@@ -970,36 +628,6 @@ export class CreditStudiesService {
       customerIdentification: s.customer?.identificationNumber ?? null,
       requestedTerm: s.requestedTerm,
       requestedCreditLine: s.requestedCreditLine,
-      balanceSheetDate: s.balanceSheetDate,
-      cashAndEquivalents: s.cashAndEquivalents,
-      accountsReceivable1: s.accountsReceivable1,
-      accountsReceivable2: s.accountsReceivable2,
-      inventories1: s.inventories1,
-      inventories2: s.inventories2,
-      totalCurrentAssets: s.totalCurrentAssets,
-      fixedAssetsProperty: s.fixedAssetsProperty,
-      totalNonCurrentAssets: s.totalNonCurrentAssets,
-      totalAssets: s.totalAssets,
-      shortTermFinancialLiabilities: s.shortTermFinancialLiabilities,
-      suppliers1: s.suppliers1,
-      suppliers2: s.suppliers2,
-      totalCurrentLiabilities: s.totalCurrentLiabilities,
-      longTermFinancialLiabilities: s.longTermFinancialLiabilities,
-      totalNonCurrentLiabilities: s.totalNonCurrentLiabilities,
-      totalLiabilities: s.totalLiabilities,
-      retainedEarnings: s.retainedEarnings,
-      equity: s.equity,
-      incomeStatement: s.incomeStatement?.label ?? null,
-      ordinaryActivityRevenue: s.ordinaryActivityRevenue,
-      costOfSales: s.costOfSales,
-      grossProfit: s.grossProfit,
-      administrativeExpenses: s.administrativeExpenses,
-      sellingExpenses: s.sellingExpenses,
-      depreciation: s.depreciation,
-      amortization: s.amortization,
-      financialExpenses: s.financialExpenses,
-      taxes: s.taxes,
-      netIncome: s.netIncome,
       recommendedTerm: s.recommendedTerm,
       recommendedCreditLine: s.recommendedCreditLine,
       viabilityScore: s.viabilityScore,
@@ -1041,176 +669,6 @@ export class CreditStudiesService {
         key: 'requestedCreditLine',
         type: 'currency',
         width: 20,
-      },
-      {
-        header: 'Fecha balance',
-        key: 'balanceSheetDate',
-        type: 'date',
-        width: 14,
-      },
-      {
-        header: 'Efectivo y equivalentes',
-        key: 'cashAndEquivalents',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Cuentas por cobrar 1',
-        key: 'accountsReceivable1',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Cuentas por cobrar 2',
-        key: 'accountsReceivable2',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Inventarios 1',
-        key: 'inventories1',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Inventarios 2',
-        key: 'inventories2',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Total activo corriente',
-        key: 'totalCurrentAssets',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Activos fijos / propiedad',
-        key: 'fixedAssetsProperty',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Total activo no corriente',
-        key: 'totalNonCurrentAssets',
-        type: 'currency',
-        width: 24,
-      },
-      {
-        header: 'Total activo',
-        key: 'totalAssets',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Oblig. financ. CP',
-        key: 'shortTermFinancialLiabilities',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Proveedores 1',
-        key: 'suppliers1',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Proveedores 2',
-        key: 'suppliers2',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Total pasivo corriente',
-        key: 'totalCurrentLiabilities',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Oblig. financ. LP',
-        key: 'longTermFinancialLiabilities',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Total pasivo no corriente',
-        key: 'totalNonCurrentLiabilities',
-        type: 'currency',
-        width: 24,
-      },
-      {
-        header: 'Total pasivo',
-        key: 'totalLiabilities',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Ganancias acumuladas',
-        key: 'retainedEarnings',
-        type: 'currency',
-        width: 22,
-      },
-      { header: 'Patrimonio', key: 'equity', type: 'currency', width: 18 },
-      {
-        header: 'Estado de resultados',
-        key: 'incomeStatement',
-        type: 'string',
-        width: 20,
-      },
-      {
-        header: 'Ingresos ordinarios',
-        key: 'ordinaryActivityRevenue',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Costo de ventas',
-        key: 'costOfSales',
-        type: 'currency',
-        width: 20,
-      },
-      {
-        header: 'Utilidad bruta',
-        key: 'grossProfit',
-        type: 'currency',
-        width: 20,
-      },
-      {
-        header: 'Gastos administración',
-        key: 'administrativeExpenses',
-        type: 'currency',
-        width: 22,
-      },
-      {
-        header: 'Gastos de ventas',
-        key: 'sellingExpenses',
-        type: 'currency',
-        width: 20,
-      },
-      {
-        header: 'Depreciación',
-        key: 'depreciation',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Amortización',
-        key: 'amortization',
-        type: 'currency',
-        width: 18,
-      },
-      {
-        header: 'Gastos financieros',
-        key: 'financialExpenses',
-        type: 'currency',
-        width: 20,
-      },
-      { header: 'Impuestos', key: 'taxes', type: 'currency', width: 16 },
-      {
-        header: 'Utilidad neta',
-        key: 'netIncome',
-        type: 'currency',
-        width: 18,
       },
       {
         header: 'Plazo recomendado (días)',

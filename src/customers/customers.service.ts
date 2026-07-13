@@ -1,45 +1,40 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CustomersRepository } from './customers.repository.js';
-import { CreateCustomerDto } from './dto/create-customer.dto.js';
-import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { FilterCustomerDto } from './dto/filter-customer.dto.js';
 import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
+import { CustomerDetailResponseDto } from './dto/customer-detail-response.dto.js';
+import { CustomerStatsResponseDto } from './dto/customer-stats-response.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn } from '../common/excel/excel.types.js';
 
+// El alta/edición manual de clientes (create/update) se retiró: el Customer nace
+// de una consulta a DataCrédito (ver módulo credit-bureau). Aquí quedan solo las
+// operaciones de lectura, autocompletado, exportación y borrado.
 interface CustomerExportRow {
   businessName: string;
   identificationType: string | null;
   identificationNumber: string;
   personType: string | null;
   economicActivity: string | null;
-  legalRepName: string | null;
-  legalRepIdentificationType: string | null;
-  legalRepId: string | null;
-  legalRepEmail: string | null;
-  legalRepPhone: string | null;
   email: string | null;
   phone: string | null;
-  secondaryPhone: string | null;
   city: string | null;
   state: string | null;
   address: string | null;
-  seniority: number | null;
-  commercialRef1Name: string | null;
-  commercialRef1Contact: string | null;
-  commercialRef1Phone: string | null;
-  commercialRef2Name: string | null;
-  commercialRef2Contact: string | null;
-  commercialRef2Phone: string | null;
-  observations: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Forma exacta que devuelve repository.findById (entidad + relaciones incluidas).
+type CustomerWithRelations = Prisma.CustomerGetPayload<{
+  include: {
+    personType: true;
+    company: true;
+    economicActivity: true;
+    identificationType: true;
+  };
+}>;
 
 @Injectable()
 export class CustomersService {
@@ -47,44 +42,6 @@ export class CustomersService {
     private readonly repository: CustomersRepository,
     private readonly excelService: ExcelService,
   ) {}
-
-  async create(companyId: string, userId: string, dto: CreateCustomerDto) {
-    const existing = await this.repository.findByIdentification(
-      dto.identificationNumber,
-      companyId,
-    );
-    if (existing) {
-      throw new ConflictException(
-        `Ya existe un cliente con identificación "${dto.identificationNumber}" en esta empresa`,
-      );
-    }
-
-    return this.repository.create({
-      companyId,
-      personTypeId: dto.personTypeId,
-      identificationTypeId: dto.identificationTypeId,
-      businessName: dto.businessName,
-      identificationNumber: dto.identificationNumber,
-      legalRepName: dto.legalRepName,
-      legalRepId: dto.legalRepId,
-      economicActivityId: dto.economicActivityId,
-      email: dto.email,
-      phone: dto.phone,
-      secondaryPhone: dto.secondaryPhone,
-      city: dto.city,
-      address: dto.address,
-      seniority: dto.seniority,
-      commercialRef1Name: dto.commercialRef1Name,
-      commercialRef1Contact: dto.commercialRef1Contact,
-      commercialRef1Phone: dto.commercialRef1Phone,
-      commercialRef2Name: dto.commercialRef2Name,
-      commercialRef2Contact: dto.commercialRef2Contact,
-      commercialRef2Phone: dto.commercialRef2Phone,
-      observations: dto.observations,
-      createdBy: userId,
-      updatedBy: userId,
-    });
-  }
 
   async findAll(companyId: string, filters: FilterCustomerDto) {
     const page = filters.page ?? 1;
@@ -128,66 +85,93 @@ export class CustomersService {
     };
   }
 
-  async findById(id: string, companyId: string) {
-    const customer = await this.repository.findById(id, companyId);
-    if (!customer) {
-      throw new NotFoundException(
-        `Cliente con id=${id} no encontrado en esta empresa`,
-      );
-    }
-    return customer;
-  }
-
-  async update(
+  async findById(
     id: string,
     companyId: string,
-    userId: string,
-    dto: UpdateCustomerDto,
-  ) {
-    const current = await this.repository.findById(id, companyId);
-    if (!current) {
-      throw new NotFoundException(
-        `Cliente con id=${id} no encontrado en esta empresa`,
-      );
-    }
-
-    if (
-      dto.identificationNumber &&
-      dto.identificationNumber !== current.identificationNumber
-    ) {
-      const duplicate = await this.repository.findByIdentification(
-        dto.identificationNumber,
-        companyId,
-      );
-      if (duplicate) {
-        throw new ConflictException(
-          `Ya existe un cliente con identificación "${dto.identificationNumber}" en esta empresa`,
-        );
-      }
-    }
-
-    return this.repository.update(id, {
-      ...dto,
-      updatedBy: userId,
-    });
-  }
-
-  async remove(id: string, companyId: string) {
+  ): Promise<CustomerDetailResponseDto> {
     const customer = await this.repository.findById(id, companyId);
     if (!customer) {
       throw new NotFoundException(
         `Cliente con id=${id} no encontrado en esta empresa`,
       );
     }
+    return this.toDetailResponse(customer);
+  }
 
-    const hasStudies = await this.repository.hasCreditStudies(id);
-    if (hasStudies) {
-      throw new ConflictException(
-        'No se puede eliminar: este cliente tiene estudios de crédito asociados',
-      );
-    }
+  // Aplana la entidad Prisma (nombres, demográficos y verificationDigit sueltos en
+  // la raíz) a la forma anidada del DTO unificado. Los bloques que no aplican al
+  // tipo de persona quedan null: nameParts + demographics solo para PN;
+  // verificationDigit + bureauProfile solo para PJ.
+  private toDetailResponse(
+    c: CustomerWithRelations,
+  ): CustomerDetailResponseDto {
+    const hasNameParts =
+      c.firstName != null ||
+      c.secondName != null ||
+      c.firstLastName != null ||
+      c.secondLastName != null;
 
-    return this.repository.delete(id);
+    const hasDemographics =
+      c.birthDate != null ||
+      c.birthCity != null ||
+      c.gender != null ||
+      c.ageRange != null ||
+      c.documentStatus != null;
+
+    return {
+      id: c.id,
+      companyId: c.companyId,
+      personType: {
+        id: c.personType.id,
+        code: c.personType.code,
+        label: c.personType.label,
+      },
+      identificationType: c.identificationType
+        ? {
+            id: c.identificationType.id,
+            code: c.identificationType.code,
+            label: c.identificationType.label,
+          }
+        : null,
+      businessName: c.businessName,
+      identificationNumber: c.identificationNumber,
+      verificationDigit: c.verificationDigit,
+      economicActivity: c.economicActivity
+        ? {
+            id: c.economicActivity.id,
+            code: c.economicActivity.code,
+            label: c.economicActivity.label,
+          }
+        : null,
+      nameParts: hasNameParts
+        ? {
+            firstName: c.firstName,
+            secondName: c.secondName,
+            firstLastName: c.firstLastName,
+            secondLastName: c.secondLastName,
+          }
+        : null,
+      email: c.email,
+      phone: c.phone,
+      city: c.city,
+      state: c.state,
+      address: c.address,
+      demographics: hasDemographics
+        ? {
+            birthDate: c.birthDate,
+            birthCity: c.birthCity,
+            gender: c.gender,
+            ageRange: c.ageRange,
+            documentStatus: c.documentStatus,
+          }
+        : null,
+      bureauProfile:
+        (c.bureauProfile as CustomerDetailResponseDto['bureauProfile']) ?? null,
+      bureauCreated: c.bureauCreated,
+      lastConsultedAt: c.lastConsultedAt,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    };
   }
 
   async findCreditStudies(customerId: string, companyId: string) {
@@ -205,6 +189,145 @@ export class CustomersService {
     });
   }
 
+  // Estadísticas de vistazo rápido: comportamiento crediticio del cliente en la
+  // empresa, calculado sobre sus CreditStudy. Un solo query; los agregados se
+  // computan en memoria (un cliente tiene decenas de estudios, no miles).
+  async getStats(
+    customerId: string,
+    companyId: string,
+  ): Promise<CustomerStatsResponseDto> {
+    const customer = await this.repository.findById(customerId, companyId);
+    if (!customer) {
+      throw new NotFoundException(
+        `Cliente con id=${customerId} no encontrado en esta empresa`,
+      );
+    }
+
+    // Más reciente primero: los cálculos de "último" toman el índice 0.
+    const studies = await this.repository.findCreditStudiesByCustomerId({
+      customerId,
+      companyId,
+      orderBy: { studyDate: 'desc' },
+    });
+
+    const now = new Date();
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+    const avg = (values: number[]) =>
+      values.length
+        ? round1(values.reduce((a, b) => a + b, 0) / values.length)
+        : null;
+
+    // ── studies ──
+    const first = studies.at(-1) ?? null;
+    const last = studies.at(0) ?? null;
+
+    const byStatusMap = new Map<string, { label: string; count: number }>();
+    for (const s of studies) {
+      const entry = byStatusMap.get(s.status.code);
+      if (entry) {
+        entry.count++;
+      } else {
+        byStatusMap.set(s.status.code, { label: s.status.label, count: 1 });
+      }
+    }
+
+    // ── viability (solo estudios ya analizados) ──
+    const analyzed = studies.filter((s) => s.viabilityStatus != null);
+    const countBy = (status: string) =>
+      analyzed.filter((s) => s.viabilityStatus === status).length;
+    const approved = countBy('approved');
+    const scores = analyzed
+      .map((s) => s.viabilityScore)
+      .filter((v): v is number => v != null);
+    const lastAnalyzed = analyzed.at(0) ?? null;
+    const prevAnalyzed = analyzed.at(1) ?? null;
+
+    let scoreTrend: 'up' | 'down' | 'stable' | null = null;
+    if (
+      lastAnalyzed?.viabilityScore != null &&
+      prevAnalyzed?.viabilityScore != null
+    ) {
+      const delta = lastAnalyzed.viabilityScore - prevAnalyzed.viabilityScore;
+      scoreTrend = delta > 0 ? 'up' : delta < 0 ? 'down' : 'stable';
+    }
+
+    // ── amounts ──
+    const requested = studies
+      .map((s) => s.requestedCreditLine)
+      .filter((v): v is number => v != null);
+    const recommended = studies
+      .map((s) => s.recommendedCreditLine)
+      .filter((v): v is number => v != null);
+    const totalRequested = requested.length
+      ? requested.reduce((a, b) => a + b, 0)
+      : null;
+    const totalRecommended = recommended.length
+      ? recommended.reduce((a, b) => a + b, 0)
+      : null;
+    const lastWithRecommendation =
+      studies.find((s) => s.recommendedCreditLine != null) ?? null;
+
+    // ── timing ──
+    const resolutionDays = studies
+      .filter((s) => s.resolutionDate != null)
+      .map(
+        (s) =>
+          (s.resolutionDate!.getTime() - s.studyDate.getTime()) / MS_PER_DAY,
+      )
+      .filter((d) => d >= 0);
+    const twelveMonthsAgo = new Date(now);
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+    return {
+      customerId,
+      studies: {
+        total: studies.length,
+        firstStudyDate: first?.studyDate ?? null,
+        lastStudyDate: last?.studyDate ?? null,
+        daysSinceLastStudy: last
+          ? Math.floor((now.getTime() - last.studyDate.getTime()) / MS_PER_DAY)
+          : null,
+        byStatus: [...byStatusMap.entries()].map(([code, v]) => ({
+          code,
+          label: v.label,
+          count: v.count,
+        })),
+      },
+      viability: {
+        analyzed: analyzed.length,
+        approved,
+        conditional: countBy('conditional'),
+        rejected: countBy('rejected'),
+        approvalRate: analyzed.length
+          ? round1((approved / analyzed.length) * 100)
+          : null,
+        avgScore: avg(scores),
+        lastScore: lastAnalyzed?.viabilityScore ?? null,
+        lastStatus: lastAnalyzed?.viabilityStatus ?? null,
+        scoreTrend,
+      },
+      amounts: {
+        totalRequested,
+        avgRequested: avg(requested),
+        totalRecommended,
+        avgRecommended: avg(recommended),
+        recommendationRatio:
+          totalRequested && totalRecommended != null
+            ? round1((totalRecommended / totalRequested) * 100)
+            : null,
+        lastRecommendedCreditLine:
+          lastWithRecommendation?.recommendedCreditLine ?? null,
+      },
+      timing: {
+        avgResolutionDays: avg(resolutionDays),
+        studiesLast12Months: studies.filter(
+          (s) => s.studyDate >= twelveMonthsAgo,
+        ).length,
+      },
+    };
+  }
+
   async autocomplete(companyId: string, filters: AutocompleteCustomerDto) {
     return this.repository.autocomplete(companyId, filters.search);
   }
@@ -218,25 +341,11 @@ export class CustomersService {
       identificationNumber: c.identificationNumber,
       personType: c.personType?.label ?? null,
       economicActivity: c.economicActivity?.label ?? null,
-      legalRepName: c.legalRepName,
-      legalRepIdentificationType: c.legalRepIdentificationType?.label ?? null,
-      legalRepId: c.legalRepId,
-      legalRepEmail: c.legalRepEmail,
-      legalRepPhone: c.legalRepPhone,
       email: c.email,
       phone: c.phone,
-      secondaryPhone: c.secondaryPhone,
       city: c.city,
       state: c.state,
       address: c.address,
-      seniority: c.seniority,
-      commercialRef1Name: c.commercialRef1Name,
-      commercialRef1Contact: c.commercialRef1Contact,
-      commercialRef1Phone: c.commercialRef1Phone,
-      commercialRef2Name: c.commercialRef2Name,
-      commercialRef2Contact: c.commercialRef2Contact,
-      commercialRef2Phone: c.commercialRef2Phone,
-      observations: c.observations,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
     }));
@@ -267,95 +376,11 @@ export class CustomersService {
         type: 'string',
         width: 30,
       },
-      {
-        header: 'Representante legal',
-        key: 'legalRepName',
-        type: 'string',
-        width: 30,
-      },
-      {
-        header: 'Tipo id. rep. legal',
-        key: 'legalRepIdentificationType',
-        type: 'string',
-        width: 22,
-      },
-      {
-        header: 'Identificación rep. legal',
-        key: 'legalRepId',
-        type: 'string',
-        width: 22,
-      },
-      {
-        header: 'Email rep. legal',
-        key: 'legalRepEmail',
-        type: 'string',
-        width: 28,
-      },
-      {
-        header: 'Teléfono rep. legal',
-        key: 'legalRepPhone',
-        type: 'string',
-        width: 20,
-      },
       { header: 'Email', key: 'email', type: 'string', width: 28 },
       { header: 'Teléfono', key: 'phone', type: 'string', width: 18 },
-      {
-        header: 'Teléfono secundario',
-        key: 'secondaryPhone',
-        type: 'string',
-        width: 20,
-      },
       { header: 'Ciudad', key: 'city', type: 'string', width: 20 },
       { header: 'Departamento', key: 'state', type: 'string', width: 20 },
       { header: 'Dirección', key: 'address', type: 'string', width: 30 },
-      {
-        header: 'Antigüedad (años)',
-        key: 'seniority',
-        type: 'number',
-        width: 15,
-      },
-      {
-        header: 'Ref. comercial 1 - Nombre',
-        key: 'commercialRef1Name',
-        type: 'string',
-        width: 28,
-      },
-      {
-        header: 'Ref. comercial 1 - Contacto',
-        key: 'commercialRef1Contact',
-        type: 'string',
-        width: 28,
-      },
-      {
-        header: 'Ref. comercial 1 - Teléfono',
-        key: 'commercialRef1Phone',
-        type: 'string',
-        width: 22,
-      },
-      {
-        header: 'Ref. comercial 2 - Nombre',
-        key: 'commercialRef2Name',
-        type: 'string',
-        width: 28,
-      },
-      {
-        header: 'Ref. comercial 2 - Contacto',
-        key: 'commercialRef2Contact',
-        type: 'string',
-        width: 28,
-      },
-      {
-        header: 'Ref. comercial 2 - Teléfono',
-        key: 'commercialRef2Phone',
-        type: 'string',
-        width: 22,
-      },
-      {
-        header: 'Observaciones',
-        key: 'observations',
-        type: 'string',
-        width: 40,
-      },
       { header: 'Creado', key: 'createdAt', type: 'datetime', width: 20 },
       { header: 'Actualizado', key: 'updatedAt', type: 'datetime', width: 20 },
     ];
