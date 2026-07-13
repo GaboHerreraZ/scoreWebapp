@@ -1,5 +1,15 @@
 # Implementacion de Analisis IA - Backend (NestJS)
 
+> ⚠️ **DOCUMENTO OBSOLETO — NO SEGUIR.** Describe la integración original con
+> OpenAI (GPT-4o mini) y el modelo de análisis v1 (5 dimensiones fijas), ambos
+> reemplazados. La implementación vigente usa **Claude (Anthropic)** y el
+> **modelo de scoring v2**. Referencias actuales:
+> - **Motor y flujo end-to-end**: [`credit-study-scoring-v2.md`](./credit-study-scoring-v2.md) (§12 para el flujo completo).
+> - **Prompt del informe IA (v2)**: [`../src/ai/prompts/credit-study-analysis.prompt.ts`](../src/ai/prompts/credit-study-analysis.prompt.ts) — consciente de PN/PJ, 3 capas de red flags, keyFigures, rechazo eliminatorio.
+> - **Endpoint**: `POST /companies/:companyId/ai-analyses/credit-studies/:creditStudyId` (requiere el `perform` previo). El informe queda en `step3.aiAnalysis` del stepper.
+> - **Extracción de PDF (EEFF)**: [`financial-statements-model.md`](./financial-statements-model.md).
+> Se conserva solo como registro histórico.
+
 ## 1. Cuenta y API Key de OpenAI
 
 ### Crear cuenta

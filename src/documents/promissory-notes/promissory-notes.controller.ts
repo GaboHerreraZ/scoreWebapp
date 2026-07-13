@@ -49,6 +49,8 @@ export class PromissoryNotesController {
     private readonly promissoryNotesService: PromissoryNotesService,
   ) {}
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   @Post('companies/:companyId/documents/promissory-notes')
   @ApiOperation({
     summary: 'Crea un pagaré y lo envía al cliente vía DocuSeal para su firma',
@@ -124,6 +126,7 @@ export class PromissoryNotesController {
   ) {
     return this.promissoryNotesService.preview(companyId, dto);
   }
+  */
 
   @Patch('companies/:companyId/documents/promissory-notes/:id/decline')
   @ApiOperation({

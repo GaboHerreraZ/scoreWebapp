@@ -1,5 +1,13 @@
 # Modelo de Viabilidad - Estudio de Credito
 
+> ⚠️ **DOCUMENTO OBSOLETO.** Este describe el modelo de **5 dimensiones** basado en
+> una sola fuente (EEFF ingresados a mano). Fue reemplazado por el modelo de
+> **7 dimensiones con configuración versionada** implementado en
+> [`credit-study-scoring-v2.md`](./credit-study-scoring-v2.md)
+> (fuente de verdad = DataCrédito, pesos configurables por empresa, dimensiones de
+> veracidad y riesgo de central). Se conserva solo como referencia histórica de la
+> lógica de las dimensiones 1-5, que el modelo nuevo mantiene.
+
 ## Contexto
 
 La aplicacion realiza estudios de credito para clientes. El usuario ingresa datos financieros (balance general + estado de resultados) y el backend calcula indicadores usando el modelo Z-Score de Altman junto con metricas de capacidad de pago y rotacion.

@@ -67,6 +67,8 @@ export class PromissoryNotesService {
       'promissory-notes';
   }
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   async create(
     companyId: string,
     userId: string,
@@ -210,13 +212,16 @@ export class PromissoryNotesService {
       throw err;
     }
   }
+  */
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   /**
    * Creates a promissory note using an HTML template instead of a DocuSeal
    * template ID. The HTML is read from disk, field placeholders are replaced
    * with stamp-field / signature-field tags pre-filled with the real values,
    * and then sent via `createSubmissionFromHtml`.
-   */
+   *\/
   async createFromHtml(
     companyId: string,
     userId: string,
@@ -363,12 +368,15 @@ export class PromissoryNotesService {
       throw err;
     }
   }
+  */
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   /**
    * Returns a preview of the promissory note as clean HTML (no DocuSeal tags).
    * Dynamic values are wrapped in <strong> to highlight them visually.
    * No records are created and DocuSeal is not called.
-   */
+   *\/
   async preview(companyId: string, dto: CreatePromissoryNoteDto) {
     // 1. Load the credit study with customer and company details
     const creditStudy = await this.prisma.creditStudy.findFirst({
@@ -433,6 +441,7 @@ export class PromissoryNotesService {
     // 6. Render the preview HTML
     return { html: this.renderPreviewHtml(values) };
   }
+  */
 
   async findById(id: number, companyId: string) {
     const note = await this.repository.findById(id, companyId);
@@ -671,12 +680,12 @@ export class PromissoryNotesService {
       signedFileStoragePath: storagePath,
     });
 
-    // 5. Close the credit study by moving it to `estudioCompletado`
+    // 5. Cerrar el estudio moviéndolo a `closed` (firmado por todas las partes)
     const completedStudyStatus =
-      await this.parametersRepository.findByCode('studyClosed');
+      await this.parametersRepository.findByCode('closed');
     if (!completedStudyStatus) {
       this.logger.warn(
-        'Parameter with code "estudioCompletado" not found — credit study status was not updated',
+        'Parameter with code "closed" not found — credit study status was not updated',
       );
       return;
     }
@@ -719,6 +728,8 @@ export class PromissoryNotesService {
       .catch(() => {});
   }
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   private validateCustomer(customer: {
     email: string | null;
     businessName: string;
@@ -784,6 +795,7 @@ export class PromissoryNotesService {
       }
     }
   }
+  */
 
   private validateCompany(company: {
     name: string;
@@ -816,6 +828,8 @@ export class PromissoryNotesService {
     }
   }
 
+  // ─── DESACTIVADO temporalmente: depende de customer.legalRep* (flujo bureau nuevo) ───
+  /*
   private buildDocuSealValues(params: {
     promissoryNoteId: number;
     amount: number;
@@ -893,6 +907,7 @@ export class PromissoryNotesService {
       companyLogoUrl: params.companyLogoSignedUrl ?? '',
     };
   }
+  */
 
   private async updateCreditStudyToPendingSignature(
     creditStudyId: string,

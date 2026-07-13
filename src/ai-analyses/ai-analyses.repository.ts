@@ -35,24 +35,6 @@ export class AiAnalysesRepository {
     });
   }
 
-  /**
-   * Vincula una fila de AiAnalysis (p. ej. la extracción de PDF, creada antes
-   * que el estudio) a su CreditStudy. Acepta un tx opcional para correr dentro
-   * de la transacción que crea el estudio. updateMany para no fallar si el id no
-   * existe (best-effort).
-   */
-  async linkToCreditStudy(
-    analysisId: string,
-    creditStudyId: string,
-    tx?: Prisma.TransactionClient,
-  ) {
-    const client = tx ?? this.prisma;
-    return client.aiAnalysis.updateMany({
-      where: { id: analysisId },
-      data: { creditStudyId },
-    });
-  }
-
   async findAll(params: {
     skip: number;
     take: number;
@@ -113,5 +95,50 @@ export class AiAnalysesRepository {
         status: true,
       },
     });
+  }
+
+  /**
+   * Carga completa para el análisis IA (modelo v2): el estudio + su cliente (con
+   * tipo de persona legible), los análisis financieros congelados (PDF y/o
+   * DataCrédito, cada uno con sus 2 años y sus indicadores) y el último snapshot
+   * de riesgo de la central. El `viabilityConditions` ya vive en el estudio
+   * (ScoringResult persistido por performStudy). Devuelve null si no existe.
+   */
+  async findStudyForAiAnalysis(creditStudyId: string, companyId: string) {
+    const study = await this.prisma.creditStudy.findFirst({
+      where: { id: creditStudyId, companyId },
+      include: {
+        customer: {
+          include: {
+            personType: {
+              select: { id: true, code: true, label: true, description: true },
+            },
+          },
+        },
+        status: true,
+      },
+    });
+    if (!study) return null;
+
+    const [frozen, riskSnapshot] = await Promise.all([
+      this.prisma.creditStudyFinancialAnalysis.findMany({
+        where: { creditStudyId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          financialAnalysis: {
+            include: {
+              periods: { orderBy: { fiscalYear: 'desc' }, take: 2 },
+            },
+          },
+        },
+      }),
+      this.prisma.customerRiskSnapshot.findFirst({
+        where: { customerId: study.customerId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const analyses = frozen.map((r) => r.financialAnalysis);
+    return { study, analyses, riskSnapshot };
   }
 }

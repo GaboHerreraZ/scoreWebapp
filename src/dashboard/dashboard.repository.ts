@@ -17,15 +17,6 @@ export class DashboardRepository {
     });
   }
 
-  async countStudies(companyId: string, before?: Date): Promise<number> {
-    return this.prisma.creditStudy.count({
-      where: {
-        companyId,
-        ...(before ? { createdAt: { lt: before } } : {}),
-      },
-    });
-  }
-
   async countStudiesInRange(
     companyId: string,
     from: Date,
@@ -36,27 +27,6 @@ export class DashboardRepository {
         companyId,
         createdAt: { gte: from, lt: to },
       },
-    });
-  }
-
-  async countActiveUsers(companyId: string, before?: Date): Promise<number> {
-    return this.prisma.userCompany.count({
-      where: {
-        companyId,
-        isActive: true,
-        ...(before ? { createdAt: { lt: before } } : {}),
-      },
-    });
-  }
-
-  async creditSummaryInRange(companyId: string, from: Date, to: Date) {
-    return this.prisma.creditStudy.aggregate({
-      where: {
-        companyId,
-        createdAt: { gte: from, lt: to },
-      },
-      _sum: { requestedCreditLine: true },
-      _avg: { requestedCreditLine: true, requestedTerm: true },
     });
   }
 
@@ -90,14 +60,6 @@ export class DashboardRepository {
     return rows.map((r) => ({ month: r.month, count: Number(r.count) }));
   }
 
-  async customersByPersonType(companyId: string) {
-    return this.prisma.customer.groupBy({
-      by: ['personTypeId'],
-      where: { companyId },
-      _count: { id: true },
-    });
-  }
-
   async recentStudies(companyId: string, limit: number) {
     return this.prisma.creditStudy.findMany({
       where: { companyId },
@@ -107,186 +69,140 @@ export class DashboardRepository {
         id: true,
         studyDate: true,
         requestedCreditLine: true,
+        recommendedCreditLine: true,
+        viabilityScore: true,
+        viabilityStatus: true,
         customer: { select: { businessName: true } },
-        status: { select: { id: true, label: true } },
+        status: { select: { id: true, code: true, label: true } },
       },
     });
   }
 
   // ── ADVANCED DASHBOARD QUERIES ──────────────────────────────
+  // Todo lo de abajo lee de datos VIVOS del modelo actual: veredictos y montos
+  // del análisis de viabilidad (CreditStudy), riesgo de la central
+  // (CustomerRiskSnapshot) y saldo de consultas (AnalysisPack). Los promedios de
+  // cifras contables entre clientes de tamaños distintos se eliminaron a
+  // propósito: no soportan ninguna decisión.
 
-  async avgFinancialIndicators(
-    companyId: string,
+  /** Filtro de rango sobre studyDate (opcional en ambos extremos). */
+  private studyDateFilter(
     dateFrom?: Date,
     dateTo?: Date,
-  ) {
-    const where: Prisma.CreditStudyWhereInput = {
-      companyId,
-      stabilityFactor: { not: null },
-    };
-    if (dateFrom || dateTo) {
-      where.studyDate = {};
-      if (dateFrom) where.studyDate.gte = dateFrom;
-      if (dateTo) where.studyDate.lte = dateTo;
-    }
+  ): Prisma.CreditStudyWhereInput {
+    if (!dateFrom && !dateTo) return {};
+    const studyDate: Prisma.DateTimeFilter = {};
+    if (dateFrom) studyDate.gte = dateFrom;
+    if (dateTo) studyDate.lte = dateTo;
+    return { studyDate };
+  }
 
-    return this.prisma.creditStudy.aggregate({
-      where,
-      _avg: {
-        ebitda: true,
-        monthlyPaymentCapacity: true,
-        stabilityFactor: true,
-        paymentTimeSuppliers: true,
+  /** Veredictos de viabilidad (approved/conditional/rejected) en el rango. */
+  async verdictsInRange(companyId: string, dateFrom?: Date, dateTo?: Date) {
+    return this.prisma.creditStudy.groupBy({
+      by: ['viabilityStatus'],
+      where: {
+        companyId,
+        viabilityStatus: { not: null },
+        ...this.studyDateFilter(dateFrom, dateTo),
       },
+      _count: { id: true },
     });
   }
 
-  async stabilityDistribution(
+  /** Score de viabilidad promedio de los estudios analizados en el rango. */
+  async avgViabilityScoreInRange(
     companyId: string,
     dateFrom?: Date,
     dateTo?: Date,
   ) {
-    const effectiveDateFrom = dateFrom ?? new Date('1900-01-01');
-    const effectiveDateTo = dateTo ?? new Date('2100-01-01');
-
-    const rows = await this.prisma.$queryRaw<
-      Array<{ band: string; count: bigint }>
-    >`
-      SELECT
-        CASE
-          WHEN stability_factor <= 0.33 THEN 'high_risk'
-          WHEN stability_factor <= 0.66 THEN 'medium_risk'
-          ELSE 'low_risk'
-        END AS band,
-        COUNT(*)::bigint AS count
-      FROM credit_studies
-      WHERE company_id = ${companyId}::uuid
-        AND stability_factor IS NOT NULL
-        AND study_date >= ${effectiveDateFrom}
-        AND study_date <= ${effectiveDateTo}
-      GROUP BY band
-      ORDER BY band
-    `;
-
-    return rows.map((r) => ({ band: r.band, count: Number(r.count) }));
+    const agg = await this.prisma.creditStudy.aggregate({
+      where: {
+        companyId,
+        viabilityScore: { not: null },
+        ...this.studyDateFilter(dateFrom, dateTo),
+      },
+      _avg: { viabilityScore: true },
+    });
+    return agg._avg.viabilityScore;
   }
 
-  async paymentCapacityTrend(
+  /**
+   * Dinero del período: total solicitado (todos los estudios del rango) y total
+   * AVALADO por Creditia (recommendedCreditLine de los estudios con veredicto
+   * approved/conditional; un rechazado no avala nada).
+   */
+  async creditTotalsInRange(
     companyId: string,
-    months: number,
     dateFrom?: Date,
     dateTo?: Date,
-  ) {
-    const defaultFrom = new Date();
-    defaultFrom.setMonth(defaultFrom.getMonth() - months);
-    defaultFrom.setDate(1);
-    defaultFrom.setHours(0, 0, 0, 0);
+  ): Promise<{ totalRequested: number; totalApproved: number }> {
+    const range = this.studyDateFilter(dateFrom, dateTo);
+    const [requested, approved] = await Promise.all([
+      this.prisma.creditStudy.aggregate({
+        where: { companyId, ...range },
+        _sum: { requestedCreditLine: true },
+      }),
+      this.prisma.creditStudy.aggregate({
+        where: {
+          companyId,
+          viabilityStatus: { in: ['approved', 'conditional'] },
+          ...range,
+        },
+        _sum: { recommendedCreditLine: true },
+      }),
+    ]);
+    return {
+      totalRequested: Number(requested._sum.requestedCreditLine ?? 0),
+      totalApproved: Number(approved._sum.recommendedCreditLine ?? 0),
+    };
+  }
 
-    const effectiveDateFrom = dateFrom ?? defaultFrom;
-    const effectiveDateTo = dateTo ?? new Date();
-
+  /**
+   * Riesgo de la cartera según la central: el snapshot MÁS RECIENTE de cada
+   * cliente de la empresa (score + saldo en mora). El servicio los agrupa por
+   * banda de score y cuenta la mora vigente.
+   */
+  async bureauRiskLatest(
+    companyId: string,
+  ): Promise<Array<{ score: number | null; saldoMora: number | null }>> {
     const rows = await this.prisma.$queryRaw<
-      Array<{ month: string; avg_capacity: number | null }>
+      Array<{ score: number | null; saldo_mora: number | null }>
     >`
-      SELECT
-        to_char(study_date, 'YYYY-MM') AS month,
-        AVG(monthly_payment_capacity) AS avg_capacity
-      FROM credit_studies
-      WHERE company_id = ${companyId}::uuid
-        AND monthly_payment_capacity IS NOT NULL
-        AND study_date >= ${effectiveDateFrom}
-        AND study_date <= ${effectiveDateTo}
-      GROUP BY to_char(study_date, 'YYYY-MM')
-      ORDER BY month ASC
+      SELECT DISTINCT ON (s.customer_id) s.score, s.saldo_mora
+      FROM customer_risk_snapshots s
+      JOIN customers c ON c.id = s.customer_id
+      WHERE c.company_id = ${companyId}::uuid
+      ORDER BY s.customer_id, s.created_at DESC
     `;
-
     return rows.map((r) => ({
-      month: r.month,
-      avgCapacity: Number(r.avg_capacity ?? 0),
+      score: r.score === null ? null : Number(r.score),
+      saldoMora: r.saldo_mora === null ? null : Number(r.saldo_mora),
     }));
   }
 
-  async avgTurnoverIndicators(
-    companyId: string,
-    dateFrom?: Date,
-    dateTo?: Date,
-  ) {
-    const where: Prisma.CreditStudyWhereInput = {
-      companyId,
-      accountsReceivableTurnover: { not: null },
-    };
-    if (dateFrom || dateTo) {
-      where.studyDate = {};
-      if (dateFrom) where.studyDate.gte = dateFrom;
-      if (dateTo) where.studyDate.lte = dateTo;
-    }
-
-    return this.prisma.creditStudy.aggregate({
-      where,
-      _avg: {
-        accountsReceivableTurnover: true,
-        inventoryTurnover: true,
-        suppliersTurnover: true,
-        paymentTimeSuppliers: true,
-      },
-    });
-  }
-
-  async avgFinancialIndicatorsInRange(
-    companyId: string,
-    from: Date,
-    to: Date,
-  ) {
-    return this.prisma.creditStudy.aggregate({
+  /**
+   * Saldo de consultas de la empresa: bolsas activas y vigentes, con lo comprado,
+   * lo consumido y su vencimiento. Pocas filas por empresa (se agrega en el
+   * servicio).
+   */
+  async activePacksBalance(companyId: string) {
+    return this.prisma.analysisPack.findMany({
       where: {
         companyId,
-        stabilityFactor: { not: null },
-        studyDate: { gte: from, lt: to },
+        status: { type: 'analysis_pack_status', code: 'active' },
+        endDate: { gte: new Date() },
       },
-      _avg: {
-        ebitda: true,
-        monthlyPaymentCapacity: true,
-        stabilityFactor: true,
-        paymentTimeSuppliers: true,
+      select: {
+        quantityPurchased: true,
+        quantityConsumed: true,
+        endDate: true,
       },
+      orderBy: { endDate: 'asc' },
     });
   }
 
-  async avgTurnoverIndicatorsInRange(
-    companyId: string,
-    from: Date,
-    to: Date,
-  ) {
-    return this.prisma.creditStudy.aggregate({
-      where: {
-        companyId,
-        accountsReceivableTurnover: { not: null },
-        studyDate: { gte: from, lt: to },
-      },
-      _avg: {
-        accountsReceivableTurnover: true,
-        inventoryTurnover: true,
-        suppliersTurnover: true,
-        paymentTimeSuppliers: true,
-      },
-    });
-  }
-
-  async avgDebtStructureInRange(companyId: string, from: Date, to: Date) {
-    return this.prisma.creditStudy.aggregate({
-      where: {
-        companyId,
-        studyDate: { gte: from, lt: to },
-      },
-      _avg: {
-        totalCurrentLiabilities: true,
-        totalNonCurrentLiabilities: true,
-        equity: true,
-        totalLiabilities: true,
-      },
-    });
-  }
-
+  /** Top clientes por crédito solicitado + lo avalado por Creditia, en el rango. */
   async topCustomersByCredit(
     companyId: string,
     limit: number,
@@ -301,6 +217,7 @@ export class DashboardRepository {
         customer_id: string;
         business_name: string;
         total_credit: number;
+        total_approved: number;
         studies_count: bigint;
       }>
     >`
@@ -308,6 +225,10 @@ export class DashboardRepository {
         c.id AS customer_id,
         c.business_name,
         COALESCE(SUM(cs.requested_credit_line), 0) AS total_credit,
+        COALESCE(SUM(
+          CASE WHEN cs.viability_status IN ('approved', 'conditional')
+               THEN cs.recommended_credit_line ELSE 0 END
+        ), 0) AS total_approved,
         COUNT(cs.id)::bigint AS studies_count
       FROM credit_studies cs
       JOIN customers c ON c.id = cs.customer_id
@@ -322,120 +243,27 @@ export class DashboardRepository {
     return rows.map((r) => ({
       customerId: r.customer_id,
       businessName: r.business_name,
-      totalCredit: Number(r.total_credit),
+      totalRequested: Number(r.total_credit),
+      totalApproved: Number(r.total_approved),
       studiesCount: Number(r.studies_count),
     }));
   }
 
-  async revenueVsNetIncome(
-    companyId: string,
-    months: number,
-    dateFrom?: Date,
-    dateTo?: Date,
-  ) {
-    const defaultFrom = new Date();
-    defaultFrom.setMonth(defaultFrom.getMonth() - months);
-    defaultFrom.setDate(1);
-    defaultFrom.setHours(0, 0, 0, 0);
-
-    const effectiveDateFrom = dateFrom ?? defaultFrom;
-    const effectiveDateTo = dateTo ?? new Date();
-
-    const rows = await this.prisma.$queryRaw<
-      Array<{
-        month: string;
-        avg_revenue: number | null;
-        avg_net_income: number | null;
-      }>
-    >`
-      SELECT
-        to_char(study_date, 'YYYY-MM') AS month,
-        AVG(ordinary_activity_revenue) AS avg_revenue,
-        AVG(net_income) AS avg_net_income
-      FROM credit_studies
-      WHERE company_id = ${companyId}::uuid
-        AND study_date >= ${effectiveDateFrom}
-        AND study_date <= ${effectiveDateTo}
-      GROUP BY to_char(study_date, 'YYYY-MM')
-      ORDER BY month ASC
-    `;
-
-    return rows.map((r) => ({
-      month: r.month,
-      avgRevenue: Number(r.avg_revenue ?? 0),
-      avgNetIncome: Number(r.avg_net_income ?? 0),
-    }));
-  }
-
-  async avgDebtStructure(companyId: string, dateFrom?: Date, dateTo?: Date) {
-    const where: Prisma.CreditStudyWhereInput = { companyId };
-    if (dateFrom || dateTo) {
-      where.studyDate = {};
-      if (dateFrom) where.studyDate.gte = dateFrom;
-      if (dateTo) where.studyDate.lte = dateTo;
-    }
-
-    return this.prisma.creditStudy.aggregate({
-      where,
-      _avg: {
-        totalCurrentLiabilities: true,
-        totalNonCurrentLiabilities: true,
-        equity: true,
-        totalLiabilities: true,
-      },
-    });
-  }
-
-  async studiesByAnalyst(companyId: string, dateFrom?: Date, dateTo?: Date) {
-    const where: Prisma.CreditStudyWhereInput = { companyId };
-    if (dateFrom || dateTo) {
-      where.studyDate = {};
-      if (dateFrom) where.studyDate.gte = dateFrom;
-      if (dateTo) where.studyDate.lte = dateTo;
-    }
-
-    return this.prisma.creditStudy.groupBy({
-      by: ['createdBy'],
-      where,
-      _count: { id: true },
-    });
-  }
-
-  async customersByEconomicActivity(companyId: string) {
-    return this.prisma.customer.groupBy({
-      by: ['economicActivityId'],
-      where: { companyId, economicActivityId: { not: null } },
-      _count: { id: true },
-    });
-  }
-
   // ── HELPERS ─────────────────────────────────────────────────
 
-  async getParameterLabels(ids: number[]): Promise<Map<number, string>> {
+  /** Parámetros por id → {code, label} (para el pipeline del flujo). */
+  async getParameterMeta(
+    ids: number[],
+  ): Promise<Map<number, { code: string; label: string }>> {
     if (ids.length === 0) return new Map();
 
     const params = await this.prisma.parameter.findMany({
       where: { id: { in: ids } },
-      select: { id: true, label: true },
-    });
-
-    return new Map(params.map((p) => [p.id, p.label]));
-  }
-
-  async getProfileNames(ids: string[]): Promise<Map<string, string>> {
-    if (ids.length === 0) return new Map();
-
-    const profiles = await this.prisma.profile.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, name: true, lastName: true },
+      select: { id: true, code: true, label: true },
     });
 
     return new Map(
-      profiles.map((p) => [
-        p.id,
-        [p.name, p.lastName].filter(Boolean).join(' '),
-      ]),
+      params.map((p) => [p.id, { code: p.code, label: p.label }]),
     );
   }
-
 }

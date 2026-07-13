@@ -11,6 +11,7 @@ import { UpdateSupportTicketDto } from './dto/update-support-ticket.dto.js';
 import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
 import { MailService } from '../mail/mail.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { toJson } from '../common/utils/prisma-json.util.js';
 
 @Injectable()
 export class SupportTicketsService {
@@ -66,7 +67,7 @@ export class SupportTicketsService {
         description: dto.description,
         relatedEntityType: dto.relatedEntityType ?? null,
         relatedEntityId: dto.relatedEntityId ?? null,
-        context: (dto.context as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        context: toJson(dto.context),
         createdBy: userId,
       },
       year,

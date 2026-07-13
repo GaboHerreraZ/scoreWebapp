@@ -2,16 +2,12 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
-  Delete,
   Body,
   Param,
   Query,
   Req,
   Res,
   ParseUUIDPipe,
-  HttpCode,
-  HttpStatus,
   StreamableFile,
 } from '@nestjs/common';
 import {
@@ -22,9 +18,8 @@ import {
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { CreditStudiesService } from './credit-studies.service.js';
-import { CreateCreditStudyDto } from './dto/create-credit-study.dto.js';
-import { UpdateCreditStudyDto } from './dto/update-credit-study.dto.js';
 import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
+import { CreateStudyFromBureauDto } from './dto/create-study-from-bureau.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Credit Studies')
@@ -34,23 +29,30 @@ import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js'
 export class CreditStudiesController {
   constructor(private readonly creditStudiesService: CreditStudiesService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Create a credit study' })
+  @Post('from-bureau')
+  @ApiOperation({
+    summary:
+      'Consultar el cliente en la central y crear el estudio (única entrada)',
+  })
   @ApiResponse({
     status: 201,
-    description: 'Credit study created successfully',
+    description: 'Cliente consultado/actualizado y estudio creado',
   })
   @ApiResponse({
-    status: 400,
-    description: 'Customer does not belong to this company',
+    status: 404,
+    description: 'La central no tiene información para la identificación',
   })
-  create(
+  @ApiResponse({
+    status: 409,
+    description: 'Sin saldo de consultas disponible',
+  })
+  createFromBureau(
     @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Body() dto: CreateCreditStudyDto,
+    @Body() dto: CreateStudyFromBureauDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user.id as string;
-    return this.creditStudiesService.create(companyId, userId, dto);
+    return this.creditStudiesService.createFromBureau(companyId, userId, dto);
   }
 
   @Get()
@@ -82,11 +84,19 @@ export class CreditStudiesController {
     return new StreamableFile(buffer);
   }
 
-  @Get(':id/perform')
-  @ApiOperation({ summary: 'Get credit study for calculations' })
+  @Post(':id/perform')
+  @ApiOperation({
+    summary: 'Realizar el análisis de viabilidad del estudio (step3)',
+    description:
+      'Corre el motor de scoring de 7 dimensiones sobre DataCrédito (fallback PDF), contrasta veracidad, pondera con la config vigente de la empresa, congela esa config en el estudio y persiste el resultado.',
+  })
   @ApiResponse({
-    status: 200,
-    description: 'Credit study data for calculations',
+    status: 201,
+    description: 'Análisis realizado (score + viabilidad)',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Sin estados financieros para analizar, o estudio bloqueado',
   })
   @ApiResponse({
     status: 404,
@@ -98,12 +108,27 @@ export class CreditStudiesController {
     @Req() req: Request,
   ) {
     const userId = (req as any).user.id as string;
+    return this.creditStudiesService.performStudy(id, companyId, userId);
+  }
 
-    return this.creditStudiesService.getCreditStudyPerform(
-      id,
-      companyId,
-      userId,
-    );
+  @Get(':id/steps')
+  @ApiOperation({
+    summary: 'Get the stepper data of a credit study (step1: customer)',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Stepper: status + step1 (customer), step2/step3 null hasta completarse',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Credit study not found in this company',
+  })
+  getSteps(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.creditStudiesService.getSteps(id, companyId);
   }
 
   @Get(':id')
@@ -118,47 +143,5 @@ export class CreditStudiesController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.creditStudiesService.findById(id, companyId);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Partially update a credit study' })
-  @ApiResponse({
-    status: 200,
-    description: 'Credit study updated successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Credit study not found in this company',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Customer does not belong to this company',
-  })
-  update(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCreditStudyDto,
-    @Req() req: Request,
-  ) {
-    const userId = (req as any).user.id as string;
-    return this.creditStudiesService.update(id, companyId, userId, dto);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a credit study' })
-  @ApiResponse({
-    status: 204,
-    description: 'Credit study deleted successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Credit study not found in this company',
-  })
-  remove(
-    @Param('companyId', ParseUUIDPipe) companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.creditStudiesService.remove(id, companyId);
   }
 }

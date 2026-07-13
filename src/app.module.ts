@@ -10,6 +10,7 @@ import { ParametersModule } from './parameters/parameters.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { CreditStudiesModule } from './credit-studies/credit-studies.module.js';
+import { CreditBureauModule } from './credit-bureau/credit-bureau.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { ConsultationPricesModule } from './consultation-prices/consultation-prices.module.js';
@@ -21,6 +22,8 @@ import { AdminStatsModule } from './admin-stats/admin-stats.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
+import { FinancialStatementsModule } from './financial-statements/financial-statements.module.js';
+import { ScoringModule } from './scoring/scoring.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
@@ -48,6 +51,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     CompaniesModule,
     CustomersModule,
     CreditStudiesModule,
+    CreditBureauModule,
     ProfilesModule,
     UserCompaniesModule,
     ConsultationPricesModule,
@@ -57,8 +61,10 @@ import { DebugController } from './common/debug/debug.controller.js';
     PromoCodesModule,
     AdminStatsModule,
     OnboardingModule,
+    ScoringModule,
     DashboardModule,
     AiAnalysesModule,
+    FinancialStatementsModule,
     InvitationsModule,
     DocumentsModule,
     NotificationsModule,

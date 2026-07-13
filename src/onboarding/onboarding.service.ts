@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { OnboardingDto } from './dto/onboarding.dto.js';
+import { defaultWeightsFor } from '../scoring/scoring.constants.js';
+import { weightsToColumns } from '../scoring/scoring.validation.js';
 
 @Injectable()
 export class OnboardingService {
@@ -42,6 +44,20 @@ export class OnboardingService {
     if (!adminRole) {
       throw new BadRequestException(
         'Falta el parámetro de rol administrator (user_company_role)',
+      );
+    }
+
+    // Tipos de persona: se crea una config de scoring default por cada uno.
+    const [naturalPerson, legalEntity] = await Promise.all([
+      this.parametersRepository.findByTypeAndCode(
+        'person_type',
+        'naturalPerson',
+      ),
+      this.parametersRepository.findByTypeAndCode('person_type', 'legalEntity'),
+    ]);
+    if (!naturalPerson || !legalEntity) {
+      throw new BadRequestException(
+        'Faltan los parámetros person_type (naturalPerson / legalEntity)',
       );
     }
 
@@ -102,6 +118,30 @@ export class OnboardingService {
           isActive: true,
           joinedAt: new Date(),
         },
+      });
+
+      // 4. ScoringConfiguration v1 por tipo de persona (PN y PJ) con los pesos
+      //    default del sistema. Toda empresa nace con una config vigente por tipo
+      //    para que el análisis funcione sin obligar a configurar; después puede
+      //    reconfigurar cada una. PN y PJ tienen pesos distintos (en PN no hay
+      //    veracidad; pesa más el riesgo de la central).
+      await tx.scoringConfiguration.createMany({
+        data: [
+          {
+            companyId: company.id,
+            personTypeId: legalEntity.id,
+            createdBy: profile.id,
+            isActive: true,
+            ...weightsToColumns(defaultWeightsFor('legalEntity')),
+          },
+          {
+            companyId: company.id,
+            personTypeId: naturalPerson.id,
+            createdBy: profile.id,
+            isActive: true,
+            ...weightsToColumns(defaultWeightsFor('naturalPerson')),
+          },
+        ],
       });
 
       return { profile, company, userCompany };
