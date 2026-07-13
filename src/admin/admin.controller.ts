@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   ParseUUIDPipe,
+  ParseIntPipe,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -26,15 +27,22 @@ import {
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
 import { AdminService } from './admin.service.js';
+import { ScoringService } from '../scoring/scoring.service.js';
+import { CreateScoringDimensionDto } from '../scoring/dto/create-scoring-dimension.dto.js';
+import { UpdateScoringDimensionDto } from '../scoring/dto/update-scoring-dimension.dto.js';
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
+import { CycleActivityDto } from './dto/cycle-activity.dto.js';
 
 @ApiTags('Admin Portal')
 @ApiBearerAuth()
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly scoringService: ScoringService,
+  ) {}
 
   @Get('platform-admins')
   @ApiOperation({
@@ -175,16 +183,29 @@ export class AdminController {
   }
 
   @Get('companies/:companyId')
-  @ApiOperation({ summary: 'Detalle de una empresa (saldo de créditos, bolsas, usuarios)' })
-  @ApiResponse({ status: 200, description: 'Detalle de la empresa' })
+  @ApiOperation({
+    summary:
+      'Ficha completa de una empresa: identidad, ubicación, sector, cuenta bancaria, facturación, contrato macro, scoring configurado, semáforo de setup + créditos, bolsas y usuarios',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'company, contract, scoring, setup, credits, packs, users',
+  })
   @ApiResponse({ status: 404, description: 'Empresa no encontrada' })
   getDetail(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.adminService.getClientDetail(companyId);
   }
 
   @Get('companies/:companyId/usage')
-  @ApiOperation({ summary: 'Saldo de consultas disponible (créditos de bolsas)' })
-  @ApiResponse({ status: 200, description: 'Saldo de créditos y bolsas vigentes' })
+  @ApiOperation({
+    summary:
+      'Salud de la cuenta: saldo de créditos, ritmo de consumo con proyección de agotamiento, créditos por vencer y desglose por usuario',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'credits, consumption (ritmo/proyección/byUser), lifetime, customers',
+  })
+  @ApiResponse({ status: 404, description: 'Empresa no encontrada' })
   getUsage(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.adminService.getUsage(companyId);
   }
@@ -192,11 +213,66 @@ export class AdminController {
   @Get('companies/:companyId/cycle-activity')
   @ApiOperation({
     summary:
-      'Actividad reciente (30 días) para soporte: estudios, análisis IA, extracciones PDF y customers creados',
+      'Actividad reciente para soporte: summary + estudios (veredicto/atascados), consultas a la central (fallos), análisis IA (costo/errores) y customers creados. ?windowDays ajusta la ventana (default 30)',
   })
-  @ApiResponse({ status: 200, description: 'Listado resumido de lo creado en la ventana' })
+  @ApiResponse({
+    status: 200,
+    description: 'window, summary y listas de la ventana',
+  })
   @ApiResponse({ status: 404, description: 'Empresa no encontrada' })
-  getCycleActivity(@Param('companyId', ParseUUIDPipe) companyId: string) {
-    return this.adminService.getCycleActivity(companyId);
+  getCycleActivity(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Query() dto: CycleActivityDto,
+  ) {
+    return this.adminService.getCycleActivity(companyId, dto.windowDays);
+  }
+
+  // ── Catálogo de dimensiones de scoring (scoring_dimensions) ────────────────
+  // Solo el portal admin administra el catálogo: crear, editar lo básico
+  // (label/description/orden) y activar/desactivar. Sin borrado físico. Los
+  // clientes lo LEEN por GET /scoring-dimensions (fuera de /admin).
+
+  @Get('scoring-dimensions')
+  @ApiOperation({
+    summary:
+      'Catálogo completo de dimensiones de scoring (activas e inactivas)',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Dimensiones con reglas del motor (required, appliesTo, supported)',
+  })
+  listScoringDimensions() {
+    return this.scoringService.listDimensions(true);
+  }
+
+  @Post('scoring-dimensions')
+  @ApiOperation({
+    summary:
+      'Crear una dimensión en el catálogo. El code debe estar soportado por el motor (su lógica de evaluación se despliega primero).',
+  })
+  @ApiResponse({ status: 201, description: 'Dimensión creada' })
+  @ApiResponse({ status: 400, description: 'Code no soportado por el motor' })
+  @ApiResponse({ status: 409, description: 'Ya existe una dimensión con ese code' })
+  createScoringDimension(@Body() dto: CreateScoringDimensionDto) {
+    return this.scoringService.createDimension(dto);
+  }
+
+  @Patch('scoring-dimensions/:id')
+  @ApiOperation({
+    summary:
+      'Editar lo básico de una dimensión (label/description/orden) o activarla/desactivarla (eliminación lógica). El code no es editable y no hay borrado físico.',
+  })
+  @ApiResponse({ status: 200, description: 'Dimensión actualizada' })
+  @ApiResponse({
+    status: 400,
+    description: 'Una dimensión obligatoria del motor no puede desactivarse',
+  })
+  @ApiResponse({ status: 404, description: 'Dimensión no encontrada' })
+  updateScoringDimension(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateScoringDimensionDto,
+  ) {
+    return this.scoringService.updateDimension(id, dto);
   }
 }
