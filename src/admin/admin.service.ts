@@ -50,6 +50,17 @@ const BASE_SCREENS = [
   'support-tickets',
 ];
 
+// Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
+const EXPIRY_RISK_DAYS = 30;
+
+// Un estudio en estado intermedio del flujo por más de estos días se marca
+// "atascado" en /cycle-activity (señal de fricción/abandono para soporte).
+const STUCK_STUDY_DAYS = 3;
+const PENDING_STUDY_STATUSES = [
+  'pendingFinancialStatements',
+  'pendingStudyAnalysis',
+];
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -357,11 +368,47 @@ export class AdminService {
     };
   }
 
-  /** Detalle de un cliente: empresa, saldo de créditos, bolsas, usuarios. */
+  /**
+   * Detalle de un cliente: ficha general de la empresa (identidad, ubicación,
+   * sector, cuenta bancaria, facturación, contrato macro, configuración de
+   * scoring y semáforo de setup) + saldo de créditos, bolsas y usuarios.
+   */
   async getClientDetail(companyId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       include: {
+        sector: { select: { code: true, label: true } },
+        accountType: { select: { code: true, label: true } },
+        accountBank: { select: { code: true, label: true } },
+        billingDocType: { select: { code: true, label: true } },
+        contractSignature: {
+          select: {
+            status: { select: { code: true, label: true } },
+            signerName: true,
+            signerEmail: true,
+            sentAt: true,
+            signedAt: true,
+            refusedAt: true,
+            refusedReason: true,
+            firstViewedAt: true,
+            lastViewedAt: true,
+            viewCount: true,
+          },
+        },
+        scoringConfigurations: {
+          where: { isActive: true },
+          select: {
+            personType: { select: { code: true, label: true } },
+            weights: {
+              select: {
+                weight: true,
+                dimension: { select: { code: true, label: true } },
+              },
+              orderBy: { dimension: { sortOrder: 'asc' } },
+            },
+            createdAt: true,
+          },
+        },
         userCompanies: {
           include: { role: true, user: true },
         },
@@ -375,19 +422,81 @@ export class AdminService {
     // Historial completo de bolsas (todas, incluidas vencidas/agotadas).
     const allPacks = await this.analysisPacksRepository.findByCompany(companyId);
 
+    const contract = company.contractSignature;
+
     return {
       company: {
         id: company.id,
         name: company.name,
         nit: company.nit,
         isActive: company.isActive,
+        isOnboardingReady: company.isOnboardingReady,
+        sector: company.sector.label,
+        location: {
+          state: company.state,
+          city: company.city,
+          address: company.address,
+        },
+        logoUrl: company.logoUrl,
+        createdAt: company.createdAt,
+        updatedAt: company.updatedAt,
+        bankAccount: {
+          bank: company.accountBank?.label ?? null,
+          type: company.accountType?.label ?? null,
+          number: company.accountNumber,
+        },
         billing: {
           name: company.billingName,
           lastName: company.billingLastName,
+          docType: company.billingDocType?.label ?? null,
           docNumber: company.billingDocNumber,
           email: company.billingEmail,
           phone: company.billingPhone,
+          address: company.billingAddress,
+          state: company.billingState,
+          city: company.billingCity,
         },
+        epaycoCustomerId: company.epaycoCustomerId,
+      },
+      // Contrato macro (Zapsign): estado, firmante y seguimiento de visualización
+      // ("lo abrió pero no firma" es señal comercial). null = nunca se envió.
+      contract: contract
+        ? {
+            status: contract.status?.label ?? null,
+            statusCode: contract.status?.code ?? null,
+            signerName: contract.signerName,
+            signerEmail: contract.signerEmail,
+            sentAt: contract.sentAt,
+            signedAt: contract.signedAt,
+            refusedAt: contract.refusedAt,
+            refusedReason: contract.refusedReason,
+            firstViewedAt: contract.firstViewedAt,
+            lastViewedAt: contract.lastViewedAt,
+            viewCount: contract.viewCount,
+          }
+        : null,
+      // Configs de scoring vigentes (una por tipo de persona) con sus
+      // dimensiones HABILITADAS y pesos (suman 100). Una dimensión ausente está
+      // deshabilitada. Vacío = la empresa aún no puede correr estudios.
+      scoring: company.scoringConfigurations.map((sc) => ({
+        personType: sc.personType.label,
+        personTypeCode: sc.personType.code,
+        weights: Object.fromEntries(
+          sc.weights.map((w) => [w.dimension.code, w.weight]),
+        ),
+        dimensions: sc.weights.map((w) => ({
+          code: w.dimension.code,
+          label: w.dimension.label,
+          weight: w.weight,
+        })),
+        configuredAt: sc.createdAt,
+      })),
+      // Semáforo de setup: lo que le falta a la empresa para operar completa.
+      setup: {
+        isOnboardingReady: company.isOnboardingReady,
+        contractSigned: Boolean(contract?.signedAt),
+        scoringConfigured: company.scoringConfigurations.length > 0,
+        hasCredits: credits.availableCredits > 0,
       },
       credits: {
         availableCredits: credits.availableCredits,
@@ -420,8 +529,10 @@ export class AdminService {
   }
 
   /**
-   * Saldo de consultas de una empresa: créditos disponibles y detalle de las
-   * bolsas vigentes. Reemplaza el antiguo "consumo del ciclo" de suscripción.
+   * Salud de la cuenta de una empresa (vista de dinero): saldo de créditos y
+   * bolsas vigentes + ritmo de consumo real (AnalysisConsumption) con proyección
+   * de agotamiento, créditos en riesgo de vencer sin usar, desglose por usuario
+   * y totales históricos.
    */
   async getUsage(companyId: string) {
     const company = await this.prisma.company.findUnique({
@@ -432,25 +543,102 @@ export class AdminService {
       throw new NotFoundException('Empresa no encontrada.');
     }
 
-    const credits = await this.resolveCredits(companyId);
-    const customersTotal = await this.prisma.customer.count({
-      where: { companyId },
-    });
+    const now = new Date();
+    const daysAgo = (days: number) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - days);
+      return d;
+    };
+    const from30 = daysAgo(30);
+    const from90 = daysAgo(90);
+    const expiryLimit = new Date(now);
+    expiryLimit.setDate(expiryLimit.getDate() + EXPIRY_RISK_DAYS);
+
+    const [credits, customersTotal, consumed30, consumed90, byUserRaw, lifetime] =
+      await Promise.all([
+        this.resolveCredits(companyId),
+        this.prisma.customer.count({ where: { companyId } }),
+        this.prisma.analysisConsumption.count({
+          where: { companyId, createdAt: { gte: from30 } },
+        }),
+        this.prisma.analysisConsumption.count({
+          where: { companyId, createdAt: { gte: from90 } },
+        }),
+        this.prisma.analysisConsumption.groupBy({
+          by: ['consumedBy'],
+          where: { companyId, createdAt: { gte: from90 } },
+          _count: { id: true },
+        }),
+        this.prisma.analysisPack.aggregate({
+          where: { companyId },
+          _sum: { quantityPurchased: true, quantityConsumed: true },
+        }),
+      ]);
+
+    // Nombres de quienes consumen (desglose últimos 90 días).
+    const userIds = byUserRaw.map((u) => u.consumedBy);
+    const profiles = userIds.length
+      ? await this.prisma.profile.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, lastName: true, email: true },
+        })
+      : [];
+    const profileById = new Map(profiles.map((p) => [p.id, p]));
+    const byUser = byUserRaw
+      .map((u) => {
+        const p = profileById.get(u.consumedBy);
+        return {
+          userId: u.consumedBy,
+          name: p ? `${p.name ?? ''} ${p.lastName ?? ''}`.trim() || null : null,
+          email: p?.email ?? null,
+          consumed: u._count.id,
+        };
+      })
+      .sort((a, b) => b.consumed - a.consumed);
+
+    // Ritmo y proyección sobre la ventana de 30 días. Sin consumo reciente no
+    // hay proyección (null = "no se puede estimar", distinto de "no se agota").
+    const dailyRate = consumed30 / 30;
+    const projectedRunOutDays =
+      dailyRate > 0 ? Math.floor(credits.availableCredits / dailyRate) : null;
+
+    // Créditos que se pierden si no se usan antes del vencimiento cercano.
+    const expiringSoonCredits = credits.packs
+      .filter((p) => p.endDate <= expiryLimit)
+      .reduce((sum, p) => sum + p.remaining, 0);
 
     return {
-      availableCredits: credits.availableCredits,
-      activePacks: credits.activePacks,
-      packs: credits.packs,
+      credits: {
+        availableCredits: credits.availableCredits,
+        activePacks: credits.activePacks,
+        packs: credits.packs,
+        expiringSoon: {
+          withinDays: EXPIRY_RISK_DAYS,
+          credits: expiringSoonCredits,
+        },
+      },
+      consumption: {
+        last30Days: consumed30,
+        last90Days: consumed90,
+        weeklyRate: Math.round((consumed30 / 30) * 7 * 10) / 10,
+        projectedRunOutDays,
+        byUser,
+      },
+      lifetime: {
+        totalPurchased: lifetime._sum.quantityPurchased ?? 0,
+        totalConsumed: lifetime._sum.quantityConsumed ?? 0,
+      },
       customers: { total: customersTotal },
     };
   }
 
   /**
-   * Actividad reciente para soporte: estudios, análisis de IA, extracciones de
-   * PDF y customers creados en los últimos 30 días. Antes se anclaba al ciclo de
-   * la suscripción; ahora usa una ventana fija de 30 días desde hoy hacia atrás.
+   * Actividad reciente para soporte/operación: estudios (con veredicto y marca
+   * de atascado), consultas a la central (con fallos), análisis de IA y
+   * extracciones de PDF (con costo/errores) y customers creados en la ventana.
+   * Abre con un bloque `summary` de lectura rápida antes de las listas.
    */
-  async getCycleActivity(companyId: string) {
+  async getCycleActivity(companyId: string, windowDays = 30) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       select: { id: true },
@@ -459,11 +647,12 @@ export class AdminService {
       throw new NotFoundException('Empresa no encontrada.');
     }
 
-    // Ventana de 30 días hacia atrás desde hoy (sin dependencia de suscripción).
     const now = new Date();
     const windowStart = new Date(now);
-    windowStart.setDate(windowStart.getDate() - 30);
+    windowStart.setDate(windowStart.getDate() - windowDays);
     const inWindow = { gte: windowStart, lte: now };
+    const stuckBefore = new Date(now);
+    stuckBefore.setDate(stuckBefore.getDate() - STUCK_STUDY_DAYS);
 
     const [analysisType, extractionType] = await Promise.all([
       this.parametersRepository.findByCode('creditReview'),
@@ -481,47 +670,69 @@ export class AdminService {
       (id): id is number => id != null,
     );
 
-    const [studies, aiAnalyses, customers] = await Promise.all([
-      this.prisma.creditStudy.findMany({
-        where: { companyId, createdAt: inWindow },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          studyDate: true,
-          createdAt: true,
-          status: { select: { code: true, label: true } },
-          customer: customerSelect,
-          createdByUser: authorSelect,
-        },
-      }),
-      this.prisma.aiAnalysis.findMany({
-        where: {
-          companyId,
-          typeId: { in: aiTypeFilter },
-          createdAt: inWindow,
-        },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          status: true,
-          createdAt: true,
-          type: { select: { id: true, code: true, label: true } },
-          customer: customerSelect,
-          performedByUser: authorSelect,
-        },
-      }),
-      this.prisma.customer.findMany({
-        where: { companyId },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          businessName: true,
-          identificationNumber: true,
-          createdAt: true,
-          createdByUser: authorSelect,
-        },
-      }),
-    ]);
+    const [studies, consultations, aiAnalyses, customersWindow, customersTotal] =
+      await Promise.all([
+        this.prisma.creditStudy.findMany({
+          where: { companyId, createdAt: inWindow },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            studyDate: true,
+            createdAt: true,
+            viabilityScore: true,
+            viabilityStatus: true,
+            status: { select: { code: true, label: true } },
+            customer: customerSelect,
+            createdByUser: authorSelect,
+          },
+        }),
+        this.prisma.creditBureauConsultation.findMany({
+          where: { companyId, createdAt: inWindow },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            consultaAt: true,
+            createdAt: true,
+            personType: true,
+            provider: true,
+            txCode: true,
+            httpStatus: true,
+            customer: customerSelect,
+            createdByUser: authorSelect,
+          },
+        }),
+        this.prisma.aiAnalysis.findMany({
+          where: {
+            companyId,
+            typeId: { in: aiTypeFilter },
+            createdAt: inWindow,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            errorMessage: true,
+            estimatedCostUsd: true,
+            durationMs: true,
+            createdAt: true,
+            type: { select: { id: true, code: true, label: true } },
+            customer: customerSelect,
+            performedByUser: authorSelect,
+          },
+        }),
+        this.prisma.customer.findMany({
+          where: { companyId, createdAt: inWindow },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            businessName: true,
+            identificationNumber: true,
+            createdAt: true,
+            createdByUser: authorSelect,
+          },
+        }),
+        this.prisma.customer.count({ where: { companyId } }),
+      ]);
 
     const fullName = (
       user: { name: string | null; lastName: string | null } | null,
@@ -533,14 +744,37 @@ export class AdminService {
       studyDate: s.studyDate,
       createdAt: s.createdAt,
       status: s.status?.label ?? null,
+      statusCode: s.status?.code ?? null,
+      viabilityScore: s.viabilityScore,
+      viabilityStatus: s.viabilityStatus,
+      stuck:
+        PENDING_STUDY_STATUSES.includes(s.status?.code ?? '') &&
+        s.createdAt < stuckBefore,
       customerName: s.customer?.businessName ?? null,
       createdByName: fullName(s.createdByUser),
       createdByEmail: s.createdByUser?.email ?? null,
     });
 
+    const mapConsultation = (c: (typeof consultations)[number]) => ({
+      id: c.id,
+      consultaAt: c.consultaAt,
+      createdAt: c.createdAt,
+      provider: c.provider,
+      personType: c.personType,
+      txCode: c.txCode,
+      httpStatus: c.httpStatus,
+      failed: c.httpStatus >= 400,
+      customerName: c.customer?.businessName ?? null,
+      createdByName: fullName(c.createdByUser),
+      createdByEmail: c.createdByUser?.email ?? null,
+    });
+
     const mapAnalysis = (a: (typeof aiAnalyses)[number]) => ({
       id: a.id,
       status: a.status,
+      errorMessage: a.errorMessage,
+      estimatedCostUsd: a.estimatedCostUsd,
+      durationMs: a.durationMs,
       createdAt: a.createdAt,
       type: a.type?.label ?? null,
       customerName: a.customer?.businessName ?? null,
@@ -548,7 +782,7 @@ export class AdminService {
       performedByEmail: a.performedByUser?.email ?? null,
     });
 
-    const mapCustomer = (c: (typeof customers)[number]) => ({
+    const mapCustomer = (c: (typeof customersWindow)[number]) => ({
       id: c.id,
       businessName: c.businessName,
       identificationNumber: c.identificationNumber,
@@ -566,19 +800,33 @@ export class AdminService {
           .map(mapAnalysis)
       : [];
 
-    const customersThisWindow = customers.filter(
-      (c) => c.createdAt >= windowStart && c.createdAt <= now,
-    );
+    const mappedStudies = studies.map(mapStudy);
+    const mappedConsultations = consultations.map(mapConsultation);
+    const aiCostUsd =
+      Math.round(
+        aiAnalyses.reduce((sum, a) => sum + (a.estimatedCostUsd ?? 0), 0) * 100,
+      ) / 100;
 
     return {
-      windowStart,
-      windowEnd: now,
-      studies: studies.map(mapStudy),
+      window: { start: windowStart, end: now, days: windowDays },
+      summary: {
+        studies: mappedStudies.length,
+        stuckStudies: mappedStudies.filter((s) => s.stuck).length,
+        bureauConsultations: mappedConsultations.length,
+        failedConsultations: mappedConsultations.filter((c) => c.failed).length,
+        aiAnalysis: aiAnalysis.length,
+        pdfExtraction: pdfExtraction.length,
+        aiErrors: aiAnalyses.filter((a) => a.status === 'error').length,
+        aiCostUsd,
+        customersCreated: customersWindow.length,
+      },
+      studies: mappedStudies,
+      bureauConsultations: mappedConsultations,
       aiAnalysis,
       pdfExtraction,
       customers: {
-        total: customers.map(mapCustomer),
-        createdThisWindow: customersThisWindow.map(mapCustomer),
+        total: customersTotal,
+        createdThisWindow: customersWindow.map(mapCustomer),
       },
     };
   }
