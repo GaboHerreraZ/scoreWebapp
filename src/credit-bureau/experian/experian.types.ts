@@ -199,19 +199,23 @@ export interface ExperianMallaVinculos {
   vinculados?: ExperianVinculoNodo;
 }
 
-// Estados financieros (PJ): matriz cuenta × año. `detalle` agrupa por categoría
-// (Activos, Pasivos, Patrimonio, Estado de Resultados, Indicadores); cada grupo
-// trae los años (`anio`) y las cuentas (`datos`), donde `valores` está alineado
-// posicionalmente con `anio`.
+// Estados financieros (PJ): matriz cuenta × columna. `detalle.data` agrupa por
+// categoría (Activos, Pasivos, Patrimonio, Estado de Resultados, Indicadores);
+// cada grupo trae los años (`anio`) y las cuentas (`datos`), donde `valores` está
+// alineado posicionalmente con `anio`. Un elemento aparte (`nombre:"fuentes"`)
+// trae `fuente[]`, la FUENTE de cada columna, también alineada con `anio` (p. ej.
+// "Supersociedades" / "Cámaras de comercio"). Los valores llegan como string
+// numérico ("1325.0") o "-" cuando no hay dato — nunca number puro.
 export interface ExperianEstadoFinancieroCuenta {
   nombre?: string;
-  valores?: Array<number | null>;
+  valores?: Array<number | string | null>;
 }
 
 export interface ExperianEstadoFinancieroGrupo {
   nombre?: string;
   anio?: number[];
   datos?: ExperianEstadoFinancieroCuenta[];
+  fuente?: string[]; // solo en el elemento nombre:"fuentes"; fuente por columna
 }
 
 export interface ExperianEstadosFinancieros {
