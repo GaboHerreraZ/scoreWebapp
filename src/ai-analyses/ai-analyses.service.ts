@@ -61,7 +61,7 @@ interface ScoringResultShape {
     amount: number | null;
     requested: number | null;
     suggestedByBureau: number | null;
-    cappedByBureau: boolean;
+    cappedByCapacity: boolean;
   };
   keyFigures?: {
     monthlyPaymentCapacity: number;
@@ -199,7 +199,7 @@ export class AiAnalysesService {
         amount: study.recommendedCreditLine ?? null,
         requested: study.requestedCreditLine ?? null,
         suggestedByBureau: riskSnapshot?.montoSugerido ?? null,
-        cappedByBureau: false,
+        cappedByCapacity: false,
       },
       calculationSource: result.summary?.calculationSource ?? 'none',
       financialsVerified: result.summary?.financialsVerified ?? false,

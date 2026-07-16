@@ -94,12 +94,13 @@ export interface CreditStudyPromptInput {
   requestedCreditLine: number;
   viabilityScore: number;
   viabilityStatus: string;
-  // Monto que Creditia avala (techo de la central). Del ScoringResult.
+  // Monto que Creditia avala (según capacidad de pago de los EEFF; el
+  // montoSugerido de la central es solo referencia). Del ScoringResult.
   approvedCreditLine: {
     amount: number | null;
     requested: number | null;
     suggestedByBureau: number | null;
-    cappedByBureau: boolean;
+    cappedByCapacity: boolean;
   };
   calculationSource: 'datacredito' | 'pdf' | 'none';
   financialsVerified: boolean;
@@ -223,14 +224,14 @@ export function buildCreditStudyUserMessage(
 Nivel de riesgo: ${cr.nivelRiesgo ?? 'N/D'}
 Rating sectorial: ${cr.ratingSectorial ?? 'N/D'}
 Comportamiento de pago: ${cr.hasArrears ? 'CON mora reciente en el historial' : 'sin mora reciente'}
-Monto sugerido por la central (techo): $${fmt(cr.montoSugerido)}`
+Monto sugerido por la central (referencia, NO techo): $${fmt(cr.montoSugerido)}`
     : 'No hay consulta a la central para este cliente.';
 
-  // ── Monto aprobado (techo de la central) ──
+  // ── Monto aprobado (lo mandan los EEFF; la central es solo referencia) ──
   const acl = study.approvedCreditLine;
-  const approvedText = acl.cappedByBureau
-    ? `Monto aprobado por el sistema: $${fmt(acl.amount)} (RECORTADO: el cliente solicito $${fmt(acl.requested)}, pero la central solo avala hasta $${fmt(acl.suggestedByBureau)})`
-    : `Monto aprobado por el sistema: $${fmt(acl.amount)} (dentro de lo que avala la central)`;
+  const approvedText = acl.cappedByCapacity
+    ? `Monto aprobado por el sistema: $${fmt(acl.amount)} (RECORTADO por capacidad de pago: el cliente solicito $${fmt(acl.requested)}, pero sus estados financieros solo soportan hasta $${fmt(acl.amount)} en el plazo pedido)`
+    : `Monto aprobado por el sistema: $${fmt(acl.amount)} (dentro de la capacidad de pago segun los estados financieros)`;
 
   // ── Alertas del sistema (incluye veracidad) ──
   const alertsText =

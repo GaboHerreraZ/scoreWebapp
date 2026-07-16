@@ -10,7 +10,6 @@ export const SCORING_DIMENSIONS = [
   'financialHealth',
   'paymentCapacity',
   'termCoherence',
-  'creditLineAdequacy',
   'capitalExposure',
   'veracity',
   'centralRisk',
@@ -52,15 +51,13 @@ export const DIMENSION_RULES: Record<ScoringDimension, DimensionRules> = {
     required: false,
     appliesTo: { legalEntity: true, naturalPerson: true },
   },
+  // Integra la antigua "Adecuación del cupo" (Dim 4): además de la cuota,
+  // analiza el cupo pedido vs el máximo pagable según los EEFF en el plazo.
   paymentCapacity: {
     required: true,
     appliesTo: { legalEntity: true, naturalPerson: true },
   },
   termCoherence: {
-    required: false,
-    appliesTo: { legalEntity: true, naturalPerson: true },
-  },
-  creditLineAdequacy: {
     required: false,
     appliesTo: { legalEntity: true, naturalPerson: true },
   },
@@ -80,31 +77,30 @@ export const DIMENSION_RULES: Record<ScoringDimension, DimensionRules> = {
 };
 
 /**
- * Pesos DEFAULT para PERSONA JURÍDICA (las 7 habilitadas, suman 100). Prioriza
+ * Pesos DEFAULT para PERSONA JURÍDICA (las 6 habilitadas, suman 100). Prioriza
  * capacidad de pago y veracidad (que pueda pagar y que no mienta), luego riesgo
- * de central y salud financiera.
+ * de central y salud financiera. La capacidad de pago absorbe los 12 puntos de
+ * la antigua "Adecuación del cupo" (fusionada en ella).
  */
 export const DEFAULT_WEIGHTS_PJ: EnabledWeights = {
-  paymentCapacity: 20,
+  paymentCapacity: 32,
   veracity: 20,
   centralRisk: 15,
   financialHealth: 15,
-  creditLineAdequacy: 12,
   capitalExposure: 10,
   termCoherence: 8,
 };
 
 /**
- * Pesos DEFAULT para PERSONA NATURAL (6 habilitadas, suman 100). La veracidad
+ * Pesos DEFAULT para PERSONA NATURAL (5 habilitadas, suman 100). La veracidad
  * NO aplica (sin contraste posible) → no se habilita; a cambio pesa MÁS el
- * riesgo de la central (es la señal más confiable para PN). Los 20 puntos de
- * veracidad de PJ se redistribuyen: +10 a central, +6 a capacidad, +4 a salud.
+ * riesgo de la central (es la señal más confiable para PN). La capacidad de
+ * pago absorbe los 12 puntos de la antigua "Adecuación del cupo".
  */
 export const DEFAULT_WEIGHTS_PN: EnabledWeights = {
-  paymentCapacity: 26,
+  paymentCapacity: 38,
   centralRisk: 25,
   financialHealth: 19,
-  creditLineAdequacy: 12,
   capitalExposure: 10,
   termCoherence: 8,
 };
@@ -203,17 +199,18 @@ export const PDF_RELIABILITY_FLAG_CATEGORY_LABEL: Record<string, string> = {
 export const DEBT_RATIO_DANGER = 80; // >80% del cupo usado → danger
 export const DEBT_RATIO_WARNING = 60; // >60% → warning
 
-// ─── Techo de la central (montoSugerido de DataCrédito Experian) ────────────
-// La central devuelve un `montoSugerido`: el monto máximo que avala para el
-// cliente. Creditia NUNCA aprueba por encima de ese techo. Cuando el cupo
-// solicitado lo supera, se penaliza la Adecuación del cupo (Dim 4) y el Riesgo
-// de la central (Dim 7), y el monto aprobado se recorta al montoSugerido.
-//
-// Tolerancia antes de castigo fuerte: un exceso leve (≤ este múltiplo) baja el
-// ratio parcialmente; por encima, cae a 0.
-export const SUGGESTED_AMOUNT_SOFT_EXCESS = 1.3; // 30% por encima del techo
-// Penalización a la Dim 7 cuando el cupo solicitado supera el techo de la central.
-export const CENTRAL_OVERASK_PENALTY = 0.15;
+// ─── Monto sugerido de la central (señal, NO techo) ─────────────────────────
+// La central devuelve un `montoSugerido`. En el mercado real ese monto suele ser
+// conservador (muy por debajo de lo que los EEFF del cliente soportan), así que
+// NO se usa como techo: el monto lo mandan los EEFF (capacidad de pago × plazo).
+// El montoSugerido queda como SEÑAL: si el cupo solicitado lo supera por mucho,
+// se generan alertas informativas (sin penalizar el score) para que el analista
+// lo pondere. Umbrales como múltiplo del montoSugerido:
+export const SUGGESTED_AMOUNT_ALERT_WARNING = 1.5; // pide >1.5× lo sugerido → warning
+export const SUGGESTED_AMOUNT_ALERT_DANGER = 3; // pide >3× lo sugerido → danger
+// montoSugerido = 0 ("la central no avala ningún monto") tampoco es eliminatorio:
+// topa el veredicto en 'conditional' (ver cap de veredicto más abajo) y genera
+// red flag; el analista decide con los EEFF a la vista.
 
 // ─── Cap de veredicto por banda de riesgo de la central ─────────────────────
 // La central es la FUENTE DE VERDAD sobre riesgo crediticio; un PDF auto-

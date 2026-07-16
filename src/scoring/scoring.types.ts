@@ -43,7 +43,7 @@ export interface CentralRiskInput {
    *  central). null/[] si no hay información. */
   paymentBehavior: PaymentBehaviorMonth[] | null;
   score: number | null; // puntaje Experian (referencia)
-  montoSugerido: number | null; // techo del cupo (§4.3)
+  montoSugerido: number | null; // referencia de la central (señal/alerta, NO techo)
   porcentajeDeuda: number | null; // % de deuda usada (endeudamiento en la central)
   saldoMora: number | null; // saldo actualmente en mora ($)
 }
@@ -126,17 +126,18 @@ export interface ScoringResult {
     experianRiskLevel: string | null;
   };
   /**
-   * Monto que Creditia avala. No es una recomendación calculada con fórmula
-   * propia: es el cupo solicitado si respeta el techo de la central, o el
-   * `montoSugerido` de DataCrédito cuando el cliente pide por encima de ese
-   * techo (nunca aprobamos más de lo que la central sugiere). null si no hay
-   * consulta a la central (sin techo de referencia).
+   * Monto que Creditia avala. Lo mandan los EEFF (sean de DataCrédito o del
+   * PDF): es el cupo solicitado si cabe en el máximo pagable según la capacidad
+   * de pago para el plazo pedido; si pide de más, se recorta a ese máximo. El
+   * `montoSugerido` de la central NO recorta (suele ser conservador frente a la
+   * realidad del cliente): queda como referencia y genera alertas si el pedido
+   * lo supera por mucho.
    */
   approvedCreditLine: {
-    amount: number | null; // $ avalado por Creditia
+    amount: number | null; // $ avalado por Creditia (según EEFF)
     requested: number | null; // $ que pidió el cliente
-    suggestedByBureau: number | null; // techo de la central (montoSugerido)
-    cappedByBureau: boolean; // true si se recortó por el techo de la central
+    suggestedByBureau: number | null; // referencia de la central (montoSugerido)
+    cappedByCapacity: boolean; // true si se recortó al máximo pagable según EEFF
   };
   /**
    * Cifras clave del análisis, ya calculadas, para que el front las MUESTRE como
