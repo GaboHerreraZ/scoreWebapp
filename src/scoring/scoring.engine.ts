@@ -1,8 +1,8 @@
 import {
   SCORING_DIMENSIONS,
   scoreToBand,
-  SUGGESTED_AMOUNT_SOFT_EXCESS,
-  CENTRAL_OVERASK_PENALTY,
+  SUGGESTED_AMOUNT_ALERT_WARNING,
+  SUGGESTED_AMOUNT_ALERT_DANGER,
   REGISTRATION_CANCELLED_VALUES,
   IN_LIQUIDATION_VALUES,
   ARREARS_SEVERITY,
@@ -39,9 +39,11 @@ import type {
 // ni aparece en el resultado. NO lee BD: el servicio arma la entrada.
 //
 // Umbrales de veredicto FIJOS (no configurables): >=75 approved, >=40 conditional.
-// Las reglas ELIMINATORIAS (estado legal, montoSugerido=0, capacidad de pago
-// <= 0) y el cap por riesgo alto de la central son POLÍTICA de Creditia: aplican
-// SIEMPRE, sin importar qué dimensiones haya habilitado la empresa.
+// Las reglas ELIMINATORIAS (estado legal, capacidad de pago <= 0) y los caps de
+// veredicto (riesgo alto de la central, montoSugerido=0 → tope 'conditional')
+// son POLÍTICA de Creditia: aplican SIEMPRE, sin importar qué dimensiones haya
+// habilitado la empresa. El montoSugerido de la central NO es techo del monto:
+// el monto lo mandan los EEFF; la central aporta señal (alertas/cap).
 
 const APPROVED_THRESHOLD = 75;
 const CONDITIONAL_THRESHOLD = 40;
@@ -52,9 +54,8 @@ const VERACITY_DANGER = 0.25; // 25%
 
 const LABELS: Record<ScoringDimension, string> = {
   financialHealth: 'Salud financiera',
-  paymentCapacity: 'Capacidad de pago',
+  paymentCapacity: 'Capacidad de pago', // integra la adecuación del cupo
   termCoherence: 'Coherencia de plazos',
-  creditLineAdequacy: 'Adecuación del cupo',
   capitalExposure: 'Exposición del capital',
   veracity: 'Veracidad',
   centralRisk: 'Riesgo de la central',
@@ -75,8 +76,8 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       ? 'pdf'
       : 'none';
 
-  // Techo de la central: monto máximo que avala DataCrédito para este cliente.
-  // Creditia nunca aprueba por encima de él. null si no hubo consulta (o no vino).
+  // Monto sugerido por la central: REFERENCIA (señal de alerta), no techo. El
+  // monto lo mandan los EEFF. null si no hubo consulta (o no vino).
   const suggestedByBureau = input.centralRisk?.montoSugerido ?? null;
   const requestedCredit = request.requestedCreditLine ?? null;
 
@@ -89,14 +90,13 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // Evaluadores por dimensión (perezosos: solo corre el de las habilitadas).
   const evaluators: Record<ScoringDimension, () => RawDimension> = {
     financialHealth: () => evalFinancialHealth(indicators),
-    paymentCapacity: () => evalPaymentCapacity(indicators, request),
+    paymentCapacity: () =>
+      evalPaymentCapacity(indicators, request, suggestedByBureau),
     termCoherence: () => evalTermCoherence(indicators, request),
-    creditLineAdequacy: () =>
-      evalCreditLineAdequacy(indicators, request, suggestedByBureau),
     capitalExposure: () => evalCapitalExposure(indicators, request),
     veracity: () =>
       evalVeracity(input.truthFigures, input.pdfFigures, input.personType),
-    centralRisk: () => evalCentralRisk(input.centralRisk, requestedCredit),
+    centralRisk: () => evalCentralRisk(input.centralRisk),
   };
 
   // Evaluar cada dimensión habilitada → resultado bruto (ratio 0..1 | null).
@@ -157,18 +157,20 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   }
 
   // ── Monto aprobado por Creditia ──
-  // No lo calculamos con fórmula propia: es el solicitado si respeta el techo de
-  // la central, o el montoSugerido cuando el cliente pide de más (nunca por
-  // encima del techo). Si no hay techo (sin consulta), se avala lo solicitado.
+  // Lo mandan los EEFF: el solicitado si cabe en el máximo pagable según la
+  // capacidad de pago para el plazo pedido; si pide de más, se recorta a ese
+  // máximo. El montoSugerido de la central NO recorta (es referencia/alerta).
   const approvedCreditLine = resolveApprovedCredit(
     requestedCredit,
+    indicators,
+    request,
     suggestedByBureau,
   );
-  if (approvedCreditLine.cappedByBureau) {
+  if (approvedCreditLine.cappedByCapacity) {
     alerts.unshift({
       type: 'warning',
-      dimension: 'creditLineAdequacy',
-      message: `El cupo solicitado (${money(approvedCreditLine.requested ?? 0)}) supera el monto que avala la central (${money(approvedCreditLine.suggestedByBureau ?? 0)}). Creditia aprueba hasta ${money(approvedCreditLine.amount ?? 0)}.`,
+      dimension: 'paymentCapacity',
+      message: `El cupo solicitado (${money(approvedCreditLine.requested ?? 0)}) supera el máximo pagable según los estados financieros para el plazo pedido. Creditia avala hasta ${money(approvedCreditLine.amount ?? 0)}.`,
     });
   }
 
@@ -191,12 +193,12 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // ── Veredicto ──
   // Reglas ELIMINATORIAS (rechazo directo, sin importar el score), en orden:
   //  1. Estado legal: matrícula cancelada o empresa en liquidación.
-  //  2. La central NO avala ningún monto (montoSugerido = 0).
-  //  3. Capacidad de pago mensual <= 0.
-  // Si ninguna aplica, el veredicto sale del score, pero con un CAP por la banda
-  // de riesgo de la central (§ CENTRAL_SCORE_CONDITIONAL_CAP): la central es la
-  // fuente de verdad sobre riesgo crediticio; un PDF auto-reportado no puede
-  // "aprobar" a quien la central marca como riesgo alto → tope 'conditional'.
+  //  2. Capacidad de pago mensual <= 0.
+  // Si ninguna aplica, el veredicto sale del score, pero con CAPs a 'conditional'
+  // (nunca 'approved' automático) por señales fuertes de la central: banda de
+  // riesgo alto (§ CENTRAL_SCORE_CONDITIONAL_CAP) o montoSugerido = 0 (la
+  // central no lo reconoce como sujeto de crédito). En ambos, el analista decide
+  // con los EEFF a la vista; la central no veta si las cifras lo respaldan.
   let status: 'approved' | 'conditional' | 'rejected';
   let eliminatoryReason: string | null = null;
   const legalReason = eliminatoryLegalReason(input.legalStatus);
@@ -210,15 +212,6 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       dimension: 'general',
       message: legalReason,
     });
-  } else if (bureauDeniesCredit) {
-    status = 'rejected';
-    eliminatoryReason =
-      'La central no avala ningún monto para este cliente (monto sugerido $0): no lo reconoce como sujeto de crédito.';
-    alerts.unshift({
-      type: 'danger',
-      dimension: 'general',
-      message: eliminatoryReason,
-    });
   } else if (indicators.monthlyPaymentCapacity <= 0) {
     status = 'rejected';
     eliminatoryReason =
@@ -231,10 +224,13 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     status = 'rejected';
   }
 
-  // Cap por banda de riesgo de la central: si la central marca riesgo alto (score
-  // bajo o nivel MÁXIMO/ALTO), el veredicto no puede ser 'approved' aunque el
-  // score total lo permita. Baja a 'conditional' (no fuerza rechazo). No aplica
-  // si ya hubo un motivo eliminatorio (ya es 'rejected').
+  // Caps a 'conditional' por señales fuertes de la central (no fuerzan rechazo;
+  // no aplican si ya hubo motivo eliminatorio, pues el estado ya es 'rejected'):
+  //  a. Banda de riesgo alto (score bajo o nivel MÁXIMO/ALTO): un PDF auto-
+  //     reportado no puede "aprobar" a quien la central marca en riesgo alto.
+  //  b. montoSugerido = 0: la central no lo reconoce como sujeto de crédito;
+  //     los EEFF pueden sostener la operación, pero la aprobación queda en
+  //     manos del analista (nunca 'approved' automático).
   if (status === 'approved' && centralMarksHighRisk(input.centralRisk)) {
     status = 'conditional';
     alerts.unshift({
@@ -242,6 +238,14 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       dimension: 'centralRisk',
       message:
         'La central marca a este cliente en riesgo alto. Aunque el análisis financiero es favorable, el veredicto se limita a "aprobado con condiciones": la información de la central prevalece sobre las cifras auto-reportadas.',
+    });
+  } else if (status === 'approved' && bureauDeniesCredit) {
+    status = 'conditional';
+    alerts.unshift({
+      type: 'warning',
+      dimension: 'centralRisk',
+      message:
+        'La central no avala ningún monto para este cliente (monto sugerido $0). Aunque los estados financieros son favorables, el veredicto se limita a "aprobado con condiciones": la aprobación final queda a criterio del analista.',
     });
   }
 
@@ -340,10 +344,18 @@ function evalFinancialHealth(ind: ScoringIndicators): RawDimension {
   };
 }
 
-// Dim 2: Capacidad de pago. La cuota integra cupo Y plazo.
+// Dim 2: Capacidad de pago y adecuación del cupo (fusiona la antigua Dim 4).
+// El score sale de cuánto cubre la capacidad de pago mensual la cuota estimada
+// (la cuota integra cupo Y plazo, así que también juzga el tamaño del cupo).
+// Los mensajes explicitan el máximo pagable en el plazo (la vista "cupo") y, si
+// hay consulta a la central, se CONTRASTA el pedido contra el montoSugerido:
+// solo como ALERTA informativa (1.5× warning / 3× danger), sin tocar el score.
+// El montoSugerido del mercado suele ser conservador frente a los EEFF reales
+// del cliente; el analista pondera la señal, la central no veta.
 function evalPaymentCapacity(
   ind: ScoringIndicators,
   req: StudyRequest,
+  suggestedByBureau: number | null,
 ): RawDimension {
   if (ind.monthlyPaymentCapacity <= 0) {
     return {
@@ -358,9 +370,35 @@ function evalPaymentCapacity(
       ],
     };
   }
+  const requestedCredit = req.requestedCreditLine ?? 0;
+  const requestedTerm = req.requestedTerm ?? 0;
   const monthlyObligation = monthlyQuota(req);
   const ratio =
     monthlyObligation > 0 ? ind.monthlyPaymentCapacity / monthlyObligation : 0;
+  // Máximo pagable en el plazo pedido: la vista "cupo" de la misma medida.
+  const maxCreditForTerm = maxPayableForTerm(ind, req);
+
+  // Señal de la central: pedir MUY por encima del montoSugerido genera alerta
+  // informativa (no puntúa). null o 0 no alertan aquí: 0 tiene su red flag y su
+  // cap de veredicto propios.
+  const bureauAlerts: ScoringAlert[] = [];
+  if (suggestedByBureau !== null && suggestedByBureau > 0) {
+    const multiple = requestedCredit / suggestedByBureau;
+    if (multiple > SUGGESTED_AMOUNT_ALERT_DANGER) {
+      bureauAlerts.push({
+        type: 'danger',
+        dimension: 'paymentCapacity',
+        message: `El cupo solicitado (${money(requestedCredit)}) es más de ${SUGGESTED_AMOUNT_ALERT_DANGER} veces el monto sugerido por la central (${money(suggestedByBureau)}). La central no recorta el monto, pero la brecha es muy amplia: valide con especial cuidado.`,
+      });
+    } else if (multiple > SUGGESTED_AMOUNT_ALERT_WARNING) {
+      bureauAlerts.push({
+        type: 'warning',
+        dimension: 'paymentCapacity',
+        message: `El cupo solicitado (${money(requestedCredit)}) supera en más de ${SUGGESTED_AMOUNT_ALERT_WARNING} veces el monto sugerido por la central (${money(suggestedByBureau)}). Señal informativa: el monto avalado se basa en los estados financieros.`,
+      });
+    }
+  }
+
   if (ratio >= 1.2) {
     return {
       ratio: 1,
@@ -369,8 +407,9 @@ function evalPaymentCapacity(
         {
           type: 'success',
           dimension: 'paymentCapacity',
-          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) supera la cuota estimada (${money(monthlyObligation)}) con holgura.`,
+          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) supera la cuota estimada (${money(monthlyObligation)}) con holgura. El cupo solicitado (${money(requestedCredit)}) cabe en el máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
         },
+        ...bureauAlerts,
       ],
     };
   }
@@ -382,8 +421,9 @@ function evalPaymentCapacity(
         {
           type: 'warning',
           dimension: 'paymentCapacity',
-          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) cubre la cuota (${money(monthlyObligation)}) con margen ajustado.`,
+          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) cubre la cuota (${money(monthlyObligation)}) con margen ajustado: el cupo solicitado (${money(requestedCredit)}) está al límite del máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
         },
+        ...bureauAlerts,
       ],
     };
   }
@@ -394,8 +434,9 @@ function evalPaymentCapacity(
       {
         type: 'danger',
         dimension: 'paymentCapacity',
-        message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) es insuficiente para la cuota estimada (${money(monthlyObligation)}).`,
+        message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) es insuficiente para la cuota estimada (${money(monthlyObligation)}): el cupo solicitado (${money(requestedCredit)}) excede el máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
       },
+      ...bureauAlerts,
     ],
   };
 }
@@ -456,95 +497,6 @@ function evalTermCoherence(
         type: 'warning',
         dimension: 'termCoherence',
         message: `El plazo solicitado (${requestedTerm}d) es muy inferior a la rotación de cartera (${collectionDays}d): el cliente tendría que pagarnos mucho antes de cobrar. Alta tensión de liquidez; requiere un capital de trabajo holgado para no atrasarse.`,
-      },
-    ],
-  };
-}
-
-// Dim 4: Adecuación del cupo. El cupo es "adecuado" solo si respeta DOS techos:
-// (a) lo pagable según su capacidad de pago y el plazo, y (b) el montoSugerido
-// de la central. Manda el PEOR de los dos (el más restrictivo), porque basta con
-// que uno se viole para que el cupo sea inadecuado.
-function evalCreditLineAdequacy(
-  ind: ScoringIndicators,
-  req: StudyRequest,
-  suggestedByBureau: number | null,
-): RawDimension {
-  if (ind.monthlyPaymentCapacity <= 0) {
-    return {
-      ratio: 0,
-      status: 'not_applicable',
-      alerts: [
-        {
-          type: 'danger',
-          dimension: 'creditLineAdequacy',
-          message:
-            'No es posible recomendar un cupo: la capacidad de pago es negativa.',
-        },
-      ],
-    };
-  }
-  const requestedCredit = req.requestedCreditLine ?? 0;
-  const requestedTerm = req.requestedTerm ?? 0;
-
-  // (a) Techo por capacidad de pago para el plazo pedido.
-  const maxCreditForTerm = ind.monthlyPaymentCapacity * (requestedTerm / 30);
-  const capacityExcess =
-    maxCreditForTerm > 0 ? requestedCredit / maxCreditForTerm : Infinity;
-
-  // (b) Techo por la central (montoSugerido). null = sin consulta (no restringe);
-  // 0 = la central avala CERO → cualquier cupo pedido lo excede (exceso infinito).
-  let bureauExcess: number;
-  if (suggestedByBureau === null) {
-    bureauExcess = 0; // sin techo de central → no restringe
-  } else if (suggestedByBureau === 0) {
-    bureauExcess = requestedCredit > 0 ? Infinity : 0; // avala cero
-  } else {
-    bureauExcess = requestedCredit / suggestedByBureau;
-  }
-
-  // El exceso relevante es el mayor (el techo más apretado). El monto de
-  // referencia para el mensaje es el del techo que manda.
-  const capacityBinds = capacityExcess >= bureauExcess;
-  const excess = Math.max(capacityExcess, bureauExcess);
-  const capLabel = capacityBinds
-    ? `máximo pagable en ${requestedTerm} días (${money(maxCreditForTerm)})`
-    : `monto avalado por la central (${money(suggestedByBureau ?? 0)})`;
-
-  if (excess <= 1.0) {
-    return {
-      ratio: 1,
-      status: 'adequate',
-      alerts: [
-        {
-          type: 'success',
-          dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado (${money(requestedCredit)}) está dentro de la capacidad y del monto avalado por la central.`,
-        },
-      ],
-    };
-  }
-  if (excess <= SUGGESTED_AMOUNT_SOFT_EXCESS) {
-    return {
-      ratio: 0.6,
-      status: 'slightly_exceeded',
-      alerts: [
-        {
-          type: 'warning',
-          dimension: 'creditLineAdequacy',
-          message: `El cupo solicitado excede el ${capLabel}.`,
-        },
-      ],
-    };
-  }
-  return {
-    ratio: 0,
-    status: 'excessive',
-    alerts: [
-      {
-        type: 'danger',
-        dimension: 'creditLineAdequacy',
-        message: `El cupo solicitado excede ampliamente el ${capLabel}.`,
       },
     ],
   };
@@ -700,10 +652,7 @@ function evalVeracity(
 // SCORE_BANDS). Se penaliza por sector riesgoso y por mora reciente. El `nivel`
 // (BAJO/MEDIO/ALTO) NO es la base: es solo contexto para el mensaje. Si no hay
 // score, cae al nivel como respaldo; si tampoco hay nivel, no es evaluable.
-function evalCentralRisk(
-  central: CentralRiskInput | null,
-  requestedCredit: number | null,
-): RawDimension {
+function evalCentralRisk(central: CentralRiskInput | null): RawDimension {
   if (!central || (central.score === null && !central.nivelRiesgo)) {
     return { ratio: null, status: 'not_evaluable', alerts: [] };
   }
@@ -733,15 +682,10 @@ function evalCentralRisk(
   const arrearsIndex = weightedArrearsIndex(central.paymentBehavior);
   if (arrearsIndex > 0) base -= arrearsIndex * ARREARS_MAX_PENALTY;
 
-  // Penalización por pedir por encima de lo que la central avala: el cliente
-  // solicita más de su montoSugerido → señal de que quiere más riesgo del que
-  // la central le reconoce.
-  const overAsk =
-    central.montoSugerido !== null &&
-    central.montoSugerido > 0 &&
-    requestedCredit !== null &&
-    requestedCredit > central.montoSugerido;
-  if (overAsk) base -= CENTRAL_OVERASK_PENALTY;
+  // NOTA: pedir por encima del montoSugerido ya NO penaliza esta dimensión.
+  // Es una señal informativa que se alerta en la Capacidad de pago (contraste
+  // pedido vs montoSugerido); el riesgo de la central se mide con lo que la
+  // central sí sabe: score, sector y comportamiento de pago.
 
   const ratio = clamp(base, 0, 1);
   const status =
@@ -752,7 +696,6 @@ function evalCentralRisk(
   if (sectorHigh) parts.push('sector de alto riesgo');
   if (arrearsIndex >= ARREARS_FLAG_DANGER) parts.push('mora severa reciente');
   else if (arrearsIndex > 0) parts.push('mora en el historial');
-  if (overAsk) parts.push('cupo solicitado por encima del avalado');
   return {
     ratio,
     status,
@@ -990,31 +933,46 @@ function redistributeWeights(
 }
 
 // ─── Monto aprobado por Creditia ────────────────────────────────────────────
-// Regla única: nunca por encima del techo de la central (montoSugerido). Se
-// distingue null (SIN consulta → no hay techo, se avala lo pedido) de 0 (la
-// central avala CERO → techo real 0, no se aprueba nada). Si el cliente pide
-// dentro del techo, se avala lo pedido; si pide de más, se recorta al techo.
+// Regla única: el monto lo mandan los EEFF (sean de DataCrédito o del PDF). El
+// techo es el máximo pagable según la capacidad de pago para el plazo pedido;
+// dentro de él se avala lo pedido, por encima se recorta. El montoSugerido de
+// la central NO recorta: en el mercado real suele ser muy conservador frente a
+// lo que los EEFF del cliente soportan; queda como referencia (señal/alertas).
 function resolveApprovedCredit(
   requested: number | null,
+  ind: ScoringIndicators,
+  req: StudyRequest,
   suggestedByBureau: number | null,
 ): ScoringResult['approvedCreditLine'] {
-  // Sin techo de referencia (no hubo consulta) → se avala lo pedido.
-  if (suggestedByBureau === null || requested === null) {
+  // Sin cupo solicitado no hay qué avalar ni recortar.
+  if (requested === null) {
     return {
-      amount: requested,
+      amount: null,
       requested,
       suggestedByBureau,
-      cappedByBureau: false,
+      cappedByCapacity: false,
     };
   }
-  // Techo real (incluye 0): nunca por encima. montoSugerido 0 → aprobado 0.
-  const capped = requested > suggestedByBureau;
+  const maxPayable = maxPayableForTerm(ind, req);
+  const capped = requested > maxPayable;
   return {
-    amount: capped ? suggestedByBureau : requested,
+    amount: capped ? Math.round(maxPayable) : requested,
     requested,
     suggestedByBureau,
-    cappedByBureau: capped,
+    cappedByCapacity: capped,
   };
+}
+
+/**
+ * Máximo pagable según los EEFF para el plazo pedido: capacidad de pago mensual
+ * × meses del plazo. Sin plazo (0/null) se asume 1 mes (misma convención que
+ * monthlyQuota). Capacidad negativa → 0 (no hay monto avalable; la regla
+ * eliminatoria de capacidad <= 0 rechaza el estudio aguas arriba).
+ */
+function maxPayableForTerm(ind: ScoringIndicators, req: StudyRequest): number {
+  const term = req.requestedTerm ?? 0;
+  const months = term > 0 ? term / 30 : 1;
+  return Math.max(ind.monthlyPaymentCapacity, 0) * months;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

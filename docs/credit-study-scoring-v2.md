@@ -97,9 +97,9 @@ resultado y no suma ni resta.
 | # | Dimensión (`code`) | La pregunta que responde | Obligatoria |
 |---|--------------------|--------------------------|:-----------:|
 | 1 | Salud financiera (`financialHealth`) | ¿El negocio es sólido o muestra señales de quiebra? | No |
-| 2 | Capacidad de pago (`paymentCapacity`) | ¿Le alcanza la caja para pagar la cuota? | **Sí** |
+| 2 | Capacidad de pago (`paymentCapacity`) | ¿Le alcanza la caja para pagar la cuota, y el cupo pedido cabe en lo pagable? | **Sí** |
 | 3 | Coherencia de plazos (`termCoherence`) | ¿El plazo pedido calza con la velocidad a la que él cobra? | No |
-| 4 | Adecuación del cupo (`creditLineAdequacy`) | ¿El monto pedido es proporcional a lo que puede pagar y a lo que la central avala? | No |
+| ~~4~~ | ~~Adecuación del cupo (`creditLineAdequacy`)~~ | **FUSIONADA en la Dim 2** (ver 4.4): medía lo mismo desde el otro lado; el techo del `montoSugerido` dejó de ser techo | — |
 | 5 | Exposición del capital (`capitalExposure`) | ¿El crédito inmoviliza más capital del razonable para su operación? | No |
 | 6 | Veracidad (`veracity`) | ¿Las cifras que reportó coinciden con las de la central? (solo PJ) | No |
 | 7 | Riesgo de la central (`centralRisk`) | ¿Qué opina DataCrédito de su comportamiento crediticio? | **Sí** |
@@ -153,7 +153,9 @@ castiga dos veces.
 ### 4.2 Dim 2 — Capacidad de pago (`paymentCapacity`) — obligatoria
 
 **La pregunta:** después de atender sus deudas actuales, ¿le queda caja
-suficiente cada mes para pagar la cuota del crédito que está pidiendo?
+suficiente cada mes para pagar la cuota del crédito que está pidiendo? (Integra
+la antigua "Adecuación del cupo": la cuota ya combina cupo Y plazo, así que la
+misma medida juzga también el tamaño del monto pedido — ver 4.4.)
 
 **Los datos que usa:** ingresos, costos y gastos (para derivar el EBITDA), las
 deudas financieras de corto plazo y los gastos financieros (su "servicio de
@@ -186,6 +188,16 @@ deuda" actual), y el cupo + plazo solicitados.
 | 1.0 – 1.2 (cubre, pero justo) | Ajustada | **0.6** (warning) |
 | < 1.0 (no alcanza) | Insuficiente | **0.0** (danger) |
 
+Los mensajes de la dimensión explicitan además el **máximo pagable en el plazo
+pedido** (capacidad mensual × plazo ÷ 30): la vista "cupo" de la misma medida.
+
+**Señal de la central (no puntúa).** Si hubo consulta y el cupo solicitado
+supera **mucho** el `montoSugerido` de la central, la dimensión agrega una
+alerta informativa: > 1.5× → `warning`; > 3× → `danger`
+(`SUGGESTED_AMOUNT_ALERT_WARNING` / `_DANGER`). No altera el score ni recorta
+el monto: en el mercado real el `montoSugerido` suele ser muy conservador
+frente a lo que los EEFF del cliente soportan (ver 4.8); el analista pondera.
+
 > ⚠️ **Regla eliminatoria:** si la capacidad mensual es **≤ 0** (su deuda
 > actual ya se come todo el EBITDA), el estudio se **rechaza directo**, sin
 > importar el resto de dimensiones (§6.2).
@@ -217,32 +229,26 @@ brecha la financia de su bolsillo (capital de trabajo) y le tensiona la caja.
 > tardío si el cliente no tiene colchón. El informe IA tiene instrucción
 > explícita de no describirla nunca como riesgo de incumplimiento.
 
-### 4.4 Dim 4 — Adecuación del cupo (`creditLineAdequacy`)
+### 4.4 Dim 4 — Adecuación del cupo (`creditLineAdequacy`) — FUSIONADA en la Dim 2
 
-**La pregunta:** ¿el monto que pide es proporcional a lo que puede pagar en ese
-plazo Y a lo que la central de riesgo le avala?
+Esta dimensión **ya no existe como dimensión propia**: se fusionó en la
+Capacidad de pago (4.2). Dos razones:
 
-**Los datos que usa:** cupo y plazo solicitados, la capacidad de pago mensual
-(Dim 2) y el `montoSugerido` de DataCrédito — el máximo que la central avala
-prestarle a ese cliente (ver 4.8).
+1. **Medían lo mismo desde lados opuestos.** El techo por capacidad de esta
+   dimensión (cupo ÷ máximo pagable) es el **inverso matemático** de la
+   cobertura de la Dim 2 (capacidad ÷ cuota): tener ambas con peso era contar
+   dos veces la misma señal, y de cara al cliente eran dos análisis a medias
+   que confundían.
+2. **El otro techo (el `montoSugerido` de la central) dejó de ser techo.** En
+   el mercado real ese monto es muy conservador: clientes con EEFF que soportan
+   holgadamente el cupo pedido recibían montos sugeridos bajísimos, y el techo
+   los castigaba y recortaba sin razón financiera. El `montoSugerido` pasó a
+   ser **señal** (alertas 1.5×/3× en la Dim 2, ver 4.8), no autoridad de monto.
 
-**Cómo se calcula.** El cupo debe respetar **dos techos a la vez**, y manda el
-más restrictivo:
-
-1. **Techo por capacidad:** lo máximo pagable en el plazo pedido = capacidad
-   mensual × (plazo ÷ 30). Si puede pagar $20M/mes y pide a 60 días, su techo
-   es $40M.
-2. **Techo de la central:** el `montoSugerido`. Si no hubo consulta, este techo
-   no aplica; si es **0**, cualquier monto lo excede (y además es eliminatorio,
-   §6.2).
-
-Se mide cuánto excede el cupo pedido al peor techo (exceso = pedido ÷ techo):
-
-| Exceso | Estado | Cumplimiento |
-|--------|--------|-------------:|
-| ≤ 1.0 (dentro de ambos techos) | Adecuado | **1.0** |
-| ≤ 1.3 (hasta 30% por encima) | Levemente excedido | **0.6** (warning) |
-| > 1.3 | Excesivo | **0.0** (danger) |
+En BD la fila `creditLineAdequacy` se **eliminó del catálogo** (excepción a la
+regla de "sin borrado físico": no había estudios históricos que proteger); los
+pesos que las empresas le tenían asignado se **sumaron al de `paymentCapacity`**
+por migración (los pesos siguen sumando 100).
 
 ### 4.5 Dim 5 — Exposición del capital (`capitalExposure`)
 
@@ -337,10 +343,13 @@ base = puntajeScore → banda (§11):  ≥750 → 1.0 ... <500 → 0.0
 penalización sectorial: si ratingSectorial ∈ {ALTO, 4, 5} → −0.15
 penalización por mora:  GRADUADA por severidad × recencia (ver abajo);
                         hasta −0.40 en el peor caso
-penalización por over-ask: si el cupo solicitado supera el montoSugerido
-                        de la central → −0.15
 ratio_7 = clamp(base − penalizaciones, 0, 1)
 ```
+
+> Nota: pedir por encima del `montoSugerido` **ya no penaliza** esta dimensión
+> (antes restaba −0.15). Es una señal informativa que se alerta en la Dim 2
+> (contraste pedido vs monto sugerido, 1.5×/3×); el riesgo de la central se
+> mide con lo que la central sí sabe: score, sector y comportamiento de pago.
 
 **Mora graduada (severidad × recencia).** El vector de comportamiento de pago de
 la central trae un código por mes: `N` (al día), `1`..`6` (mora de 30..180 días),
@@ -361,38 +370,39 @@ Ejemplo real (Servientrega): vector `6,3,4` hace ~13 meses + 9 meses en `N` →
 índice 0.15 → penalización 0.06 y sin red flag (mora antigua ya normalizada).
 El mismo `6,6,6` en los últimos 3 meses → índice 0.36 → penalización 0.14 + flag.
 
-### 4.8 El `montoSugerido` de la central como techo del cupo
+### 4.8 El `montoSugerido` de la central: SEÑAL, no techo
 
-La central devuelve un `montoSugerido`: el monto **máximo que Experian avala**
-para el cliente. Antes era solo referencia; ahora es un **techo duro** que
-interviene en el análisis (aplica igual a **PN y PJ**):
+La central devuelve un `montoSugerido`: el monto máximo que Experian avala para
+el cliente. **Dejó de ser techo del cupo.** La razón es del mercado real: ese
+monto suele ser muy conservador — clientes cuyo analista financiero, con los
+EEFF y el comportamiento a la vista, avala $50M reciben montos sugeridos de
+$20M. Con el techo activo, Creditia arrastraba ese mismo problema (caso Líneas
+Hospitalarias). Hoy **el monto lo mandan los EEFF** (sean de DataCrédito o del
+PDF); la central aporta señal:
 
-1. **Dim 4 (Adecuación del cupo)** ahora toma el **peor** de dos techos: lo
-   pagable según su capacidad y plazo **Y** el `montoSugerido`. Basta con violar
-   uno para que el cupo sea inadecuado. El exceso se gradúa: ≤ techo → 1.0;
-   ≤ techo × 1.3 → 0.6 (warning); > techo × 1.3 → 0.0 (danger).
-2. **Dim 7 (Riesgo de la central)** suma una penalización de −0.15 cuando el cupo
-   solicitado supera el `montoSugerido` (el cliente pide más riesgo del que la
-   central le reconoce).
-3. **Monto aprobado por Creditia** (`recommendedCreditLine`): no lo calculamos con
-   fórmula propia. Es el cupo solicitado si respeta el techo, o el `montoSugerido`
-   cuando el cliente pide de más. **Nunca aprobamos por encima del techo de la
-   central.** Se persiste en la columna `recommended_credit_line` y en el bloque
-   `approvedCreditLine` del JSON de viabilidad:
+1. **Alertas en la Dim 2** cuando el pedido supera mucho el `montoSugerido`:
+   > 1.5× → `warning`; > 3× → `danger`. Informativas, sin tocar el score.
+2. **Monto aprobado por Creditia** (`recommendedCreditLine`): el cupo
+   solicitado acotado al **máximo pagable según los EEFF** para el plazo
+   (capacidad de pago mensual × plazo ÷ 30); si pide de más, se recorta a ese
+   máximo. El `montoSugerido` NO recorta. Se persiste en
+   `recommended_credit_line` y en el bloque `approvedCreditLine` del JSON:
 
    ```json
    "approvedCreditLine": {
-     "amount": 85000000,           // lo que Creditia avala
-     "requested": 120000000,       // lo que pidió el cliente
-     "suggestedByBureau": 85000000,// techo de la central (montoSugerido)
-     "cappedByBureau": true        // se recortó al techo
+     "amount": 50000000,           // lo que Creditia avala (según EEFF)
+     "requested": 50000000,        // lo que pidió el cliente
+     "suggestedByBureau": 20000000,// referencia de la central (NO recorta)
+     "cappedByCapacity": false     // true si se recortó al máximo pagable
    }
    ```
 
-4. **`montoSugerido` distingue `null` de `0`**: `null` = no hubo consulta a la
-   central → no hay techo, se avala lo pedido. `0` = la central avala **CERO**
-   → techo real 0 (`amount: 0`, Dim 4 en 0) **y además es eliminatorio**
-   (`rejected`, ver §6.2): la central no lo reconoce como sujeto de crédito.
+3. **`montoSugerido` distingue `null` de `0`**: `null` = no hubo consulta a la
+   central → sin señal. `0` = la central no lo reconoce como sujeto de crédito
+   → red flag `danger` + **cap de veredicto a `conditional`** (nunca
+   `approved` automático, ver §6.2). Ya **no** es eliminatorio ni recorta el
+   monto: si los EEFF sostienen la operación, la decisión queda en manos del
+   analista.
 
 ### 4.9 Las TRES capas de red flags (y sus categorías legibles)
 
@@ -520,10 +530,10 @@ scoringConfiguration   ScoringConfiguration? @relation(fields: [scoringConfigura
   motor evalúa SOLO las habilitadas. Las **obligatorias** (`DIMENSION_RULES` →
   `paymentCapacity` y `centralRisk`) no pueden deshabilitarse: son el núcleo del
   estudio.
-- **Reglas eliminatorias SIEMPRE aplican:** matrícula cancelada/liquidación,
-  `montoSugerido=0`, capacidad de pago <= 0 y el cap por riesgo alto de la
-  central son POLÍTICA de Creditia, independientes de qué dimensiones habilitó
-  la empresa.
+- **Reglas eliminatorias y caps SIEMPRE aplican:** matrícula cancelada/
+  liquidación y capacidad de pago <= 0 (eliminatorias), y los caps a
+  `conditional` (riesgo alto de la central, `montoSugerido=0`) son POLÍTICA de
+  Creditia, independientes de qué dimensiones habilitó la empresa.
 - **Agregar una dimensión 8:** deploy con su función `eval*` (y entrada en
   `SCORING_DIMENSIONS`/`DIMENSION_RULES`) + fila en `scoring_dimensions`. Los
   clientes la ven disponible (apagada) y deciden habilitarla; cero impacto en
@@ -558,19 +568,19 @@ Defaults (`scoring.constants.ts` → `DEFAULT_WEIGHTS_PJ` / `DEFAULT_WEIGHTS_PN`
 
 | Dimensión | PJ | PN |
 |-----------|---:|---:|
-| Capacidad de pago | 20 | 26 |
+| Capacidad de pago | 32 | 38 |
 | Veracidad | 20 | **0** |
 | Riesgo de la central | 15 | 25 |
 | Salud financiera | 15 | 19 |
-| Adecuación del cupo | 12 | 12 |
 | Exposición del capital | 10 | 10 |
 | Coherencia de plazos | 8 | 8 |
 | **Total** | **100** | **100** |
 
-> En **PN** la veracidad es 0 (no evaluable sin EEFF de la central) y esos 20
-> puntos se reparten hacia riesgo de central (+10), capacidad (+6) y salud (+4):
-> lo más confiable que se tiene de una persona natural es su comportamiento en la
-> central.
+> La capacidad de pago absorbe los 12 puntos de la antigua "Adecuación del
+> cupo" (fusionada en ella, ver 4.4). En **PN** la veracidad es 0 (no evaluable
+> sin EEFF de la central) y sus puntos se reparten hacia riesgo de central,
+> capacidad y salud: lo más confiable que se tiene de una persona natural es su
+> comportamiento en la central.
 >
 > ⚠️ **Empresas creadas antes de esta feature** no tienen las configs (no hubo
 > backfill automático): se crean desde el front vía el CRUD. Hasta entonces, el
@@ -599,7 +609,6 @@ disparar, se registra el motivo en `summary.eliminatoryReason`:
 | Condición | Veredicto | Motivo |
 |-----------|-----------|--------|
 | Matrícula mercantil **cancelada** o empresa **en liquidación** | `rejected` | No es sujeto de crédito (estado legal). Se lee de `bureauProfile` (`registration.status` / `generalProfile.inLiquidation`). |
-| **`montoSugerido == 0`** (la central no avala ningún monto) | `rejected` | La central no lo reconoce como sujeto de crédito. `approvedCreditLine` se recorta a **0**. |
 | `monthlyPaymentCapacity <= 0` | `rejected` | Sin capacidad de pago. |
 
 **Umbrales por score** (si ninguna eliminatoria aplica):
@@ -610,17 +619,19 @@ disparar, se registra el motivo en `summary.eliminatoryReason`:
 | `viabilityScore >= 40` | `conditional` |
 | `viabilityScore < 40` | `rejected` |
 
-**CAP por banda de riesgo de la central** (aplica DESPUÉS de los umbrales): si la
-central marca **riesgo alto** (`score < 500` o `nivelRiesgo` MÁXIMO/ALTO), el
-veredicto se limita a `conditional` — **nunca `approved`**, aunque el score
-supere 75. La central es la fuente de verdad sobre riesgo crediticio; un PDF
-auto-reportado no puede aprobar a quien la central marca inviable. NO fuerza
-rechazo (baja a `conditional`, no a `rejected`).
+**CAPs a `conditional`** (aplican DESPUÉS de los umbrales; bajan `approved` a
+`conditional`, nunca fuerzan rechazo):
+
+| Señal de la central | Efecto |
+|---------------------|--------|
+| **Riesgo alto** (`score < 500` o `nivelRiesgo` MÁXIMO/ALTO) | Tope `conditional`: un PDF auto-reportado no puede aprobar a quien la central marca inviable. |
+| **`montoSugerido == 0`** (no lo reconoce como sujeto de crédito) | Tope `conditional` + red flag `danger`: los EEFF pueden sostener la operación, pero la aprobación queda a criterio del analista. |
 
 > ⚠️ **Importante:** `montoSugerido` distingue `null` (no hubo consulta → sin
-> techo, se avala lo pedido) de `0` (la central avala **cero** → eliminatorio +
-> `approvedCreditLine` recortado a 0). Antes `0` se trataba como "sin techo": bug
-> corregido.
+> señal) de `0` (la central no avala ningún monto → cap `conditional` + red
+> flag). Antes `0` era **eliminatorio** y recortaba el monto aprobado a 0; se
+> relajó porque la central suele ser conservadora frente a los EEFF reales del
+> cliente — la señal se conserva, el veto automático no.
 
 ### 6.3 Dimensiones no evaluables (redistribución)
 
@@ -656,9 +667,8 @@ pesos y contra qué cifras se decidió.
 {
   "dimensions": {
     "financialHealth": { "score": 15, "weight": 15, "status": "healthy" },
-    "paymentCapacity": { "score": 20, "weight": 20, "status": "comfortable" },
+    "paymentCapacity": { "score": 32, "weight": 32, "status": "comfortable" },
     "termCoherence": { "score": 0, "weight": 8, "status": "incoherent" },
-    "creditLineAdequacy": { "score": 12, "weight": 12, "status": "adequate" },
     "capitalExposure": { "score": 10, "weight": 10, "status": "efficient" },
     "veracity": { "score": 0, "weight": 20, "status": "manipulated", "worstDiff": 0.41, "field": "ordinaryActivityRevenue" },
     "centralRisk": { "score": 9, "weight": 15, "status": "medium_risk", "nivel": "MEDIO" }
@@ -800,14 +810,15 @@ El resultado declara con qué se calculó:
 - Alerta `warning` si corrió sobre PDF (cifras auto-reportadas, sin verificar);
   alerta `info` si corrió sobre DataCrédito sin PDF (sin contraste de veracidad).
 
-### Monto aprobado (techo de la central, no fórmula propia)
+### Monto aprobado (lo mandan los EEFF; la central es referencia)
 - **No** reimplementamos las *recomendaciones de cupo/plazo* con fórmula propia
   (`paymentSuggestions` del modelo viejo sigue fuera de alcance).
 - **Sí** producimos un **monto aprobado** = el cupo solicitado acotado al
-  `montoSugerido` de la central (ver §4.8). Vive en `recommendedCreditLine` y en
-  `approvedCreditLine` del JSON. El plazo aprobado (`recommendedTerm`) refleja el
-  plazo solicitado (no lo recalculamos). Nunca aprobamos por encima del techo de
-  la central, en PN y PJ por igual.
+  **máximo pagable según los EEFF** para el plazo (capacidad de pago mensual ×
+  plazo ÷ 30, ver §4.8). El `montoSugerido` de la central NO recorta: es
+  referencia y dispara alertas (1.5×/3×). Vive en `recommendedCreditLine` y en
+  `approvedCreditLine` del JSON. El plazo aprobado (`recommendedTerm`) refleja
+  el plazo solicitado (no lo recalculamos). Igual en PN y PJ.
 - **Caso PN sin estados financieros de ninguna fuente:** requiere un modelo de
   análisis distinto (una persona natural sin EEFF no puede evaluarse con las
   dimensiones financieras). Pendiente de diseño en documento aparte.
@@ -870,7 +881,7 @@ objeto**, construido por un único builder (`buildStep3`):
 {
   "viabilityScore": 57,
   "viabilityStatus": "conditional",      // approved | conditional | rejected
-  "recommendedCreditLine": 50000000,     // monto avalado (techo de la central)
+  "recommendedCreditLine": 50000000,     // monto avalado (según EEFF, ver §4.8)
   "recommendedTerm": 40,
   "resolutionDate": "...",
   "result": { /* ScoringResult completo, ver 12.3 */ },
