@@ -307,17 +307,19 @@ export class CreditStudiesService {
     }
 
     // Config de scoring: la vigente de la empresa PARA EL TIPO DE PERSONA del
-    // cliente; si no hay (empresa antigua sin config), se usan los pesos default
-    // del tipo en memoria (no se congela id).
+    // cliente (solo sus dimensiones HABILITADAS participan); si no hay (empresa
+    // antigua sin config), se usan los pesos default del tipo en memoria (no se
+    // congela id).
     const personTypeCode = (study.customer.personType?.code ??
       'legalEntity') as PersonTypeCode;
-    const weights = scoringConfig
+    const { weights, labels } = scoringConfig
       ? this.configToWeights(scoringConfig)
-      : defaultWeightsFor(personTypeCode);
+      : { weights: defaultWeightsFor(personTypeCode), labels: undefined };
 
     // Armar la entrada del motor.
     const engineInput: ScoringEngineInput = {
       weights,
+      labels,
       personType: personTypeCode,
       request: {
         requestedTerm: study.requestedTerm,
@@ -370,25 +372,26 @@ export class CreditStudiesService {
 
   // ── Helpers del análisis ─────────────────────────────────
 
-  /** Pesos de la config (columnas) → mapa por dimensión que consume el motor. */
+  /**
+   * Filas de pesos de la config (solo dimensiones HABILITADAS) → mapa por
+   * dimensión que consume el motor + labels del catálogo para el display.
+   */
   private configToWeights(config: {
-    weightFinancialHealth: number;
-    weightPaymentCapacity: number;
-    weightTermCoherence: number;
-    weightCreditLineAdequacy: number;
-    weightCapitalExposure: number;
-    weightVeracity: number;
-    weightCentralRisk: number;
-  }): Record<ScoringDimension, number> {
-    return {
-      financialHealth: config.weightFinancialHealth,
-      paymentCapacity: config.weightPaymentCapacity,
-      termCoherence: config.weightTermCoherence,
-      creditLineAdequacy: config.weightCreditLineAdequacy,
-      capitalExposure: config.weightCapitalExposure,
-      veracity: config.weightVeracity,
-      centralRisk: config.weightCentralRisk,
-    };
+    weights: Array<{
+      weight: number;
+      dimension: { code: string; label: string };
+    }>;
+  }): {
+    weights: Partial<Record<ScoringDimension, number>>;
+    labels: Partial<Record<ScoringDimension, string>>;
+  } {
+    const weights: Partial<Record<ScoringDimension, number>> = {};
+    const labels: Partial<Record<ScoringDimension, string>> = {};
+    for (const row of config.weights) {
+      weights[row.dimension.code as ScoringDimension] = row.weight;
+      labels[row.dimension.code as ScoringDimension] = row.dimension.label;
+    }
+    return { weights, labels };
   }
 
   /** Indicadores del análisis (columnas de FinancialAnalysis) → entrada del motor. */
@@ -509,9 +512,7 @@ export class CreditStudiesService {
       generalProfile?: { inLiquidation?: unknown };
     };
     const registrationStatus =
-      typeof p.registration?.status === 'string'
-        ? p.registration.status
-        : null;
+      typeof p.registration?.status === 'string' ? p.registration.status : null;
     const inLiquidation =
       typeof p.generalProfile?.inLiquidation === 'string'
         ? p.generalProfile.inLiquidation

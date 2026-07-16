@@ -196,8 +196,9 @@ model Company {
 // Al realizar un estudio se graba el id de la config vigente en el CreditStudy,
 // congelando por referencia: reconfigurar después NO recalcula estudios viejos.
 //
-// Los pesos son columnas fijas (una por dimensión), deben sumar 100 y cada uno
-// respeta un mínimo (MIN_WEIGHT) para que ninguna dimensión quede apagada. Los
+// Los pesos viven en scoring_configuration_weights (una fila por dimensión
+// HABILITADA): deben sumar 100 y cada uno respeta un mínimo (MIN_WEIGHT). Una
+// dimensión sin fila está deshabilitada y NO participa en el estudio. Los
 // umbrales de veredicto (approved/conditional) NO se configuran: son fijos.
 
 model ScoringConfiguration {
@@ -209,16 +210,6 @@ model ScoringConfiguration {
   // (no hay contraste posible). Cada empresa tiene UNA config vigente por tipo.
   personTypeId Int    @map("person_type_id")
 
-  // Pesos por dimensión (0-100). Suman 100 según el tipo: PJ usa las 7; PN usa 6
-  // (veracity=0, no evaluable sin contraste). Cada peso activo >= MIN_WEIGHT.
-  weightFinancialHealth    Int @map("weight_financial_health")    // Dim 1: salud financiera (Z-Altman)
-  weightPaymentCapacity    Int @map("weight_payment_capacity")    // Dim 2: capacidad de pago
-  weightTermCoherence      Int @map("weight_term_coherence")      // Dim 3: coherencia de plazos
-  weightCreditLineAdequacy Int @map("weight_credit_line_adequacy") // Dim 4: adecuación del cupo
-  weightCapitalExposure    Int @map("weight_capital_exposure")    // Dim 5: exposición del capital
-  weightVeracity           Int @map("weight_veracity")            // Dim 6: veracidad (0 en PN)
-  weightCentralRisk        Int @map("weight_central_risk")        // Dim 7: riesgo de la central
-
   isActive  Boolean  @default(true) @map("is_active") // config vigente (por empresa+tipo)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
@@ -227,9 +218,48 @@ model ScoringConfiguration {
   personType    Parameter     @relation("ScoringConfigurationPersonType", fields: [personTypeId], references: [id])
   createdByUser Profile       @relation("ScoringConfigurationCreatedBy", fields: [createdBy], references: [id])
   creditStudies CreditStudy[]
+  // Dimensiones HABILITADAS por esta config con su peso. Suman 100.
+  weights ScoringConfigurationWeight[]
 
   @@index([companyId, personTypeId, isActive])
   @@map("scoring_configurations")
+}
+
+// Catálogo global de dimensiones del scoring (lo administra Creditia desde el
+// portal admin). Solo identidad y display: el COMPORTAMIENTO (función eval*,
+// obligatoriedad, a qué tipo de persona aplica, defaults) vive en el motor,
+// keyed por `code`. Sin borrado físico: retirar una dimensión del mercado =
+// isActive false (las configs históricas que la usaban quedan íntegras).
+model ScoringDimension {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(50) // debe existir en SCORING_DIMENSIONS del motor
+  label       String   @db.VarChar(150)
+  description String?  @db.VarChar(500) // qué mide y por qué importa (tooltip en el front)
+  isActive    Boolean  @default(true) @map("is_active") // elegible en el catálogo
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  weights ScoringConfigurationWeight[]
+
+  @@map("scoring_dimensions")
+}
+
+// Peso de una dimensión dentro de una versión de configuración. La fila existe
+// solo si la empresa HABILITÓ la dimensión en esa versión; sin fila, la
+// dimensión no participa del estudio. Inmutable junto con su config (el
+// versionado crea una config nueva con sus filas, nunca edita las históricas).
+model ScoringConfigurationWeight {
+  id          String @id @default(uuid()) @db.Uuid
+  configId    String @map("config_id") @db.Uuid
+  dimensionId Int    @map("dimension_id")
+  weight      Int // >= MIN_WEIGHT; los de la config suman 100
+
+  config    ScoringConfiguration @relation(fields: [configId], references: [id])
+  dimension ScoringDimension     @relation(fields: [dimensionId], references: [id])
+
+  @@unique([configId, dimensionId])
+  @@map("scoring_configuration_weights")
 }
 
 // ─── Admin de plataforma (equipo Creditia / portal admin) ───

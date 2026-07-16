@@ -234,7 +234,6 @@ export class CreditStudiesRepository {
         where: { customerId: study.customerId },
         orderBy: { createdAt: 'desc' },
       }),
-      // Config del tipo de persona del cliente (PN o PJ).
       this.prisma.scoringConfiguration.findFirst({
         where: {
           companyId,
@@ -242,6 +241,11 @@ export class CreditStudiesRepository {
           isActive: true,
         },
         orderBy: { createdAt: 'desc' },
+        include: {
+          weights: {
+            include: { dimension: { select: { code: true, label: true } } },
+          },
+        },
       }),
     ]);
 

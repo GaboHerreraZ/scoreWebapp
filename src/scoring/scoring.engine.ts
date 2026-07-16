@@ -32,12 +32,16 @@ import type {
 } from './scoring.types.js';
 
 // ─── MOTOR DE SCORING v2 (función pura) ─────────────────────────────────────
-// Evalúa las 7 dimensiones sobre la fuente de verdad (DataCrédito), pondera con
-// los pesos de la empresa (redistribuyendo el peso de las dimensiones que no se
-// pueden evaluar) y produce el veredicto. NO lee BD: el servicio arma la entrada.
+// Evalúa las dimensiones HABILITADAS por la config de la empresa sobre la
+// fuente de verdad (DataCrédito), pondera con los pesos configurados
+// (redistribuyendo el peso de las que no se pueden evaluar) y produce el
+// veredicto. Una dimensión deshabilitada (sin peso en la entrada) no se evalúa
+// ni aparece en el resultado. NO lee BD: el servicio arma la entrada.
 //
 // Umbrales de veredicto FIJOS (no configurables): >=75 approved, >=40 conditional.
-// Eliminatorio: capacidad de pago mensual <= 0 → rejected.
+// Las reglas ELIMINATORIAS (estado legal, montoSugerido=0, capacidad de pago
+// <= 0) y el cap por riesgo alto de la central son POLÍTICA de Creditia: aplican
+// SIEMPRE, sin importar qué dimensiones haya habilitado la empresa.
 
 const APPROVED_THRESHOLD = 75;
 const CONDITIONAL_THRESHOLD = 40;
@@ -76,34 +80,40 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   const suggestedByBureau = input.centralRisk?.montoSugerido ?? null;
   const requestedCredit = request.requestedCreditLine ?? null;
 
-  // Evaluar cada dimensión → resultado bruto (ratio 0..1 | null).
-  const raw: Record<ScoringDimension, RawDimension> = {
-    financialHealth: evalFinancialHealth(indicators),
-    paymentCapacity: evalPaymentCapacity(indicators, request),
-    termCoherence: evalTermCoherence(indicators, request),
-    creditLineAdequacy: evalCreditLineAdequacy(
-      indicators,
-      request,
-      suggestedByBureau,
-    ),
-    capitalExposure: evalCapitalExposure(indicators, request),
-    veracity: evalVeracity(
-      input.truthFigures,
-      input.pdfFigures,
-      input.personType,
-    ),
-    centralRisk: evalCentralRisk(input.centralRisk, requestedCredit),
+  // Dimensiones HABILITADAS por la config (las que traen peso), en orden
+  // canónico. Solo estas se evalúan; las demás no participan del estudio.
+  const enabled = SCORING_DIMENSIONS.filter(
+    (dim) => input.weights[dim] !== undefined,
+  );
+
+  // Evaluadores por dimensión (perezosos: solo corre el de las habilitadas).
+  const evaluators: Record<ScoringDimension, () => RawDimension> = {
+    financialHealth: () => evalFinancialHealth(indicators),
+    paymentCapacity: () => evalPaymentCapacity(indicators, request),
+    termCoherence: () => evalTermCoherence(indicators, request),
+    creditLineAdequacy: () =>
+      evalCreditLineAdequacy(indicators, request, suggestedByBureau),
+    capitalExposure: () => evalCapitalExposure(indicators, request),
+    veracity: () =>
+      evalVeracity(input.truthFigures, input.pdfFigures, input.personType),
+    centralRisk: () => evalCentralRisk(input.centralRisk, requestedCredit),
   };
 
+  // Evaluar cada dimensión habilitada → resultado bruto (ratio 0..1 | null).
+  const raw = {} as Record<ScoringDimension, RawDimension>;
+  for (const dim of enabled) {
+    raw[dim] = evaluators[dim]();
+  }
+
   // Redistribuir pesos de las dimensiones NO evaluables entre las evaluables.
-  const effectiveWeights = redistributeWeights(input.weights, raw);
+  const effectiveWeights = redistributeWeights(enabled, input.weights, raw);
 
   // Armar el resultado por dimensión + contribución.
   const dimensions: Record<string, DimensionResult> = {};
   const alerts: ScoringAlert[] = [];
   let totalScore = 0;
 
-  for (const dim of SCORING_DIMENSIONS) {
+  for (const dim of enabled) {
     const r = raw[dim];
     const weight = effectiveWeights[dim];
     const evaluable = r.ratio !== null;
@@ -111,7 +121,8 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     totalScore += contribution;
     dimensions[dim] = {
       dimension: dim,
-      label: LABELS[dim],
+      // Label del catálogo (BD) si vino; si no, el interno del motor.
+      label: input.labels?.[dim] ?? LABELS[dim],
       ratio: r.ratio,
       weight,
       contribution: round2(contribution),
@@ -194,7 +205,11 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   if (legalReason) {
     status = 'rejected';
     eliminatoryReason = legalReason;
-    alerts.unshift({ type: 'danger', dimension: 'general', message: legalReason });
+    alerts.unshift({
+      type: 'danger',
+      dimension: 'general',
+      message: legalReason,
+    });
   } else if (bureauDeniesCredit) {
     status = 'rejected';
     eliminatoryReason =
@@ -755,9 +770,7 @@ function evalCentralRisk(
 // Devuelve el motivo si el estado legal descalifica al cliente (matrícula
 // cancelada o empresa en liquidación), o null si está en regla. Compara
 // normalizado (minúsculas, sin tildes/espacios).
-function eliminatoryLegalReason(
-  legal: LegalStatusInput | null,
-): string | null {
+function eliminatoryLegalReason(legal: LegalStatusInput | null): string | null {
   if (!legal) return null;
   const status = normalizeText(legal.registrationStatus);
   const liq = normalizeText(legal.inLiquidation);
@@ -788,9 +801,7 @@ function centralMarksHighRisk(central: CentralRiskInput | null): boolean {
 // índice 0..1: promedio ponderado de la severidad de cada mes, dando más peso a
 // los meses recientes (los últimos ARREARS_RECENT_WINDOW pesan progresivamente
 // más). 0 = sin mora; 1 = mora máxima y reciente.
-function weightedArrearsIndex(
-  vector: PaymentBehaviorMonth[] | null,
-): number {
+function weightedArrearsIndex(vector: PaymentBehaviorMonth[] | null): number {
   if (!vector || vector.length === 0) return 0;
   let weightedSum = 0;
   let weightTotal = 0;
@@ -895,10 +906,7 @@ function buildCentralRiskFlags(
   }
 
   // Score muy bajo (banda de riesgo alto).
-  if (
-    central.score !== null &&
-    central.score < CENTRAL_SCORE_CONDITIONAL_CAP
-  ) {
+  if (central.score !== null && central.score < CENTRAL_SCORE_CONDITIONAL_CAP) {
     flags.push({
       severity: 'warning',
       category: 'score',
@@ -950,27 +958,32 @@ function describeWorstArrears(vector: PaymentBehaviorMonth[] | null): string {
 }
 
 // ─── Redistribución de pesos ────────────────────────────────────────────────
-// El peso de las dimensiones NO evaluables se reparte proporcionalmente entre las
-// evaluables, para que el score siga en escala 0..100.
+// Entre las dimensiones HABILITADAS, el peso de las NO evaluables (sin datos) se
+// reparte proporcionalmente entre las evaluables, para que el score siga en
+// escala 0..100. Las deshabilitadas no entran aquí: no tienen peso que repartir.
 function redistributeWeights(
-  weights: Record<ScoringDimension, number>,
+  enabled: ScoringDimension[],
+  weights: Partial<Record<ScoringDimension, number>>,
   raw: Record<ScoringDimension, RawDimension>,
 ): Record<ScoringDimension, number> {
-  const evaluables = SCORING_DIMENSIONS.filter((d) => raw[d].ratio !== null);
-  const missingWeight = SCORING_DIMENSIONS.filter(
-    (d) => raw[d].ratio === null,
-  ).reduce((sum, d) => sum + weights[d], 0);
-  const evaluableWeightSum = evaluables.reduce((sum, d) => sum + weights[d], 0);
+  const evaluables = enabled.filter((d) => raw[d].ratio !== null);
+  const missingWeight = enabled
+    .filter((d) => raw[d].ratio === null)
+    .reduce((sum, d) => sum + weights[d]!, 0);
+  const evaluableWeightSum = evaluables.reduce(
+    (sum, d) => sum + weights[d]!,
+    0,
+  );
 
   const result = {} as Record<ScoringDimension, number>;
-  for (const dim of SCORING_DIMENSIONS) {
+  for (const dim of enabled) {
     if (raw[dim].ratio === null) {
       result[dim] = 0;
     } else if (evaluableWeightSum > 0) {
       result[dim] =
-        weights[dim] + missingWeight * (weights[dim] / evaluableWeightSum);
+        weights[dim]! + missingWeight * (weights[dim]! / evaluableWeightSum);
     } else {
-      result[dim] = weights[dim];
+      result[dim] = weights[dim]!;
     }
   }
   return result;

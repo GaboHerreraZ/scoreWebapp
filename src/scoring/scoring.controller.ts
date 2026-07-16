@@ -80,13 +80,14 @@ export class ScoringController {
     summary:
       'Crear una nueva versión de configuración para un tipo de persona (la vigente de ese tipo pasa a histórica)',
     description:
-      'Los pesos deben sumar 100. En PJ las 7 dimensiones aplican (cada peso >= 5). En PN la veracidad debe ser 0 (no hay contraste) y las otras 6 suman 100.',
+      'El body trae SOLO las dimensiones habilitadas con su peso; las ausentes quedan deshabilitadas y no participan del estudio. Los pesos habilitados suman 100 (cada uno >= 5). Las dimensiones obligatorias (paymentCapacity, centralRisk) no pueden faltar y veracity no aplica en PN.',
   })
   @ApiQuery({ name: 'personType', enum: ['naturalPerson', 'legalEntity'] })
   @ApiResponse({ status: 201, description: 'Nueva config creada y vigente' })
   @ApiResponse({
     status: 400,
-    description: 'Pesos inválidos (no suman 100, < mínimo, o veracity≠0 en PN)',
+    description:
+      'Pesos inválidos (no suman 100, < mínimo, falta una obligatoria, dimensión que no aplica al tipo o no existe/inactiva en el catálogo)',
   })
   createVersion(
     @Param('companyId', ParseUUIDPipe) companyId: string,

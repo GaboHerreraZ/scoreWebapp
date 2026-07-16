@@ -59,10 +59,14 @@ export class AdminController {
 
   @Post('platform-admins')
   @ApiOperation({
-    summary: 'Crear un usuario del portal (Supabase + PlatformAdmin). Solo rol admin.',
+    summary:
+      'Crear un usuario del portal (Supabase + PlatformAdmin). Solo rol admin.',
   })
   @ApiResponse({ status: 201, description: 'PlatformAdmin creado' })
-  @ApiResponse({ status: 403, description: 'Solo un administrador puede crear usuarios' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo un administrador puede crear usuarios',
+  })
   @ApiResponse({ status: 409, description: 'El correo ya está registrado' })
   createPlatformAdmin(
     @Body() dto: CreatePlatformAdminDto,
@@ -74,10 +78,14 @@ export class AdminController {
 
   @Patch('platform-admins/:id')
   @ApiOperation({
-    summary: 'Editar un usuario del portal (name/phone/roleId). Solo rol admin.',
+    summary:
+      'Editar un usuario del portal (name/phone/roleId). Solo rol admin.',
   })
   @ApiResponse({ status: 200, description: 'PlatformAdmin actualizado' })
-  @ApiResponse({ status: 403, description: 'Solo un administrador puede editar usuarios' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo un administrador puede editar usuarios',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   updatePlatformAdmin(
     @Param('id', ParseUUIDPipe) id: string,
@@ -91,7 +99,8 @@ export class AdminController {
   @Patch('platform-admins/:id/avatar')
   @UseInterceptors(FileInterceptor('avatar'))
   @ApiOperation({
-    summary: 'Subir/actualizar la foto de un usuario del portal. Solo rol admin.',
+    summary:
+      'Subir/actualizar la foto de un usuario del portal. Solo rol admin.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -142,7 +151,10 @@ export class AdminController {
     summary: 'Reactivar un usuario del portal desactivado. Solo rol admin.',
   })
   @ApiResponse({ status: 200, description: 'PlatformAdmin reactivado' })
-  @ApiResponse({ status: 403, description: 'Solo un administrador puede reactivar usuarios' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo un administrador puede reactivar usuarios',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   activatePlatformAdmin(
     @Param('id', ParseUUIDPipe) id: string,
@@ -154,10 +166,14 @@ export class AdminController {
 
   @Delete('platform-admins/:id')
   @ApiOperation({
-    summary: 'Desactivar un usuario del portal (borrado lógico). Solo rol admin.',
+    summary:
+      'Desactivar un usuario del portal (borrado lógico). Solo rol admin.',
   })
   @ApiResponse({ status: 200, description: 'PlatformAdmin desactivado' })
-  @ApiResponse({ status: 403, description: 'Solo un administrador puede desactivar usuarios' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo un administrador puede desactivar usuarios',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   deactivatePlatformAdmin(
     @Param('id', ParseUUIDPipe) id: string,
@@ -203,7 +219,8 @@ export class AdminController {
   })
   @ApiResponse({
     status: 200,
-    description: 'credits, consumption (ritmo/proyección/byUser), lifetime, customers',
+    description:
+      'credits, consumption (ritmo/proyección/byUser), lifetime, customers',
   })
   @ApiResponse({ status: 404, description: 'Empresa no encontrada' })
   getUsage(@Param('companyId', ParseUUIDPipe) companyId: string) {
@@ -253,7 +270,10 @@ export class AdminController {
   })
   @ApiResponse({ status: 201, description: 'Dimensión creada' })
   @ApiResponse({ status: 400, description: 'Code no soportado por el motor' })
-  @ApiResponse({ status: 409, description: 'Ya existe una dimensión con ese code' })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe una dimensión con ese code',
+  })
   createScoringDimension(@Body() dto: CreateScoringDimensionDto) {
     return this.scoringService.createDimension(dto);
   }

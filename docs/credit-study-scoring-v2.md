@@ -1,4 +1,4 @@
-# Modelo de scoring v2 — 7 dimensiones + configuración versionada
+# Modelo de scoring v2 — dimensiones configurables + configuración versionada
 
 > **Estado: IMPLEMENTADO** (Hitos 1-4). Este es el documento autoritativo del
 > análisis del estudio de crédito. Reemplaza al modelo de 5 dimensiones de
@@ -40,7 +40,8 @@ dimensiones nuevas, (c) hacer los pesos configurables por empresa.
 | **Score total** | **Pesos por importancia** (no ×20 uniforme), suman 100. |
 | **Pesos** | **Configurables por empresa**, versionados en el tiempo. |
 | **Config por estudio** | El `scoringConfigurationId` vigente se graba en el `CreditStudy` **al realizar el análisis** (congelación por referencia). |
-| **Peso mínimo** | Cada dimensión tiene un piso (p. ej. 5); nadie puede apagar la veracidad. |
+| **Peso mínimo** | Cada dimensión **habilitada** tiene un piso (5): apagar una dimensión se hace deshabilitándola en la config, nunca dejándola con peso simbólico. |
+| **Dimensiones configurables** *(v2.1)* | Cada empresa habilita las dimensiones del catálogo que quiera usar; las obligatorias (capacidad de pago, riesgo de la central) no se pueden apagar. Ver §5. |
 | **Umbrales de veredicto** | Fijos (≥75 approved, ≥40 conditional). Solo los pesos se configuran. |
 
 ---
@@ -66,22 +67,218 @@ D&A). Se contrastan cifras crudas gruesas (ver Dim 6).
 
 ---
 
-## 4. Las 7 dimensiones
+## 4. Las dimensiones: qué mide cada una, con qué datos y cómo puntúa
 
-Las dimensiones 1-5 conservan su lógica (ver documento base); ahora corren sobre
-las cifras de **DataCrédito**.
+> Esta sección está escrita para que la entienda cualquier persona del negocio,
+> sin conocimientos técnicos ni contables profundos. Cada término se explica la
+> primera vez que aparece. Para verla aplicada con números reales, ver los tres
+> escenarios de la §13.
 
-| # | Dimensión | Mide | Fuente |
-|---|-----------|------|--------|
-| 1 | Salud financiera (Z-Altman) | Solidez del balance | DataCrédito |
-| 2 | Capacidad de pago | Puede pagar la cuota | DataCrédito |
-| 3 | Coherencia de plazos | Si el plazo cubre su ciclo de cobro (tensión de caja del cliente, no riesgo de impago) | DataCrédito |
-| 4 | Adecuación del cupo | El cupo cabe en su capacidad **y** en el techo de la central | DataCrédito |
-| 5 | Exposición del capital | Interés del prestamista (crédito sin interés) | DataCrédito |
-| 6 | **Veracidad** *(nueva)* | Coincidencia PDF vs DataCrédito | Contraste |
-| 7 | **Riesgo de la central** *(nueva)* | Reputación crediticia / comportamiento | DataCrédito (Experian) |
+Una **dimensión** es una pregunta concreta sobre el cliente que se estudia
+("¿puede pagar la cuota?", "¿dice la verdad en sus estados financieros?"). El
+motor responde cada pregunta con un **puntaje de cumplimiento entre 0 y 1**
+(0 = incumple del todo, 1 = cumple del todo, con escalones intermedios). Ese
+cumplimiento se multiplica por el **peso** que la empresa le asignó a la
+dimensión, y la suma de todas las dimensiones da el **score de viabilidad
+(0 a 100)**:
 
-### 4.1 Dim 6 — Veracidad (contraste PDF ↔ DataCrédito)
+```
+puntos de una dimensión = cumplimiento (0..1) × peso configurado
+score de viabilidad     = suma de los puntos de las dimensiones habilitadas
+```
+
+Qué dimensiones participan lo decide **cada empresa** en su configuración (§5):
+habilita las del catálogo que le interesen y reparte 100 puntos de peso entre
+ellas. Dos son **obligatorias** y no pueden apagarse — Capacidad de pago y
+Riesgo de la central — porque sin ellas el estudio pierde sentido como análisis
+de crédito. Una dimensión deshabilitada no se evalúa, no aparece en el
+resultado y no suma ni resta.
+
+| # | Dimensión (`code`) | La pregunta que responde | Obligatoria |
+|---|--------------------|--------------------------|:-----------:|
+| 1 | Salud financiera (`financialHealth`) | ¿El negocio es sólido o muestra señales de quiebra? | No |
+| 2 | Capacidad de pago (`paymentCapacity`) | ¿Le alcanza la caja para pagar la cuota? | **Sí** |
+| 3 | Coherencia de plazos (`termCoherence`) | ¿El plazo pedido calza con la velocidad a la que él cobra? | No |
+| 4 | Adecuación del cupo (`creditLineAdequacy`) | ¿El monto pedido es proporcional a lo que puede pagar y a lo que la central avala? | No |
+| 5 | Exposición del capital (`capitalExposure`) | ¿El crédito inmoviliza más capital del razonable para su operación? | No |
+| 6 | Veracidad (`veracity`) | ¿Las cifras que reportó coinciden con las de la central? (solo PJ) | No |
+| 7 | Riesgo de la central (`centralRisk`) | ¿Qué opina DataCrédito de su comportamiento crediticio? | **Sí** |
+
+Las cifras financieras salen de **DataCrédito** (fuente de verdad, no
+maquillable); si la central no tiene estados financieros del cliente, se usa el
+PDF que él aportó, dejando la salvedad declarada en el resultado (§11).
+
+### 4.1 Dim 1 — Salud financiera (`financialHealth`)
+
+**La pregunta:** ¿el negocio del cliente es estructuralmente sólido, o muestra
+señales de que podría quebrar?
+
+**Los datos que usa** (del balance y el estado de resultados): activos y
+pasivos (totales y corrientes), utilidades retenidas, utilidad operacional,
+patrimonio e ingresos.
+
+**Cómo se calcula.** Se usa el **Z-Score de Altman**, un método clásico de la
+banca (1968, vigente hoy) que combina cinco señales del negocio en un solo
+número. En palabras simples, las cinco señales son:
+
+1. **Liquidez** — cuánto colchón de corto plazo tiene frente a su tamaño:
+   (activo corriente − pasivo corriente) ÷ activo total.
+2. **Historia de rentabilidad** — cuánta utilidad ha acumulado en su vida
+   frente a su tamaño: utilidades retenidas ÷ activo total. Un negocio que
+   arrastra pérdidas acumuladas puntúa negativo aquí.
+3. **Rentabilidad actual** — cuánta utilidad operacional genera su activo:
+   utilidad operacional ÷ activo total. Es la señal que más pesa en la fórmula.
+4. **Solvencia** — cuánto patrimonio respalda cada peso de deuda:
+   patrimonio ÷ pasivo total.
+5. **Eficiencia** — cuántas ventas genera cada peso invertido en activos:
+   ingresos ÷ activo total.
+
+```
+Z = 1.2×(liquidez) + 1.4×(historia) + 3.3×(rentabilidad) + 0.6×(solvencia) + 1.0×(eficiencia)
+```
+
+**Cómo puntúa:**
+
+| Z-Score | Zona | Cumplimiento | Significado |
+|---------|------|-------------:|-------------|
+| > 3.0 | Segura | **1.0** | Indicadores sólidos, baja probabilidad de riesgo |
+| 1.8 – 3.0 | Gris | **0.5** | Zona de observación: se recomienda monitoreo |
+| < 1.8 | Crítica | **0.0** | Alta probabilidad de incumplimiento |
+
+La zona se traduce internamente en un **factor de estabilidad** (1, 0.66 o
+0.33) que además **descuenta el EBITDA en la Dim 2**: a un negocio frágil se le
+cree menos capacidad de pago (ver 4.2). Por diseño, una mala salud financiera
+castiga dos veces.
+
+### 4.2 Dim 2 — Capacidad de pago (`paymentCapacity`) — obligatoria
+
+**La pregunta:** después de atender sus deudas actuales, ¿le queda caja
+suficiente cada mes para pagar la cuota del crédito que está pidiendo?
+
+**Los datos que usa:** ingresos, costos y gastos (para derivar el EBITDA), las
+deudas financieras de corto plazo y los gastos financieros (su "servicio de
+deuda" actual), y el cupo + plazo solicitados.
+
+**Cómo se calcula, paso a paso:**
+
+1. **EBITDA** — la utilidad que deja la operación pura del negocio: ingresos −
+   costo de ventas − gastos de administración − gastos de ventas (+ depreciación
+   y amortización cuando la fuente las desglosa; DataCrédito no lo hace — ver
+   §3 —, lo que deja el cálculo más conservador).
+2. **EBITDA ajustado** = EBITDA × factor de estabilidad de la Dim 1 (1, 0.66 o
+   0.33). Racional: a un negocio en zona gris o crítica no se le puede creer el
+   100% de su utilidad como capacidad de pago real.
+3. **Capacidad de pago anual** = EBITDA ajustado − servicio de deuda actual
+   (obligaciones financieras de corto plazo + gastos financieros). Es lo que de
+   verdad le queda al año para asumir deuda NUEVA.
+4. **Capacidad mensual** = capacidad anual ÷ 12.
+5. **Cuota mensual estimada** del crédito = cupo ÷ (plazo en días ÷ 30).
+   Ejemplo: $30M a 60 días → cuota de $15M/mes. (El crédito comercial es sin
+   intereses, por eso la cuota es el simple prorrateo del cupo en el plazo.)
+6. **Cobertura** = capacidad mensual ÷ cuota mensual: cuántas veces la caja
+   disponible cubre la cuota.
+
+**Cómo puntúa:**
+
+| Cobertura | Estado | Cumplimiento |
+|-----------|--------|-------------:|
+| ≥ 1.2 (le sobra 20% o más) | Holgada | **1.0** |
+| 1.0 – 1.2 (cubre, pero justo) | Ajustada | **0.6** (warning) |
+| < 1.0 (no alcanza) | Insuficiente | **0.0** (danger) |
+
+> ⚠️ **Regla eliminatoria:** si la capacidad mensual es **≤ 0** (su deuda
+> actual ya se come todo el EBITDA), el estudio se **rechaza directo**, sin
+> importar el resto de dimensiones (§6.2).
+
+### 4.3 Dim 3 — Coherencia de plazos (`termCoherence`)
+
+**La pregunta:** ¿el plazo que pide para pagarnos calza con la velocidad a la
+que él le cobra a sus propios clientes?
+
+**Los datos que usa:** el plazo solicitado (días) y la **rotación de cartera**
+del cliente: cuántos días tarda, en promedio, en cobrar sus facturas (cartera
+promedio ÷ ingresos × 365).
+
+**Cómo se calcula.** Si un cliente cobra a 90 días pero nos pide plazo de 30,
+tendrá que pagarnos ANTES de recibir la plata de sus propios clientes: esa
+brecha la financia de su bolsillo (capital de trabajo) y le tensiona la caja.
+
+**Cómo puntúa:**
+
+| Comparación | Estado | Cumplimiento |
+|-------------|--------|-------------:|
+| Plazo ≥ rotación (cobra antes de pagarnos) | Cómodo | **1.0** |
+| Plazo ≥ 70% de la rotación (brecha manejable) | Ajustado | **0.5** (warning) |
+| Plazo < 70% de la rotación | Tensionado | **0.0** (warning) |
+
+> ⚠️ **Lectura correcta:** esta dimensión mide **tensión de caja del cliente**,
+> NO riesgo de impago para Creditia — que el cliente nos pague rápido es MÁS
+> seguro, no menos. Se penaliza porque una brecha grande puede derivar en pago
+> tardío si el cliente no tiene colchón. El informe IA tiene instrucción
+> explícita de no describirla nunca como riesgo de incumplimiento.
+
+### 4.4 Dim 4 — Adecuación del cupo (`creditLineAdequacy`)
+
+**La pregunta:** ¿el monto que pide es proporcional a lo que puede pagar en ese
+plazo Y a lo que la central de riesgo le avala?
+
+**Los datos que usa:** cupo y plazo solicitados, la capacidad de pago mensual
+(Dim 2) y el `montoSugerido` de DataCrédito — el máximo que la central avala
+prestarle a ese cliente (ver 4.8).
+
+**Cómo se calcula.** El cupo debe respetar **dos techos a la vez**, y manda el
+más restrictivo:
+
+1. **Techo por capacidad:** lo máximo pagable en el plazo pedido = capacidad
+   mensual × (plazo ÷ 30). Si puede pagar $20M/mes y pide a 60 días, su techo
+   es $40M.
+2. **Techo de la central:** el `montoSugerido`. Si no hubo consulta, este techo
+   no aplica; si es **0**, cualquier monto lo excede (y además es eliminatorio,
+   §6.2).
+
+Se mide cuánto excede el cupo pedido al peor techo (exceso = pedido ÷ techo):
+
+| Exceso | Estado | Cumplimiento |
+|--------|--------|-------------:|
+| ≤ 1.0 (dentro de ambos techos) | Adecuado | **1.0** |
+| ≤ 1.3 (hasta 30% por encima) | Levemente excedido | **0.6** (warning) |
+| > 1.3 | Excesivo | **0.0** (danger) |
+
+### 4.5 Dim 5 — Exposición del capital (`capitalExposure`)
+
+**La pregunta:** ¿cuánto capital de la empresa prestamista queda inmovilizado,
+y por cuánto tiempo, frente a lo razonable para la operación del cliente? (El
+crédito comercial es sin intereses: el "costo" real del prestamista es tener la
+plata quieta.)
+
+**Los datos que usa:** el cupo pedido, la capacidad de pago mensual (Dim 2) y
+el **ciclo de conversión de caja** del cliente:
+
+```
+ciclo de caja (días) = días en cobrar (rotación de cartera)
+                     + días con mercancía en bodega (rotación de inventarios)
+                     − días que le fían sus proveedores
+```
+
+El ciclo de caja es el tiempo que el dinero del cliente permanece "atrapado" en
+la operación antes de volver a ser efectivo. (Si sale menor a 30 días, se usa
+30 como piso.)
+
+**Cómo se calcula.** La **exposición sana** = capacidad mensual × (ciclo de
+caja ÷ 30): el capital que la operación del cliente puede absorber y devolver
+sin atascarse. Se compara el cupo pedido contra ella:
+
+| Pedido ÷ exposición sana | Estado | Cumplimiento |
+|--------------------------|--------|-------------:|
+| ≤ 1.0 | Eficiente | **1.0** |
+| ≤ 1.5 | Aceptable | **0.6** (warning) |
+| > 1.5 | Excesiva | **0.0** (danger) |
+
+### 4.6 Dim 6 — Veracidad (`veracity`) — contraste PDF ↔ DataCrédito
+
+**La pregunta:** ¿las cifras que el cliente reportó en su PDF coinciden con las
+que la central de riesgo tiene registradas? Un negocio que "infla" sus estados
+financieros para conseguir cupo es una de las señales más graves del análisis.
 
 Compara las **cifras crudas gruesas** del **mismo año** (emparejadas por
 `fiscalYear`; nunca años distintos) entre el PDF y DataCrédito:
@@ -118,7 +315,12 @@ Para cada cifra: `diff = |PDF − DataCrédito| / DataCrédito`.
 - Experian reporta con rezago (primeros 10 días del mes) → una discrepancia menor
   puede ser desfase temporal, por eso el umbral de warning arranca en 10%.
 
-### 4.2 Dim 7 — Riesgo de la central
+### 4.7 Dim 7 — Riesgo de la central (`centralRisk`) — obligatoria
+
+**La pregunta:** ¿qué opina DataCrédito Experian del comportamiento crediticio
+del cliente? Es la mirada de un tercero experto e independiente: cómo ha pagado
+sus obligaciones en todo el sistema financiero, no solo lo que dicen sus
+estados financieros.
 
 Usa la opinión de Experian que **nosotros no podemos derivar** de los EEFF:
 `nivel` de riesgo, `ratingSectorial`, comportamiento de pago (mora/historial).
@@ -159,7 +361,7 @@ Ejemplo real (Servientrega): vector `6,3,4` hace ~13 meses + 9 meses en `N` →
 índice 0.15 → penalización 0.06 y sin red flag (mora antigua ya normalizada).
 El mismo `6,6,6` en los últimos 3 meses → índice 0.36 → penalización 0.14 + flag.
 
-### 4.3 El `montoSugerido` de la central como techo del cupo
+### 4.8 El `montoSugerido` de la central como techo del cupo
 
 La central devuelve un `montoSugerido`: el monto **máximo que Experian avala**
 para el cliente. Antes era solo referencia; ahora es un **techo duro** que
@@ -192,27 +394,7 @@ interviene en el análisis (aplica igual a **PN y PJ**):
    → techo real 0 (`amount: 0`, Dim 4 en 0) **y además es eliminatorio**
    (`rejected`, ver §6.2): la central no lo reconoce como sujeto de crédito.
 
-### 4.4 Dim 3 — Coherencia de plazos (tensión de caja, NO riesgo de impago)
-
-Compara el **plazo que el cliente pide** para pagarle a Creditia contra su
-**rotación de cartera** (los días que él tarda en cobrarle a SUS clientes). La
-lectura correcta es desde la **caja del cliente**:
-
-- **Plazo ≥ rotación** → el cliente cobra ANTES de tener que pagarnos → su caja
-  soporta el crédito sin tensión (`comfortable`, ratio 1).
-- **Plazo < rotación (brecha manejable, ≥ 70%)** → paga antes de cobrar; debe
-  cubrir la brecha con su capital de trabajo (`tight`, ratio 0.5, warning).
-- **Plazo muy inferior** → alta tensión de liquidez (`strained`, ratio 0,
-  warning).
-
-> ⚠️ **Corrección conceptual**: la versión anterior llamaba a esto "riesgo de
-> incumplimiento", lo cual estaba **invertido**: que el cliente nos pague rápido
-> es MÁS seguro para Creditia, no menos. Lo que se penaliza es la **tensión de
-> liquidez del cliente** (puede derivar en pago tardío si no tiene colchón),
-> nunca se describe como riesgo de impago. El prompt del informe IA tiene esta
-> misma instrucción explícita.
-
-### 4.5 Las TRES capas de red flags (y sus categorías legibles)
+### 4.9 Las TRES capas de red flags (y sus categorías legibles)
 
 El resultado del análisis lleva tres familias de alertas, cada una con origen y
 momento distintos. No se mezclan:
@@ -221,7 +403,7 @@ momento distintos. No se mezclan:
 |------|------------|------------------|----------------------------|
 | **`pdfReliabilityFlags`** | El PDF **contra sí mismo** (balance que no cuadra, utilidad sospechosa, transacciones con socios, notas contradictorias) | Al **extraer el PDF** (IA) | `result.pdfReliabilityFlags` (el servicio las copia del análisis `pdf` al realizar el estudio) |
 | **`centralRiskFlags`** | Señales de la **central** independientes del PDF | Al **realizar el estudio** (motor) | `result.centralRiskFlags` |
-| **`alerts`** | Las 7 dimensiones + veracidad + salvedades de fuente + eliminatorios | Al **realizar el estudio** (motor) | `result.alerts` |
+| **`alerts`** | Las dimensiones habilitadas + salvedades de fuente + eliminatorios | Al **realizar el estudio** (motor) | `result.alerts` |
 
 Ambas familias de red flags llevan un **`category` (código estable, para
 íconos/filtros del front) + `categoryLabel` (texto en español para el cliente)**:
@@ -259,42 +441,66 @@ renombrados a `.pdf`, verificados por los bytes mágicos `%PDF-`).
 
 ---
 
-## 5. Modelo de datos: `ScoringConfiguration`
+## 5. Modelo de datos: catálogo de dimensiones + configuración versionada
 
-Configuración de pesos **por empresa Y por tipo de persona**, **versionada**.
-PN y PJ son perfiles de riesgo distintos (en PJ pesa la veracidad porque hay dos
-fuentes de EEFF; en PN pesa el riesgo de central porque no hay contraste posible),
-así que **cada empresa tiene UNA config vigente por tipo** (una PN + una PJ). Cada
-tipo acumula N versiones en el tiempo; una vigente (`isActive=true`) por tipo.
+Tres tablas:
+
+1. **`scoring_dimensions`** — catálogo global de dimensiones (lo administra
+   Creditia desde el portal admin). Solo identidad/display (`code`, `label`,
+   `description`, `isActive`, `sortOrder`); el **comportamiento** (función
+   `eval*`, obligatoriedad, a qué tipo de persona aplica, defaults) vive en el
+   motor (`scoring.constants.ts` → `DIMENSION_RULES`), keyed por `code`. Sin
+   borrado físico: retirar una dimensión = `isActive=false`.
+2. **`scoring_configurations`** — configuración **por empresa Y por tipo de
+   persona**, **versionada**. Cada empresa tiene UNA config vigente por tipo
+   (una PN + una PJ); cada tipo acumula N versiones, una `isActive=true`.
+3. **`scoring_configuration_weights`** — las dimensiones **HABILITADAS** por
+   cada versión, con su peso. **Una dimensión sin fila está deshabilitada: no se
+   evalúa ni participa del estudio.** Los pesos habilitados suman 100.
+
+La cadena: `Company → ScoringConfiguration → ScoringConfigurationWeight →
+ScoringDimension`, y `CreditStudy.scoringConfigurationId` congela la versión
+usada por cada estudio.
 
 ```prisma
+model ScoringDimension {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(50) // debe existir en SCORING_DIMENSIONS del motor
+  label       String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  // ...
+  weights ScoringConfigurationWeight[]
+  @@map("scoring_dimensions")
+}
+
 model ScoringConfiguration {
   id           String @id @default(uuid()) @db.Uuid
   companyId    String @map("company_id") @db.Uuid
-  // Tipo de persona al que aplica (Parameter person_type: naturalPerson | legalEntity).
-  personTypeId Int    @map("person_type_id")
-
-  // Pesos por dimensión (columnas fijas). Suman 100 según el tipo: PJ usa las 7;
-  // PN usa 6 (veracity=0). Cada peso activo >= MIN_WEIGHT.
-  weightFinancialHealth  Int @map("weight_financial_health")
-  weightPaymentCapacity  Int @map("weight_payment_capacity")
-  weightTermCoherence    Int @map("weight_term_coherence")
-  weightCreditLineAdequacy Int @map("weight_credit_line_adequacy")
-  weightCapitalExposure  Int @map("weight_capital_exposure")
-  weightVeracity         Int @map("weight_veracity")
-  weightCentralRisk      Int @map("weight_central_risk")
+  personTypeId Int    @map("person_type_id") // Parameter person_type
 
   isActive  Boolean  @default(true) @map("is_active") // vigente (por empresa+tipo)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 
-  company       Company       @relation(fields: [companyId], references: [id])
-  personType    Parameter     @relation("ScoringConfigurationPersonType", fields: [personTypeId], references: [id])
-  createdByUser Profile       @relation(fields: [createdBy], references: [id])
+  weights       ScoringConfigurationWeight[] // dimensiones habilitadas + pesos
   creditStudies CreditStudy[] // estudios congelados con esta config
-
+  // ...
   @@index([companyId, personTypeId, isActive])
   @@map("scoring_configurations")
+}
+
+model ScoringConfigurationWeight {
+  id          String @id @default(uuid()) @db.Uuid
+  configId    String @map("config_id") @db.Uuid
+  dimensionId Int    @map("dimension_id")
+  weight      Int // >= MIN_WEIGHT; los de la config suman 100
+
+  config    ScoringConfiguration @relation(fields: [configId], references: [id])
+  dimension ScoringDimension     @relation(fields: [dimensionId], references: [id])
+  @@unique([configId, dimensionId])
+  @@map("scoring_configuration_weights")
 }
 ```
 
@@ -309,19 +515,37 @@ scoringConfiguration   ScoringConfiguration? @relation(fields: [scoringConfigura
 
 ### 5.1 Reglas del modelo
 
-- **Pesos:** columnas fijas (tipado fuerte, validable). Agregar una dimensión 8
-  futura requeriría migración (aceptado).
-- **Versionado por (empresa, tipo):** reconfigurar PN inserta una fila PN nueva
-  `isActive=true` y desactiva la PN anterior; la PJ no se toca. La tabla completa
-  es el historial.
+- **Dimensiones configurables por empresa:** cada empresa decide qué dimensiones
+  del catálogo usa (habilitada = fila en `scoring_configuration_weights`). El
+  motor evalúa SOLO las habilitadas. Las **obligatorias** (`DIMENSION_RULES` →
+  `paymentCapacity` y `centralRisk`) no pueden deshabilitarse: son el núcleo del
+  estudio.
+- **Reglas eliminatorias SIEMPRE aplican:** matrícula cancelada/liquidación,
+  `montoSugerido=0`, capacidad de pago <= 0 y el cap por riesgo alto de la
+  central son POLÍTICA de Creditia, independientes de qué dimensiones habilitó
+  la empresa.
+- **Agregar una dimensión 8:** deploy con su función `eval*` (y entrada en
+  `SCORING_DIMENSIONS`/`DIMENSION_RULES`) + fila en `scoring_dimensions`. Los
+  clientes la ven disponible (apagada) y deciden habilitarla; cero impacto en
+  configs y estudios existentes.
+- **Versionado por (empresa, tipo):** reconfigurar PN inserta una config PN nueva
+  `isActive=true` (con sus filas de pesos) y desactiva la PN anterior; la PJ no
+  se toca. La tabla completa es el historial; las versiones son inmutables.
 - **Grabado en el estudio:** al **realizar el análisis** se copia el id de la
   config `isActive` del **tipo de persona del cliente** al `CreditStudy`. Los
   estudios viejos siguen apuntando a su config → sin recálculo retroactivo,
   auditable.
-- **Validación consciente del tipo:** suma total = 100 siempre. En **PJ** las 7
-  dimensiones aplican (cada peso >= `MIN_WEIGHT`=5). En **PN** la veracidad debe
-  ser **0** (no hay contraste posible sin EEFF de la central) y las otras 6 suman
-  100 con el mínimo. La regla la impone `validateWeights(weights, personType)`.
+- **Validación consciente del tipo:** los pesos habilitados suman 100 (cada uno
+  >= `MIN_WEIGHT`=5), las obligatorias están presentes y ninguna habilitada
+  puede no aplicar al tipo (la **veracidad no aplica en PN**: sin EEFF de la
+  central no hay contraste → no es habilitable). La regla la impone
+  `validateWeights(weights, personType)`; que el `code` exista y esté activo en
+  el catálogo lo valida el servicio.
+- **Administración del catálogo:** solo el portal admin (`/admin/scoring-dimensions`)
+  crea, edita lo básico (label/description/orden) y activa/desactiva. El `code`
+  no es editable y no hay borrado físico. Cualquier usuario autenticado LEE el
+  catálogo activo por `GET /scoring-dimensions` (incluye `required`, `appliesTo`
+  y `supported` para que el front bloquee lo no configurable).
 
 ### 5.2 Config default al crear la empresa
 
@@ -464,7 +688,7 @@ pesos y contra qué cifras se decidió.
 | **Crear empresa** (onboarding) | Se crea `ScoringConfiguration` v1 con pesos default. |
 | **Empresa reconfigura** (CRUD nuevo) | INSERT config nueva `isActive`, desactiva anterior. |
 | **Cargar PDF** (`extract-pdf`) | Red flags del **PDF** (coherencia interna) — como hoy. Se guardan las cifras de ambas fuentes. |
-| **Realizar estudio** (análisis) | Corre las 7 dimensiones sobre DataCrédito; Dim 6 contrasta PDF↔DataCrédito; graba `scoringConfigurationId`; construye `viabilityConditions`. |
+| **Realizar estudio** (análisis) | Corre las dimensiones habilitadas sobre DataCrédito; Dim 6 contrasta PDF↔DataCrédito; graba `scoringConfigurationId`; construye `viabilityConditions`. |
 
 > Las **red flags del PDF** (internas) siguen generándose en la extracción. Las
 > **red flags de veracidad** (contraste) se generan al realizar el estudio. Son
@@ -493,7 +717,7 @@ pesos y contra qué cifras se decidió.
 ### Decisiones finales (cerradas)
 - **Redistribución** proporcional para dimensiones no evaluables (§6.3). ✅
 - **Dim 7 rica:** `nivel` + penalización por `ratingSectorial` alto + mora del
-  vector de comportamiento (§4.2). ✅
+  vector de comportamiento (§4.7). ✅
 - **`MIN_WEIGHT = 5`** por dimensión (7 × 5 = 35 piso, 65 repartibles). ✅
 - **CRUD de configuración completo** en esta fase + backfill de v1 para empresas
   existentes. ✅
@@ -562,7 +786,7 @@ estándar de DataCrédito, que es más granular. El `nivel` pasó a ser contexto
 | < 500 | Riesgo alto | 0.0 |
 
 Penalizaciones sobre la base: −0.15 si `ratingSectorial` alto (4/5/ALTO); mora
-**graduada por severidad × recencia** hasta −0.40 (ver §4.2); −0.15 si el cupo
+**graduada por severidad × recencia** hasta −0.40 (ver §4.7); −0.15 si el cupo
 solicitado supera el `montoSugerido` (over-ask). Resultado `clamp(0,1)`. Las
 bandas son constantes en `scoring.constants.ts` (`SCORE_BANDS`), no
 parametrizables por empresa (si el proveedor cambia la escala, se ajusta en un
@@ -580,7 +804,7 @@ El resultado declara con qué se calculó:
 - **No** reimplementamos las *recomendaciones de cupo/plazo* con fórmula propia
   (`paymentSuggestions` del modelo viejo sigue fuera de alcance).
 - **Sí** producimos un **monto aprobado** = el cupo solicitado acotado al
-  `montoSugerido` de la central (ver §4.3). Vive en `recommendedCreditLine` y en
+  `montoSugerido` de la central (ver §4.8). Vive en `recommendedCreditLine` y en
   `approvedCreditLine` del JSON. El plazo aprobado (`recommendedTerm`) refleja el
   plazo solicitado (no lo recalculamos). Nunca aprobamos por encima del techo de
   la central, en PN y PJ por igual.
@@ -593,7 +817,7 @@ El resultado declara con qué se calculó:
 |---------|-----|
 | [`scoring.constants.ts`](../src/scoring/scoring.constants.ts) | Dimensiones, pesos default, `MIN_WEIGHT`, `SCORE_BANDS`, severidades de mora, labels de categorías. |
 | [`scoring.validation.ts`](../src/scoring/scoring.validation.ts) | `validateWeights`, `weightsToColumns`. |
-| [`scoring.engine.ts`](../src/scoring/scoring.engine.ts) | `runScoring()` — motor puro de 7 dimensiones + eliminatorios + cap + red flags de la central. |
+| [`scoring.engine.ts`](../src/scoring/scoring.engine.ts) | `runScoring()` — motor puro sobre las dimensiones habilitadas + eliminatorios + cap + red flags de la central. |
 | [`scoring.types.ts`](../src/scoring/scoring.types.ts) | Entrada/salida del motor. |
 | [`scoring.service.ts`](../src/scoring/scoring.service.ts) / `.repository.ts` / `.controller.ts` | CRUD de configuración. |
 | [`credit-studies.service.ts`](../src/credit-studies/credit-studies.service.ts) | `performStudy()` arma la entrada y corre el motor; `getSteps()` sirve el stepper. |
@@ -622,7 +846,7 @@ le otorga crédito comercial a un cliente suyo (el "customer").
       estado: pendingStudyAnalysis ("Pendiente Análisis de Estudio")
 
 3. POST /credit-studies/:id/perform        → corre el motor de scoring v2
-      → 7 dimensiones ponderadas con la config de la empresa (por tipo PN/PJ)
+      → dimensiones habilitadas por la empresa, ponderadas con su config (por tipo PN/PJ)
       → reglas eliminatorias + cap por riesgo de la central
       → persiste el resultado completo (score, veredicto, monto aprobado,
         keyFigures, 3 capas de flags) y congela la config usada
@@ -668,12 +892,12 @@ objeto**, construido por un único builder (`buildStep3`):
 | Bloque | Qué es |
 |--------|--------|
 | `summary` | score 0-100, veredicto, fuente del cálculo (`datacredito`/`pdf`), `financialsVerified`, `eliminatoryReason` (si el rechazo fue por regla dura, no por score) |
-| `dimensions` | las 7 dimensiones: ratio 0-1, peso efectivo, contribución, status, `evaluable` (si no lo es, su peso se redistribuyó) |
+| `dimensions` | las dimensiones habilitadas: ratio 0-1, peso efectivo, contribución, status, `evaluable` (si no lo es, su peso se redistribuyó) |
 | `alerts` | mensajes por dimensión + salvedades de fuente + eliminatorios |
 | `approvedCreditLine` | solicitado vs avalado, techo de la central, `cappedByBureau` |
 | `keyFigures` | cifras clave YA calculadas para mostrar (no re-derivar en el front): capacidad de pago mensual/anual, cuota estimada, **cobertura de la cuota** (veces), servicio de deuda, EBITDA, rotaciones (cartera/inventarios/proveedores), **ciclo de caja**, factor de estabilidad |
-| `centralRiskFlags` | red flags de la central con `category` + `categoryLabel` (§4.5) |
-| `pdfReliabilityFlags` | red flags de fiabilidad del PDF con `category` + `categoryLabel` (§4.5) |
+| `centralRiskFlags` | red flags de la central con `category` + `categoryLabel` (§4.9) |
+| `pdfReliabilityFlags` | red flags de fiabilidad del PDF con `category` + `categoryLabel` (§4.9) |
 | `reference` | score/nivel/montoSugerido de Experian, tal cual |
 
 ### 12.4 Principios que gobiernan el análisis
@@ -692,3 +916,226 @@ objeto**, construido por un único builder (`buildStep3`):
 5. **El análisis se congela**: config de pesos, análisis financieros y resultado
    quedan atados al estudio al momento del `perform`; cambiar la config después
    no altera estudios ya realizados (re-ejecutar el `perform` sí recalcula).
+
+---
+
+## 13. Guía aplicada: tres clientes, tres veredictos (con números)
+
+> Esta sección es para **entender el modelo de punta a punta sin saber de
+> código**: una empresa cliente de Creditia estudia a tres clientes distintos
+> (datos simulados pero realistas) y se muestra el cálculo completo de cada
+> dimensión hasta el veredicto. Los tres casos usan las fórmulas EXACTAS del
+> motor (§4).
+
+**Supuestos comunes de los tres casos:**
+
+- El cliente estudiado es **persona jurídica**; la consulta a DataCrédito trajo
+  estados financieros (fuente de verdad) y la opinión de riesgo de la central.
+- El cliente además cargó su **PDF** de estados financieros → hay contraste de
+  veracidad.
+- La empresa tiene habilitadas **las 7 dimensiones** con los pesos default de
+  PJ:
+
+| Dimensión | Peso |
+|-----------|-----:|
+| Capacidad de pago | 20 |
+| Veracidad | 20 |
+| Riesgo de la central | 15 |
+| Salud financiera | 15 |
+| Adecuación del cupo | 12 |
+| Exposición del capital | 10 |
+| Coherencia de plazos | 8 |
+| **Total** | **100** |
+
+*Si la empresa hubiera deshabilitado alguna dimensión opcional, esa fila
+simplemente no existiría en el cálculo y los 100 puntos de peso estarían
+repartidos entre las habilitadas.*
+
+Todas las cifras van en **millones de pesos (M)**.
+
+### 13.1 Glosario mínimo
+
+| Término | En palabras simples |
+|---------|---------------------|
+| **EBITDA** | La utilidad que deja la operación del negocio: ingresos menos costos y gastos operativos. La "caja gruesa" antes de deudas e impuestos. |
+| **Servicio de deuda** | Lo que el cliente ya paga al año por deudas existentes: obligaciones financieras de corto plazo + gastos financieros (intereses). |
+| **Capacidad de pago mensual** | Lo que le queda libre al mes para deuda NUEVA: (EBITDA ajustado − servicio de deuda) ÷ 12. |
+| **Rotación de cartera** | Días que tarda en cobrarle a sus propios clientes. |
+| **Ciclo de caja** | Días que su dinero está "atrapado" en la operación: días en cobrar + días en bodega − días que le fían sus proveedores. |
+| **Score de la central** | Puntaje de DataCrédito Experian (150–950). Más alto = mejor historial crediticio. |
+| **Monto sugerido** | El máximo que la central avala prestarle. Creditia nunca aprueba por encima de él. |
+
+### 13.2 Escenario A — Cliente EXCELENTE: "Alimentos La Sabana S.A.S." ✅
+
+**Pide:** cupo de **$30M a 60 días** → cuota estimada = 30 ÷ (60/30) =
+**$15M/mes**.
+
+**Sus cifras** (año corriente, según DataCrédito):
+
+| Cifra | Valor |
+|-------|------:|
+| Ingresos | 2.400 |
+| Costo de ventas | 1.680 |
+| Gastos de administración / de ventas | 240 / 120 |
+| **EBITDA** (2.400 − 1.680 − 240 − 120) | **360** |
+| Activo total (corriente) | 1.500 (900) |
+| Pasivo total (corriente) | 700 (450) |
+| Patrimonio / utilidades retenidas | 800 / 300 |
+| Servicio de deuda (60 oblig. CP + 30 gastos fin.) | **90** |
+| Rotaciones: cartera / inventarios / proveedores | 45 / 41 / 23 días |
+| Central: score / monto sugerido / mora | **745** / **$80M** / sin mora |
+| Contraste PDF ↔ central (peor diferencia) | **3%** (utilidad neta) |
+
+**Cálculo dimensión por dimensión:**
+
+1. **Salud financiera** — Z-Altman:
+   `1.2×(900−450)/1500 + 1.4×300/1500 + 3.3×360/1500 + 0.6×800/700 + 2400/1500`
+   `= 0.36 + 0.28 + 0.79 + 0.69 + 1.60 =` **Z ≈ 3.72 > 3** → zona segura →
+   cumplimiento **1.0**.
+2. **Capacidad de pago** — EBITDA ajustado = 360 × 1 (zona segura) = 360;
+   capacidad anual = 360 − 90 = 270 → **$22.5M/mes**. Cobertura = 22.5 ÷ 15 =
+   **1.5 ≥ 1.2** → holgada → **1.0**.
+3. **Coherencia de plazos** — pide 60 días y cobra a 45: cobra ANTES de tener
+   que pagarnos → cómodo → **1.0**.
+4. **Adecuación del cupo** — techo por capacidad = 22.5 × (60/30) = $45M;
+   techo de la central = $80M. Pide $30M: dentro de ambos → **1.0**.
+5. **Exposición del capital** — ciclo de caja = 45 + 41 − 23 = 63 días;
+   exposición sana = 22.5 × (63/30) = $47.2M. Pide $30M (el 63%) → eficiente →
+   **1.0**.
+6. **Veracidad** — peor diferencia PDF vs central = 3% < 10% → consistente →
+   **1.0**.
+7. **Riesgo de la central** — score 745 → banda **Bueno** (700–749) → base
+   0.8; sin mora, sector normal, no pide por encima de lo avalado → **0.8**.
+
+| Dimensión | Cumplimiento | × Peso | = Puntos |
+|-----------|-------------:|-------:|---------:|
+| Capacidad de pago | 1.0 | 20 | 20.0 |
+| Veracidad | 1.0 | 20 | 20.0 |
+| Riesgo de la central | 0.8 | 15 | 12.0 |
+| Salud financiera | 1.0 | 15 | 15.0 |
+| Adecuación del cupo | 1.0 | 12 | 12.0 |
+| Exposición del capital | 1.0 | 10 | 10.0 |
+| Coherencia de plazos | 1.0 | 8 | 8.0 |
+| **Score de viabilidad** | | | **97** |
+
+**Veredicto: `approved`** (97 ≥ 75, ninguna eliminatoria, la central no lo
+marca en riesgo alto). **Monto aprobado: $30M** — lo pedido, porque respeta el
+techo de la central ($80M).
+
+### 13.3 Escenario B — Cliente ACEPTABLE: "Ferretería El Tornillo Ltda." ⚠️
+
+**Pide:** cupo de **$4.5M a 75 días** → cuota estimada = 4.5 ÷ (75/30) =
+**$1.8M/mes**.
+
+**Sus cifras:** ingresos 900; costo de ventas 630; gastos 120 + 60 →
+**EBITDA = 90**. Activo 800 (corriente 420); pasivo 540 (corriente 320);
+patrimonio 260; utilidades retenidas 40. Servicio de deuda = 24 + 12 = **36**.
+Rotaciones: cartera **90**, inventarios 60, proveedores 36 días. Central:
+score **668**, monto sugerido **$12M**, una mora de 60 días **hace 8 meses**
+(desde entonces, al día). Contraste PDF ↔ central: peor diferencia **14%**
+(patrimonio).
+
+1. **Salud financiera** — Z ≈ 0.15 + 0.07 + 0.37 + 0.29 + 1.13 = **2.0** →
+   zona gris → **0.5**. (Además, su EBITDA solo se creerá al 66%.)
+2. **Capacidad de pago** — EBITDA ajustado = 90 × 0.66 = 59.4; capacidad
+   anual = 59.4 − 36 = 23.4 → **$1.95M/mes**. Cobertura = 1.95 ÷ 1.8 =
+   **1.08**: cubre la cuota pero sin holgura (entre 1.0 y 1.2) → ajustada →
+   **0.6**.
+3. **Coherencia de plazos** — pide 75 días y cobra a 90: paga antes de cobrar,
+   pero la brecha es manejable (75 ≥ 63, el 70% de 90) → ajustado → **0.5**.
+4. **Adecuación del cupo** — techo por capacidad = 1.95 × 2.5 = $4.87M; techo
+   de la central = $12M. Pide $4.5M: dentro de ambos → **1.0**.
+5. **Exposición del capital** — ciclo de caja = 90 + 60 − 36 = 114 días;
+   exposición sana = 1.95 × 3.8 = $7.4M. Pide $4.5M → eficiente → **1.0**.
+6. **Veracidad** — diferencia del 14% (entre 10% y 25%) → discrepante →
+   **0.5** + alerta warning ("revisar la consistencia de la información").
+7. **Riesgo de la central** — score 668 → banda **Aceptable** → base 0.6. La
+   mora de hace 8 meses casi no pesa (la recencia manda: índice ≈ 0.03 →
+   penalización ≈ −0.01) → **≈ 0.59** + warning.
+
+| Dimensión | Cumplimiento | × Peso | = Puntos |
+|-----------|-------------:|-------:|---------:|
+| Capacidad de pago | 0.6 | 20 | 12.0 |
+| Veracidad | 0.5 | 20 | 10.0 |
+| Riesgo de la central | 0.59 | 15 | 8.8 |
+| Salud financiera | 0.5 | 15 | 7.5 |
+| Adecuación del cupo | 1.0 | 12 | 12.0 |
+| Exposición del capital | 1.0 | 10 | 10.0 |
+| Coherencia de plazos | 0.5 | 8 | 4.0 |
+| **Score de viabilidad** | | | **64** |
+
+**Veredicto: `conditional`** (40 ≤ 64 < 75). **Monto aprobado: $4.5M** (dentro
+del techo). La lectura para la empresa: puede otorgar, **con condiciones** — la
+cobertura de la cuota es justa, hay una discrepancia del 14% en patrimonio que
+conviene aclarar con el cliente, y su caja queda tensionada porque cobra más
+lento de lo que tendría que pagarnos.
+
+### 13.4 Escenario C — Cliente RECHAZADO: "Comercializadora El Atajo S.A.S." ⛔
+
+**Pide:** cupo de **$50M a 30 días**.
+
+**Sus cifras:** ingresos 1.200; costo de ventas 900; gastos 180 + 60 →
+**EBITDA = 60**. Activo 1.000 (corriente 380); pasivo 880 (corriente 520);
+patrimonio 120; utilidades retenidas **−80** (pérdidas acumuladas). Servicio de
+deuda = 90 + 45 = **135**. Rotación de cartera 75 días. Central: score
+**470**, monto sugerido **$10M**, saldo en mora vigente **$8.2M**,
+endeudamiento del 86%, moras de 30 a 120 días en los **últimos 4 meses**.
+Contraste PDF ↔ central: los ingresos del PDF ($1.656M) superan en **+38%** a
+los registrados en la central ($1.200M).
+
+1. **Salud financiera** — Z ≈ −0.17 − 0.11 + 0.20 + 0.08 + 1.20 = **1.2 <
+   1.8** → zona crítica → **0.0**. (Y su EBITDA solo se cree al 33%.)
+2. **Capacidad de pago** — EBITDA ajustado = 60 × 0.33 = 19.8; capacidad
+   anual = 19.8 − 135 = **−115.2** → capacidad mensual **−$9.6M**. Su deuda
+   actual ya se come toda la utilidad → **REGLA ELIMINATORIA: rechazo
+   directo**, sin importar el resto.
+3. **Coherencia de plazos** — pide pagar a 30 días cuando cobra a 75 (menos
+   del 70%) → tensionado → **0.0**.
+4. **Adecuación del cupo** y **5. Exposición del capital** — sin capacidad de
+   pago no hay cupo recomendable → **0.0** ambas. (Además pide $50M cuando la
+   central avala $10M: 5 veces el techo.)
+6. **Veracidad** — diferencia del 38% > 25% → **maquillado** → **0.0** +
+   alerta danger ("posible maquillaje de los estados financieros").
+7. **Riesgo de la central** — score 470 → banda **Riesgo alto** → base 0.0;
+   la mora reciente (índice ≈ 0.30 → −0.12) y el sobre-pedido (−0.15) no
+   tienen ya de dónde restar → **0.0**. Red flags: saldo en mora vigente
+   (danger), endeudamiento muy alto (danger), mora en el historial (warning),
+   puntaje en banda de riesgo alto (warning).
+
+**Score residual: 0. Veredicto: `rejected`**, con el motivo eliminatorio
+explícito en el resultado: *"El cliente no cuenta con capacidad de pago: el
+servicio de deuda supera el EBITDA ajustado."* Aunque la eliminatoria no
+existiera, el score (0 < 40) lo rechazaría igual, y el **cap de la central**
+(score < 500 → nunca `approved`) le cerraría la puerta a cualquier aprobación.
+El bloque `approvedCreditLine` refleja el recorte al techo de la central
+($10M, `cappedByBureau: true`), pero es irrelevante frente al rechazo.
+
+### 13.5 Los tres casos lado a lado
+
+| | A — La Sabana ✅ | B — El Tornillo ⚠️ | C — El Atajo ⛔ |
+|---|---:|---:|---:|
+| **Score** | 97 | 64 | 0 (eliminatorio) |
+| **Veredicto** | Aprobado | Con condiciones | Rechazado |
+| Cobertura de la cuota | 1.5× | 1.08× | Negativa |
+| Z-Altman (zona) | 3.7 (segura) | 2.0 (gris) | 1.2 (crítica) |
+| Diferencia PDF vs central | 3% | 14% | 38% (maquillado) |
+| Score de la central | 745 | 668 | 470 |
+| Pide vs central avala | 30 de 80 | 4.5 de 12 | 50 de 10 |
+| **Monto aprobado** | $30M | $4.5M | — (rechazado) |
+
+**Las moralejas del modelo:**
+
+1. **Ninguna cifra buena compensa una eliminatoria.** El Atajo habría sido
+   rechazado solo por su capacidad de pago negativa, sin mirar nada más.
+2. **El estudio evalúa la SOLICITUD, no solo al cliente.** Si La Sabana hubiera
+   pedido $100M a 30 días, su cobertura y sus techos se rompen y el veredicto
+   cambia — el mismo negocio puntúa distinto según lo que pida.
+3. **La zona gris castiga dos veces, por diseño.** A El Tornillo le bajó la
+   Dim 1 y además le descontó el 34% del EBITDA en la Dim 2: a un negocio
+   frágil se le cree menos caja.
+4. **La central siempre tiene la última palabra:** pone el techo del monto, un
+   cap al veredicto, y es una dimensión propia. Un PDF bien presentado jamás
+   aprueba a quien la central marca como riesgo alto.
+5. **La mora vieja no persigue al cliente.** La mora de El Tornillo (hace 8
+   meses, ya normalizada) le costó centésimas; la misma mora reciente, como la
+   de El Atajo, pesa mucho más.

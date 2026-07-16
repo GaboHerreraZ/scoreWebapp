@@ -7,8 +7,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { OnboardingDto } from './dto/onboarding.dto.js';
-import { defaultWeightsFor } from '../scoring/scoring.constants.js';
-import { weightsToColumns } from '../scoring/scoring.validation.js';
+import {
+  defaultWeightsFor,
+  type PersonTypeCode,
+} from '../scoring/scoring.constants.js';
 
 @Injectable()
 export class OnboardingService {
@@ -120,28 +122,43 @@ export class OnboardingService {
         },
       });
 
-      // 4. ScoringConfiguration v1 por tipo de persona (PN y PJ) con los pesos
-      //    default del sistema. Toda empresa nace con una config vigente por tipo
-      //    para que el análisis funcione sin obligar a configurar; después puede
-      //    reconfigurar cada una. PN y PJ tienen pesos distintos (en PN no hay
-      //    veracidad; pesa más el riesgo de la central).
-      await tx.scoringConfiguration.createMany({
-        data: [
-          {
-            companyId: company.id,
-            personTypeId: legalEntity.id,
-            createdBy: profile.id,
-            isActive: true,
-            ...weightsToColumns(defaultWeightsFor('legalEntity')),
-          },
-          {
-            companyId: company.id,
-            personTypeId: naturalPerson.id,
-            createdBy: profile.id,
-            isActive: true,
-            ...weightsToColumns(defaultWeightsFor('naturalPerson')),
-          },
-        ],
+      // 4. ScoringConfiguration v1 por tipo de persona (PN y PJ) con las
+      //    dimensiones default del sistema y sus pesos (filas en
+      //    scoring_configuration_weights). Toda empresa nace con una config
+      //    vigente por tipo para que el análisis funcione sin obligar a
+      //    configurar; después puede reconfigurar cada una (habilitar/
+      //    deshabilitar dimensiones opcionales, ajustar pesos). PN y PJ tienen
+      //    defaults distintos (en PN no aplica veracidad; pesa más la central).
+      const dimensions = await tx.scoringDimension.findMany({
+        where: { isActive: true },
+      });
+      const dimensionIdByCode = new Map(dimensions.map((d) => [d.code, d.id]));
+      const defaultWeightRows = (personType: PersonTypeCode) => {
+        const defaults = defaultWeightsFor(personType);
+        return Object.entries(defaults).flatMap(([code, weight]) => {
+          const dimensionId = dimensionIdByCode.get(code);
+          // Dimensión default ausente del catálogo (no debería pasar: el seed
+          // de la migración las crea): se omite en vez de romper el onboarding.
+          return dimensionId ? [{ dimensionId, weight }] : [];
+        });
+      };
+      await tx.scoringConfiguration.create({
+        data: {
+          companyId: company.id,
+          personTypeId: legalEntity.id,
+          createdBy: profile.id,
+          isActive: true,
+          weights: { create: defaultWeightRows('legalEntity') },
+        },
+      });
+      await tx.scoringConfiguration.create({
+        data: {
+          companyId: company.id,
+          personTypeId: naturalPerson.id,
+          createdBy: profile.id,
+          isActive: true,
+          weights: { create: defaultWeightRows('naturalPerson') },
+        },
       });
 
       return { profile, company, userCompany };

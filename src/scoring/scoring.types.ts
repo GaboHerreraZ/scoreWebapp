@@ -1,4 +1,4 @@
-import type { ScoringDimension } from './scoring.constants.js';
+import type { ScoringDimension, EnabledWeights } from './scoring.constants.js';
 
 // ─── Entrada del motor de scoring ───────────────────────────────────────────
 // El motor es una función PURA: recibe todo lo que necesita ya resuelto (no lee
@@ -65,7 +65,18 @@ export interface StudyRequest {
 }
 
 export interface ScoringEngineInput {
-  weights: Record<ScoringDimension, number>;
+  /**
+   * Pesos de las dimensiones HABILITADAS por la config de la empresa. Una
+   * dimensión ausente está deshabilitada: no se evalúa, no aparece en el
+   * resultado y no participa del score. (Las reglas eliminatorias del motor
+   * aplican SIEMPRE, independiente de qué dimensiones estén habilitadas.)
+   */
+  weights: EnabledWeights;
+  /**
+   * Labels de display por dimensión (del catálogo scoring_dimensions). El motor
+   * cae a sus labels internos si faltan (p. ej. config default en memoria).
+   */
+  labels?: Partial<Record<ScoringDimension, string>>;
   request: StudyRequest;
   indicators: ScoringIndicators;
   /**
