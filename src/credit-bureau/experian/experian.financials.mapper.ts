@@ -90,11 +90,30 @@ function asArray<T>(value: unknown): T[] {
   return [];
 }
 
+/** Una columna del bloque de EEFF: un par (año, fuente) con sus cifras. */
+interface FinancialColumn {
+  index: number; // posición en anio[]/fuente[]/valores[]
+  fiscalYear: number;
+  source: string; // fuente normalizada ('' si la central no la reporta)
+  figures: Record<string, number | null>;
+}
+
 /**
- * Extrae los estados financieros de una respuesta MiDecisor cruda y los devuelve
- * como cifras por año, ordenadas por fiscalYear DESC. Devuelve [] si no hay
- * bloque de EEFF o no tiene información. `limitYears` recorta a los N años más
- * recientes (2 por decisión de negocio).
+ * Extrae los estados financieros de una respuesta MiDecisor cruda como cifras
+ * por año, ordenadas por fiscalYear DESC. Devuelve [] cuando no se pueden usar.
+ *
+ * Regla de negocio (EEFF duales, mismos períodos que el PDF a contrastar):
+ * cada columna es un par (año, fuente). Se toman las `limitYears` columnas con
+ * cifras reales MÁS RECIENTES y se exige que TODAS sean de la MISMA fuente.
+ * Fuentes distintas no son comparables (distinto reportante/estándar) y sus
+ * períodos no cuadrarían con los del PDF, así que en ese caso se devuelve []
+ * y el estudio se apoya en los EEFF del PDF. También [] si hay menos de
+ * `limitYears` columnas reales, o si no hay bloque/no tiene información.
+ *
+ * Ej.: 2023·Supersociedades / 2024·Supersociedades / 2025·Cámaras → las 2 más
+ * recientes (2024·Super, 2025·Cámaras) son de fuentes distintas → [] (PDF).
+ * Las columnas vacías (todo "-"/0) se descartan ANTES de mirar recencia, así un
+ * año nuevo sin cifras no bloquea el par real anterior.
  */
 export function mapDataCreditoFinancials(
   raw: unknown,
@@ -104,48 +123,93 @@ export function mapDataCreditoFinancials(
   const eeff = res.content?.respuesta?.estadosFinancieros;
   if (!eeff || eeff.conInformacion === false) return [];
 
-  const periods = pivotByYear(eeff);
+  const columns = pivotByColumn(eeff);
 
-  // Descartar períodos SIN cifras reales. La central a veces devuelve la
-  // ESTRUCTURA de EEFF con todos los valores en 0 (p. ej. empresa con matrícula
-  // cancelada que no reportó): la estructura vacía NO es información financiera.
-  // Un período todo-ceros no permite contrastar veracidad ni calcular
-  // indicadores → se trata como si no hubiera EEFF de esa fuente.
-  const withFigures = periods.filter(hasRealFigures);
-
+  // Solo columnas con cifras reales (una estructura toda "-"/0 no es info).
+  const withFigures = columns.filter((c) => hasRealFigures(c.figures));
   withFigures.sort((a, b) => b.fiscalYear - a.fiscalYear);
-  return withFigures.slice(0, limitYears);
+
+  // Se necesitan al menos `limitYears` períodos reales.
+  if (withFigures.length < limitYears) return [];
+
+  // Las N más recientes deben ser de la MISMA fuente; si no, no se usan.
+  const recent = withFigures.slice(0, limitYears);
+  const source = recent[0].source;
+  if (!recent.every((c) => c.source === source)) return [];
+
+  return recent.map((c) => ({ fiscalYear: c.fiscalYear, figures: c.figures }));
 }
 
 /**
- * ¿El período trae al menos una cifra distinta de 0/null? Un período con todas
- * las cifras en 0 (o nulas) es una estructura vacía, no información real.
+ * ¿Este conjunto de cifras trae al menos una distinta de 0/null? Todas en 0 (o
+ * nulas) es una estructura vacía, no información real.
  */
-function hasRealFigures(period: MappedFinancialPeriod): boolean {
-  return Object.values(period.figures).some(
-    (v) => typeof v === 'number' && v !== 0,
+function hasRealFigures(figures: Record<string, number | null>): boolean {
+  return Object.values(figures).some((v) => typeof v === 'number' && v !== 0);
+}
+
+/**
+ * Convierte un valor crudo de `valores` a número de dominio. MiDecisor entrega
+ * los importes como STRING numérico ("1325.0") y usa "-"/"" para "sin dato".
+ * Acepta también number por robustez. Devuelve null si no es un número válido.
+ */
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (s === '' || s === '-') return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Pivota la matriz cuenta × columna a una lista de columnas (año, fuente,
+ * cifras). Recorre los grupos de cifras acumulando por ÍNDICE de columna (no por
+ * año), luego adjunta a cada columna su año (anio[i]) y su fuente (fuente[i],
+ * del elemento `nombre:"fuentes"`). Indexar por posición evita que dos fuentes
+ * con el mismo año colisionen.
+ */
+function pivotByColumn(eeff: ExperianEstadosFinancieros): FinancialColumn[] {
+  const groups = extractGroups(eeff.detalle);
+
+  // Fuente por columna (elemento aparte `nombre:"fuentes"`, sin anio/datos).
+  const fuentesEl = groups.find((g) => normalize(g.nombre) === 'fuentes');
+  const sources = asArray<unknown>(fuentesEl?.fuente).map((s) =>
+    normalize(typeof s === 'string' ? s : String(s ?? '')),
   );
-}
 
-/**
- * Pivota la matriz cuenta × año a un objeto de cifras por año. Recorre cada
- * grupo de cifras; para cada cuenta mapeada, coloca su valor en el año que le
- * corresponde por posición (valores[i] ↔ anio[i]).
- */
-function pivotByYear(
-  eeff: ExperianEstadosFinancieros,
-): MappedFinancialPeriod[] {
-  const byYear = new Map<number, Record<string, number | null>>();
+  // Años canónicos: los comparten todos los grupos de cifras; tomo el primero.
+  const figureGroups = groups.filter((g) =>
+    FIGURE_CATEGORIES.has(normalize(g.nombre)),
+  );
+  const years = asArray<number>(figureGroups[0]?.anio);
 
-  for (const grupo of extractGroups(eeff.detalle)) {
-    if (!FIGURE_CATEGORIES.has(normalize(grupo.nombre))) continue;
-    accumulateGroup(grupo, byYear);
+  // Acumular cifras por índice de columna.
+  const byColumn = new Map<number, Record<string, number | null>>();
+  for (const grupo of figureGroups) {
+    for (const cuenta of asArray<{ nombre?: string; valores?: unknown }>(
+      grupo.datos,
+    )) {
+      const column = ACCOUNT_MAP[normalize(cuenta.nombre)];
+      if (!column) continue; // cuenta sin equivalente en el modelo → se ignora
+      const valores = asArray<unknown>(cuenta.valores);
+      valores.forEach((value, i) => {
+        const bucket = byColumn.get(i) ?? {};
+        bucket[column] = toNumber(value);
+        byColumn.set(i, bucket);
+      });
+    }
   }
 
-  return Array.from(byYear.entries()).map(([fiscalYear, figures]) => ({
-    fiscalYear,
-    figures,
-  }));
+  const columns: FinancialColumn[] = [];
+  for (const [index, figures] of byColumn) {
+    const fiscalYear = years[index];
+    if (typeof fiscalYear !== 'number') continue;
+    columns.push({ index, fiscalYear, source: sources[index] ?? '', figures });
+  }
+  return columns;
 }
 
 /**
@@ -172,25 +236,4 @@ function extractGroups(detalle: unknown): ExperianEstadoFinancieroGrupo[] {
   }
   // Forma directa (array) o cualquier otra: se normaliza a array.
   return asArray<ExperianEstadoFinancieroGrupo>(detalle);
-}
-
-function accumulateGroup(
-  grupo: ExperianEstadoFinancieroGrupo,
-  byYear: Map<number, Record<string, number | null>>,
-): void {
-  const years = asArray<number>(grupo.anio);
-  for (const cuenta of asArray<{ nombre?: string; valores?: unknown }>(
-    grupo.datos,
-  )) {
-    const column = ACCOUNT_MAP[normalize(cuenta.nombre)];
-    if (!column) continue; // cuenta sin equivalente en el modelo → se ignora
-    const valores = asArray<number>(cuenta.valores);
-    years.forEach((year, i) => {
-      if (typeof year !== 'number') return;
-      const bucket = byYear.get(year) ?? {};
-      const value = valores[i];
-      bucket[column] = typeof value === 'number' ? value : null;
-      byYear.set(year, bucket);
-    });
-  }
 }
