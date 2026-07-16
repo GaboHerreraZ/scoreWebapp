@@ -3,78 +3,78 @@ import {
   SCORING_DIMENSIONS,
   TOTAL_WEIGHT,
   MIN_WEIGHT,
-  VERACITY_APPLIES,
+  DIMENSION_RULES,
+  type EnabledWeights,
   type ScoringDimension,
   type PersonTypeCode,
 } from './scoring.constants.js';
 
-/** Pesos por dimensión (columnas de ScoringConfiguration) a validar. */
-export type DimensionWeights = Record<ScoringDimension, number>;
-
 /**
- * Valida un conjunto de pesos SEGÚN el tipo de persona. La suma debe ser exacta
- * = 100 y cada peso ACTIVO >= MIN_WEIGHT. La veracidad es especial: en PN NO
- * aplica (debe ser 0, no cuenta para el mínimo); en PJ aplica como el resto.
+ * Valida el set de dimensiones HABILITADAS y sus pesos SEGÚN el tipo de
+ * persona. Reglas:
+ *  - Toda dimensión obligatoria (DIMENSION_RULES.required) debe estar presente.
+ *  - Ninguna dimensión habilitada puede no aplicar al tipo (p. ej. veracity en PN).
+ *  - Cada peso es entero y >= MIN_WEIGHT (habilitar con peso simbólico = apagar de facto).
+ *  - La suma exacta es TOTAL_WEIGHT (100).
  * Lanza BadRequestException con un mensaje claro si falla. Única puerta de
- * validación: la usa el CRUD antes de persistir.
+ * validación: la usa el CRUD antes de persistir. (Que el code exista en el
+ * catálogo BD y esté activo lo valida el servicio, que sí lee BD.)
  */
 export function validateWeights(
-  weights: DimensionWeights,
+  weights: EnabledWeights,
   personType: PersonTypeCode,
 ): void {
-  const veracityApplies = VERACITY_APPLIES[personType];
-  let sum = 0;
+  const enabled = SCORING_DIMENSIONS.filter(
+    (dim) => weights[dim] !== undefined,
+  );
+  if (enabled.length === 0) {
+    throw new BadRequestException(
+      'Debe habilitar al menos las dimensiones obligatorias del análisis.',
+    );
+  }
+
+  // Obligatorias presentes (solo las que aplican al tipo de persona).
   for (const dim of SCORING_DIMENSIONS) {
-    const value = weights[dim];
+    const rules = DIMENSION_RULES[dim];
+    if (
+      rules.required &&
+      rules.appliesTo[personType] &&
+      weights[dim] === undefined
+    ) {
+      throw new BadRequestException(
+        `La dimensión "${dim}" es obligatoria y no puede deshabilitarse.`,
+      );
+    }
+  }
+
+  let sum = 0;
+  for (const dim of enabled) {
+    const value = weights[dim]!;
+    if (!DIMENSION_RULES[dim].appliesTo[personType]) {
+      throw new BadRequestException(
+        `La dimensión "${dim}" no aplica para ${personType === 'naturalPerson' ? 'persona natural' : 'persona jurídica'} y no puede habilitarse.`,
+      );
+    }
     if (!Number.isInteger(value)) {
       throw new BadRequestException(
         `El peso de "${dim}" debe ser un entero (recibido: ${value}).`,
       );
     }
-    // Veracidad en PN: debe ser exactamente 0 (no aplica sin contraste).
-    if (dim === 'veracity' && !veracityApplies) {
-      if (value !== 0) {
-        throw new BadRequestException(
-          `Para persona natural, el peso de "veracity" debe ser 0 (no hay contraste posible con la central).`,
-        );
-      }
-      sum += value;
-      continue;
-    }
     if (value < MIN_WEIGHT) {
       throw new BadRequestException(
-        `El peso de "${dim}" (${value}) es menor al mínimo permitido (${MIN_WEIGHT}). Ninguna dimensión activa puede quedar apagada.`,
+        `El peso de "${dim}" (${value}) es menor al mínimo permitido (${MIN_WEIGHT}). Para no usar una dimensión, deshabilítela en vez de bajarle el peso.`,
       );
     }
     sum += value;
   }
   if (sum !== TOTAL_WEIGHT) {
     throw new BadRequestException(
-      `Los pesos deben sumar ${TOTAL_WEIGHT}; suman ${sum}. Ajústalos para que el total sea exacto.`,
+      `Los pesos de las dimensiones habilitadas deben sumar ${TOTAL_WEIGHT}; suman ${sum}. Ajústelos para que el total sea exacto.`,
     );
   }
 }
 
-/** Columnas weight* de ScoringConfiguration (tipadas explícitamente). */
-export interface WeightColumns {
-  weightFinancialHealth: number;
-  weightPaymentCapacity: number;
-  weightTermCoherence: number;
-  weightCreditLineAdequacy: number;
-  weightCapitalExposure: number;
-  weightVeracity: number;
-  weightCentralRisk: number;
-}
-
-/** Convierte los pesos de dominio a las columnas weight* de Prisma. */
-export function weightsToColumns(weights: DimensionWeights): WeightColumns {
-  return {
-    weightFinancialHealth: weights.financialHealth,
-    weightPaymentCapacity: weights.paymentCapacity,
-    weightTermCoherence: weights.termCoherence,
-    weightCreditLineAdequacy: weights.creditLineAdequacy,
-    weightCapitalExposure: weights.capitalExposure,
-    weightVeracity: weights.veracity,
-    weightCentralRisk: weights.centralRisk,
-  };
+/** Dimensiones habilitadas de un set de pesos, en el orden canónico del motor. */
+export function enabledDimensions(weights: EnabledWeights): ScoringDimension[] {
+  return SCORING_DIMENSIONS.filter((dim) => weights[dim] !== undefined);
 }

@@ -35,8 +35,10 @@ const ALL_SCREENS = [
   'promo-codes',
   'contact-requests',
   'support-tickets',
-  'platform-admins',// gestión de usuarios del portal: SOLO rol admin
-  "blog-posts"
+  'platform-admins', // gestión de usuarios del portal: SOLO rol admin
+  'blog-posts',
+  "scoring-dimensions",
+  'datacredito'
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.
@@ -95,10 +97,14 @@ export class AdminService {
     const admin =
       await this.platformAdminRepository.findByUserIdWithRole(userId);
     if (!admin) {
-      throw new ForbiddenException('No tienes acceso al portal de administración');
+      throw new ForbiddenException(
+        'No tienes acceso al portal de administración',
+      );
     }
     if (!admin.isActive) {
-      throw new UnauthorizedException('Tu cuenta de administrador está desactivada');
+      throw new UnauthorizedException(
+        'Tu cuenta de administrador está desactivada',
+      );
     }
 
     // admin ve todo; el resto (support/sales/sin rol) ve el set base.
@@ -143,7 +149,9 @@ export class AdminService {
     await this.assertCallerIsAdmin(callerUserId);
 
     // El rol debe existir y ser del tipo correcto.
-    const role = await this.platformAdminRepository.findParameterById(dto.roleId);
+    const role = await this.platformAdminRepository.findParameterById(
+      dto.roleId,
+    );
     if (!role || role.type !== 'platform_admin_role') {
       throw new BadRequestException('roleId inválido (no es un rol de portal)');
     }
@@ -210,7 +218,9 @@ export class AdminService {
         dto.roleId,
       );
       if (!role || role.type !== 'platform_admin_role') {
-        throw new BadRequestException('roleId inválido (no es un rol de portal)');
+        throw new BadRequestException(
+          'roleId inválido (no es un rol de portal)',
+        );
       }
       data.roleId = dto.roleId;
     }
@@ -289,11 +299,10 @@ export class AdminService {
 
   /** Saldo de créditos de una empresa: total disponible + nº de bolsas vigentes. */
   private async resolveCredits(companyId: string) {
-    const activeStatus =
-      await this.parametersRepository.findByTypeAndCode(
-        'analysis_pack_status',
-        'active',
-      );
+    const activeStatus = await this.parametersRepository.findByTypeAndCode(
+      'analysis_pack_status',
+      'active',
+    );
     if (!activeStatus) {
       return { availableCredits: 0, activePacks: 0, packs: [] as const };
     }
@@ -420,7 +429,8 @@ export class AdminService {
 
     const credits = await this.resolveCredits(companyId);
     // Historial completo de bolsas (todas, incluidas vencidas/agotadas).
-    const allPacks = await this.analysisPacksRepository.findByCompany(companyId);
+    const allPacks =
+      await this.analysisPacksRepository.findByCompany(companyId);
 
     const contract = company.contractSignature;
 
@@ -554,26 +564,32 @@ export class AdminService {
     const expiryLimit = new Date(now);
     expiryLimit.setDate(expiryLimit.getDate() + EXPIRY_RISK_DAYS);
 
-    const [credits, customersTotal, consumed30, consumed90, byUserRaw, lifetime] =
-      await Promise.all([
-        this.resolveCredits(companyId),
-        this.prisma.customer.count({ where: { companyId } }),
-        this.prisma.analysisConsumption.count({
-          where: { companyId, createdAt: { gte: from30 } },
-        }),
-        this.prisma.analysisConsumption.count({
-          where: { companyId, createdAt: { gte: from90 } },
-        }),
-        this.prisma.analysisConsumption.groupBy({
-          by: ['consumedBy'],
-          where: { companyId, createdAt: { gte: from90 } },
-          _count: { id: true },
-        }),
-        this.prisma.analysisPack.aggregate({
-          where: { companyId },
-          _sum: { quantityPurchased: true, quantityConsumed: true },
-        }),
-      ]);
+    const [
+      credits,
+      customersTotal,
+      consumed30,
+      consumed90,
+      byUserRaw,
+      lifetime,
+    ] = await Promise.all([
+      this.resolveCredits(companyId),
+      this.prisma.customer.count({ where: { companyId } }),
+      this.prisma.analysisConsumption.count({
+        where: { companyId, createdAt: { gte: from30 } },
+      }),
+      this.prisma.analysisConsumption.count({
+        where: { companyId, createdAt: { gte: from90 } },
+      }),
+      this.prisma.analysisConsumption.groupBy({
+        by: ['consumedBy'],
+        where: { companyId, createdAt: { gte: from90 } },
+        _count: { id: true },
+      }),
+      this.prisma.analysisPack.aggregate({
+        where: { companyId },
+        _sum: { quantityPurchased: true, quantityConsumed: true },
+      }),
+    ]);
 
     // Nombres de quienes consumen (desglose últimos 90 días).
     const userIds = byUserRaw.map((u) => u.consumedBy);
@@ -670,69 +686,74 @@ export class AdminService {
       (id): id is number => id != null,
     );
 
-    const [studies, consultations, aiAnalyses, customersWindow, customersTotal] =
-      await Promise.all([
-        this.prisma.creditStudy.findMany({
-          where: { companyId, createdAt: inWindow },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            studyDate: true,
-            createdAt: true,
-            viabilityScore: true,
-            viabilityStatus: true,
-            status: { select: { code: true, label: true } },
-            customer: customerSelect,
-            createdByUser: authorSelect,
-          },
-        }),
-        this.prisma.creditBureauConsultation.findMany({
-          where: { companyId, createdAt: inWindow },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            consultaAt: true,
-            createdAt: true,
-            personType: true,
-            provider: true,
-            txCode: true,
-            httpStatus: true,
-            customer: customerSelect,
-            createdByUser: authorSelect,
-          },
-        }),
-        this.prisma.aiAnalysis.findMany({
-          where: {
-            companyId,
-            typeId: { in: aiTypeFilter },
-            createdAt: inWindow,
-          },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            status: true,
-            errorMessage: true,
-            estimatedCostUsd: true,
-            durationMs: true,
-            createdAt: true,
-            type: { select: { id: true, code: true, label: true } },
-            customer: customerSelect,
-            performedByUser: authorSelect,
-          },
-        }),
-        this.prisma.customer.findMany({
-          where: { companyId, createdAt: inWindow },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            businessName: true,
-            identificationNumber: true,
-            createdAt: true,
-            createdByUser: authorSelect,
-          },
-        }),
-        this.prisma.customer.count({ where: { companyId } }),
-      ]);
+    const [
+      studies,
+      consultations,
+      aiAnalyses,
+      customersWindow,
+      customersTotal,
+    ] = await Promise.all([
+      this.prisma.creditStudy.findMany({
+        where: { companyId, createdAt: inWindow },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          studyDate: true,
+          createdAt: true,
+          viabilityScore: true,
+          viabilityStatus: true,
+          status: { select: { code: true, label: true } },
+          customer: customerSelect,
+          createdByUser: authorSelect,
+        },
+      }),
+      this.prisma.creditBureauConsultation.findMany({
+        where: { companyId, createdAt: inWindow },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          consultaAt: true,
+          createdAt: true,
+          personType: true,
+          provider: true,
+          txCode: true,
+          httpStatus: true,
+          customer: customerSelect,
+          createdByUser: authorSelect,
+        },
+      }),
+      this.prisma.aiAnalysis.findMany({
+        where: {
+          companyId,
+          typeId: { in: aiTypeFilter },
+          createdAt: inWindow,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          errorMessage: true,
+          estimatedCostUsd: true,
+          durationMs: true,
+          createdAt: true,
+          type: { select: { id: true, code: true, label: true } },
+          customer: customerSelect,
+          performedByUser: authorSelect,
+        },
+      }),
+      this.prisma.customer.findMany({
+        where: { companyId, createdAt: inWindow },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          businessName: true,
+          identificationNumber: true,
+          createdAt: true,
+          createdByUser: authorSelect,
+        },
+      }),
+      this.prisma.customer.count({ where: { companyId } }),
+    ]);
 
     const fullName = (
       user: { name: string | null; lastName: string | null } | null,

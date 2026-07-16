@@ -2,12 +2,22 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { ScoringRepository } from './scoring.repository.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { CreateScoringConfigurationDto } from './dto/create-scoring-configuration.dto.js';
-import { validateWeights, weightsToColumns } from './scoring.validation.js';
-import { defaultWeightsFor, type PersonTypeCode } from './scoring.constants.js';
+import { CreateScoringDimensionDto } from './dto/create-scoring-dimension.dto.js';
+import { UpdateScoringDimensionDto } from './dto/update-scoring-dimension.dto.js';
+import { validateWeights } from './scoring.validation.js';
+import {
+  defaultWeightsFor,
+  SCORING_DIMENSIONS,
+  DIMENSION_RULES,
+  type EnabledWeights,
+  type ScoringDimension,
+  type PersonTypeCode,
+} from './scoring.constants.js';
 
 const VALID_PERSON_TYPES: PersonTypeCode[] = ['naturalPerson', 'legalEntity'];
 
@@ -29,6 +39,26 @@ export class ScoringService {
     const active = await this.repository.findActive(companyId, personType.id);
     if (active) return active;
 
+    // Defaults del sistema: se arma la misma forma que una config persistida
+    // (weights con su dimensión del catálogo) para que el front no distinga.
+    const defaults = defaultWeightsFor(personTypeCode as PersonTypeCode);
+    const catalog = await this.repository.findDimensions();
+    const weights = catalog
+      .filter((d) => defaults[d.code as ScoringDimension] !== undefined)
+      .map((d) => ({
+        id: null,
+        configId: null,
+        dimensionId: d.id,
+        weight: defaults[d.code as ScoringDimension]!,
+        dimension: {
+          id: d.id,
+          code: d.code,
+          label: d.label,
+          description: d.description,
+          sortOrder: d.sortOrder,
+        },
+      }));
+
     return {
       id: null,
       companyId,
@@ -39,7 +69,7 @@ export class ScoringService {
         label: personType.label,
         description: personType.description,
       },
-      ...weightsToColumns(defaultWeightsFor(personTypeCode as PersonTypeCode)),
+      weights,
       isActive: true,
       isDefault: true, // aún no persistida: son los defaults del sistema
       createdBy: null,
@@ -56,8 +86,10 @@ export class ScoringService {
 
   /**
    * Crea una nueva versión de configuración para un tipo de persona (la vigente
-   * de ese tipo pasa a histórica). Valida que los pesos sumen 100 y respeten el
-   * mínimo por dimensión según el tipo (en PN la veracidad debe ser 0).
+   * de ese tipo pasa a histórica). El body trae SOLO las dimensiones habilitadas:
+   * se valida que los codes existan en el catálogo y estén activos, que las
+   * obligatorias estén presentes, que apliquen al tipo, y que los pesos sumen
+   * 100 respetando el mínimo.
    */
   async createVersion(
     companyId: string,
@@ -66,23 +98,55 @@ export class ScoringService {
     dto: CreateScoringConfigurationDto,
   ) {
     const personType = await this.resolvePersonType(personTypeCode);
-    const weights = {
-      financialHealth: dto.weightFinancialHealth,
-      paymentCapacity: dto.weightPaymentCapacity,
-      termCoherence: dto.weightTermCoherence,
-      creditLineAdequacy: dto.weightCreditLineAdequacy,
-      capitalExposure: dto.weightCapitalExposure,
-      veracity: dto.weightVeracity,
-      centralRisk: dto.weightCentralRisk,
-    };
-    // Lanza BadRequestException si no cumple las reglas del tipo.
+
+    // Sin dimensiones repetidas en el body.
+    const codes = dto.weights.map((w) => w.dimension);
+    const duplicated = codes.find((c, i) => codes.indexOf(c) !== i);
+    if (duplicated) {
+      throw new BadRequestException(
+        `La dimensión "${duplicated}" está repetida en la solicitud.`,
+      );
+    }
+
+    // Resolver codes contra el catálogo: deben existir y estar activos.
+    const catalog = await this.repository.findDimensionsByCodes(codes);
+    const byCode = new Map(catalog.map((d) => [d.code, d]));
+    for (const code of codes) {
+      const dim = byCode.get(code);
+      if (!dim) {
+        throw new BadRequestException(
+          `La dimensión "${code}" no existe en el catálogo.`,
+        );
+      }
+      if (!dim.isActive) {
+        throw new BadRequestException(
+          `La dimensión "${code}" está desactivada del catálogo y no puede habilitarse.`,
+        );
+      }
+      // Fila del catálogo sin soporte en el motor (sembrada antes del deploy
+      // de su eval*): no se puede habilitar todavía.
+      if (!SCORING_DIMENSIONS.includes(code as ScoringDimension)) {
+        throw new BadRequestException(
+          `La dimensión "${code}" aún no está soportada por el motor de análisis.`,
+        );
+      }
+    }
+
+    // Reglas de negocio (obligatorias, aplican al tipo, suma 100, mínimos).
+    const weights: EnabledWeights = {};
+    for (const item of dto.weights) {
+      weights[item.dimension as ScoringDimension] = item.weight;
+    }
     validateWeights(weights, personTypeCode as PersonTypeCode);
 
     return this.repository.createVersion({
       companyId,
       personTypeId: personType.id,
       createdBy: userId,
-      weights: weightsToColumns(weights),
+      weights: dto.weights.map((w) => ({
+        dimensionId: byCode.get(w.dimension)!.id,
+        weight: w.weight,
+      })),
     });
   }
 
@@ -96,6 +160,78 @@ export class ScoringService {
       );
     }
     return found;
+  }
+
+  // ── Catálogo de dimensiones ────────────────────────────────────────────────
+
+  /**
+   * Dimensiones del catálogo enriquecidas con las reglas del motor (required,
+   * appliesTo, supported) para que el front sepa qué puede apagar y para quién.
+   * Para clientes: solo activas. Para el portal admin: includeInactive=true.
+   */
+  async listDimensions(includeInactive = false) {
+    const dimensions = await this.repository.findDimensions(includeInactive);
+    return dimensions.map((d) => this.withEngineRules(d));
+  }
+
+  /**
+   * Crea una dimensión en el catálogo (solo portal admin). El code debe estar
+   * soportado por el motor: la fila del catálogo es display; sin función eval*
+   * detrás no hay nada que evaluar.
+   */
+  async createDimension(dto: CreateScoringDimensionDto) {
+    if (!SCORING_DIMENSIONS.includes(dto.code as ScoringDimension)) {
+      throw new BadRequestException(
+        `El code "${dto.code}" no está soportado por el motor de análisis. ` +
+          `Soportados: ${SCORING_DIMENSIONS.join(', ')}. Agregar una dimensión nueva requiere desplegar primero su lógica de evaluación.`,
+      );
+    }
+    const existing = await this.repository.findDimensionByCode(dto.code);
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe una dimensión con el code "${dto.code}".`,
+      );
+    }
+    const created = await this.repository.createDimension(dto);
+    return this.withEngineRules(created);
+  }
+
+  /**
+   * Edición básica de una dimensión (solo portal admin): label, description,
+   * sortOrder y activación. Sin borrado físico (eliminación lógica vía
+   * isActive); una dimensión OBLIGATORIA del motor no puede desactivarse.
+   */
+  async updateDimension(id: number, dto: UpdateScoringDimensionDto) {
+    const dimension = await this.repository.findDimensionById(id);
+    if (!dimension) {
+      throw new NotFoundException(`Dimensión con id=${id} no encontrada.`);
+    }
+    if (dto.isActive === false) {
+      const rules = DIMENSION_RULES[dimension.code as ScoringDimension];
+      if (rules?.required) {
+        throw new BadRequestException(
+          `La dimensión "${dimension.code}" es parte del núcleo del análisis y no puede desactivarse.`,
+        );
+      }
+    }
+    const updated = await this.repository.updateDimension(id, dto);
+    return this.withEngineRules(updated);
+  }
+
+  /** Anexa las reglas del motor a una fila del catálogo (para el front). */
+  private withEngineRules<T extends { code: string }>(dimension: T) {
+    const supported = SCORING_DIMENSIONS.includes(
+      dimension.code as ScoringDimension,
+    );
+    const rules = supported
+      ? DIMENSION_RULES[dimension.code as ScoringDimension]
+      : null;
+    return {
+      ...dimension,
+      supported, // false = sembrada antes del deploy de su eval* (no habilitable aún)
+      required: rules?.required ?? false,
+      appliesTo: rules?.appliesTo ?? { legalEntity: true, naturalPerson: true },
+    };
   }
 
   /** Resuelve y valida el code del tipo de persona → Parameter. */

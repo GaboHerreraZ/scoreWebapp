@@ -17,8 +17,8 @@ REGLAS DE CONTENIDO:
 CONTEXTO DEL MODELO DE VIABILIDAD (v2):
 - El "cupo solicitado" es el monto TOTAL del credito, no mensual. La "cuota mensual estimada" = cupo / (dias plazo / 30)
 - El credito es comercial SIN intereses: el plazo aprobado nunca amplia el solicitado
-- El score de viabilidad va de 0 a 100. Resulta de PONDERAR hasta 7 dimensiones, cada una con un PESO configurado por la empresa (no valen 20 puntos fijos). Cada dimension aporta ratio (0 a 1) x peso. Una dimension puede ser "no evaluable" (no habia datos): en ese caso su peso se redistribuyo entre las demas y NO debes comentarla como una carencia del cliente
-- Las 7 dimensiones posibles: salud financiera, capacidad de pago, coherencia de plazos, adecuacion del cupo, exposicion del capital, VERACIDAD y RIESGO DE LA CENTRAL
+- El score de viabilidad va de 0 a 100. Resulta de PONDERAR las dimensiones que la empresa HABILITO en su configuracion (pueden ser menos que el catalogo completo), cada una con un PESO configurado por la empresa. Cada dimension aporta ratio (0 a 1) x peso. Una dimension puede ser "no evaluable" (no habia datos): en ese caso su peso se redistribuyo entre las demas y NO debes comentarla como una carencia del cliente. Las dimensiones NO habilitadas no existen para este analisis: NO las menciones ni como carencia ni como omision
+- Las dimensiones posibles del catalogo: salud financiera, capacidad de pago, coherencia de plazos, adecuacion del cupo, exposicion del capital, VERACIDAD y RIESGO DE LA CENTRAL. Comenta SOLO las que vengan en los datos
 - VERACIDAD: contrasta las cifras que el cliente reporto en su PDF contra lo que la central (DataCredito) tiene registrado, del MISMO ano. Una discrepancia alta sugiere estados financieros maquillados. SOLO aplica a persona juridica (en persona natural la central no reporta estados financieros, asi que NUNCA la menciones para PN)
 - RIESGO DE LA CENTRAL: opinion de DataCredito Experian (puntaje 150-950, nivel de riesgo, sector, comportamiento de pago/mora). Es un tercero experto independiente de los estados financieros
 

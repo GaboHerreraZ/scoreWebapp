@@ -1,9 +1,11 @@
 // ─── Constantes del modelo de scoring ──────────────────────────────────────
-// Los pesos de las 7 dimensiones del análisis de viabilidad. Cada empresa tiene
-// su propia ScoringConfiguration versionada; estos son los DEFAULT del sistema
-// que se aplican al crear la empresa (y como referencia de validación).
+// Las dimensiones del análisis de viabilidad. El CATÁLOGO comercial (label,
+// description, isActive) vive en la tabla scoring_dimensions; aquí vive el
+// COMPORTAMIENTO: qué dimensiones soporta el motor, cuáles son obligatorias,
+// a qué tipo de persona aplican y los pesos default al crear una empresa.
 
-/** Las 7 dimensiones del scoring, en el orden canónico. */
+/** Dimensiones SOPORTADAS por el motor, en el orden canónico. Una fila del
+ *  catálogo cuyo code no esté aquí no se puede habilitar (no hay eval*). */
 export const SCORING_DIMENSIONS = [
   'financialHealth',
   'paymentCapacity',
@@ -16,41 +18,73 @@ export const SCORING_DIMENSIONS = [
 
 export type ScoringDimension = (typeof SCORING_DIMENSIONS)[number];
 
-/** Los pesos deben sumar EXACTAMENTE esto. */
+/**
+ * Pesos de las dimensiones HABILITADAS por una configuración. Una dimensión
+ * ausente está deshabilitada: no se evalúa ni participa del estudio.
+ */
+export type EnabledWeights = Partial<Record<ScoringDimension, number>>;
+
+/** Los pesos habilitados deben sumar EXACTAMENTE esto. */
 export const TOTAL_WEIGHT = 100;
 
-/** Peso mínimo por dimensión: nadie puede apagar una dimensión (p. ej. veracidad). */
+/** Peso mínimo por dimensión habilitada (habilitada con peso simbólico = apagada de facto). */
 export const MIN_WEIGHT = 5;
-
-/**
- * Mapa dimensión → nombre de la columna de peso en ScoringConfiguration.
- * Fuente única para no repetir el mapeo en repo/servicio/validación.
- */
-export const DIMENSION_WEIGHT_FIELD: Record<ScoringDimension, string> = {
-  financialHealth: 'weightFinancialHealth',
-  paymentCapacity: 'weightPaymentCapacity',
-  termCoherence: 'weightTermCoherence',
-  creditLineAdequacy: 'weightCreditLineAdequacy',
-  capitalExposure: 'weightCapitalExposure',
-  veracity: 'weightVeracity',
-  centralRisk: 'weightCentralRisk',
-};
 
 /** Codes del Parameter person_type. */
 export type PersonTypeCode = 'naturalPerson' | 'legalEntity';
 
-/** En PN la Veracidad NO aplica (Experian no da EEFF de PN → no hay contraste). */
-export const VERACITY_APPLIES: Record<PersonTypeCode, boolean> = {
-  legalEntity: true,
-  naturalPerson: false,
+/** Reglas de negocio de una dimensión (viven en código, no en BD: cambian solo
+ *  cuando cambia el motor y no deben ser editables por datos). */
+export interface DimensionRules {
+  /** true = núcleo del análisis: la empresa NO la puede deshabilitar. */
+  required: boolean;
+  /** A qué tipos de persona aplica (veracity no aplica a PN: sin contraste posible). */
+  appliesTo: Record<PersonTypeCode, boolean>;
+}
+
+/**
+ * Reglas por dimensión. Capacidad de pago y riesgo de la central son el núcleo
+ * del estudio (sin ellas el "estudio de crédito" pierde sentido) → obligatorias.
+ * Las demás son opcionales: cada empresa decide si participan.
+ */
+export const DIMENSION_RULES: Record<ScoringDimension, DimensionRules> = {
+  financialHealth: {
+    required: false,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
+  paymentCapacity: {
+    required: true,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
+  termCoherence: {
+    required: false,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
+  creditLineAdequacy: {
+    required: false,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
+  capitalExposure: {
+    required: false,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
+  // En PN la Veracidad NO aplica (Experian no da EEFF de PN → no hay contraste).
+  veracity: {
+    required: false,
+    appliesTo: { legalEntity: true, naturalPerson: false },
+  },
+  centralRisk: {
+    required: true,
+    appliesTo: { legalEntity: true, naturalPerson: true },
+  },
 };
 
 /**
- * Pesos DEFAULT para PERSONA JURÍDICA (7 dimensiones, suman 100). Prioriza
+ * Pesos DEFAULT para PERSONA JURÍDICA (las 7 habilitadas, suman 100). Prioriza
  * capacidad de pago y veracidad (que pueda pagar y que no mienta), luego riesgo
  * de central y salud financiera.
  */
-export const DEFAULT_WEIGHTS_PJ: Record<ScoringDimension, number> = {
+export const DEFAULT_WEIGHTS_PJ: EnabledWeights = {
   paymentCapacity: 20,
   veracity: 20,
   centralRisk: 15,
@@ -61,25 +95,22 @@ export const DEFAULT_WEIGHTS_PJ: Record<ScoringDimension, number> = {
 };
 
 /**
- * Pesos DEFAULT para PERSONA NATURAL (6 dimensiones, suman 100). NO hay
- * veracidad (=0: sin contraste posible); a cambio pesa MÁS el riesgo de la
- * central (es la señal más confiable para PN). Los 20 puntos de veracidad de PJ
- * se redistribuyen: +10 a central, +6 a capacidad, +4 a salud.
+ * Pesos DEFAULT para PERSONA NATURAL (6 habilitadas, suman 100). La veracidad
+ * NO aplica (sin contraste posible) → no se habilita; a cambio pesa MÁS el
+ * riesgo de la central (es la señal más confiable para PN). Los 20 puntos de
+ * veracidad de PJ se redistribuyen: +10 a central, +6 a capacidad, +4 a salud.
  */
-export const DEFAULT_WEIGHTS_PN: Record<ScoringDimension, number> = {
+export const DEFAULT_WEIGHTS_PN: EnabledWeights = {
   paymentCapacity: 26,
   centralRisk: 25,
   financialHealth: 19,
   creditLineAdequacy: 12,
   capitalExposure: 10,
   termCoherence: 8,
-  veracity: 0,
 };
 
 /** Pesos default según el tipo de persona. */
-export function defaultWeightsFor(
-  personType: PersonTypeCode,
-): Record<ScoringDimension, number> {
+export function defaultWeightsFor(personType: PersonTypeCode): EnabledWeights {
   return personType === 'legalEntity' ? DEFAULT_WEIGHTS_PJ : DEFAULT_WEIGHTS_PN;
 }
 
