@@ -893,11 +893,7 @@ model PromissoryNote {
   amount        Float
   amountInWords String @map("amount_in_words") @db.VarChar(500)
 
-  // ── Datos DocuSeal ─────────────────────────────────
-  docusealSubmissionId  Int?    @map("docuseal_submission_id")
-  docusealSubmitterId   Int?    @map("docuseal_submitter_id")
-  docusealSubmitterUuid String? @map("docuseal_submitter_uuid") @db.VarChar(100)
-  docusealSlug          String? @map("docuseal_slug") @db.VarChar(100)
+  // ── Datos de firma (agnósticos del proveedor; DocuSeal fue retirado) ──
   signingUrl            String? @map("signing_url") @db.VarChar(500)
   signedDocumentUrl     String? @map("signed_document_url") @db.VarChar(500)
   signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500)
@@ -919,7 +915,6 @@ model PromissoryNote {
   @@index([companyId])
   @@index([creditStudyId])
   @@index([customerId])
-  @@index([docusealSubmissionId])
   @@map("promissory_notes")
 }
 

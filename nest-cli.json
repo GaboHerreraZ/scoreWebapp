@@ -9,11 +9,6 @@
         "include": "mail/templates/**/*.html",
         "outDir": "dist",
         "watchAssets": true
-      },
-      {
-        "include": "documents/promissory-notes/templates/**/*.html",
-        "outDir": "dist/src",
-        "watchAssets": true
       }
     ]
   }
