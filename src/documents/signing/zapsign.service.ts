@@ -33,10 +33,10 @@ export interface CreateDocFromTemplateParams {
 }
 
 /**
- * Cliente de la API REST de Zapsign para el contrato macro. Espeja el patrón de
- * DocuSealService: crea documentos desde plantilla con variables prellenadas,
- * firma automáticamente la parte de Creditia por API, consulta el estado real de
- * un documento (para no confiar solo en el webhook) y descarga el PDF firmado.
+ * Cliente de la API REST de Zapsign para el contrato macro: crea documentos
+ * desde plantilla con variables prellenadas, firma automáticamente la parte de
+ * Creditia por API, consulta el estado real de un documento (para no confiar
+ * solo en el webhook) y descarga el PDF firmado.
  *
  * Auth: token estático en el header Authorization: Bearer.
  * Docs: https://docs.zapsign.com.br/espanol

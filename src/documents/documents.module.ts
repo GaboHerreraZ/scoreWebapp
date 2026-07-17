@@ -7,7 +7,7 @@ import { MacroContractModule } from './macro-contract/macro-contract.module.js';
  * (signing/) y cada tipo de documento (promissory-notes/, y los que vengan:
  * contratos, autorizaciones, etc.). Cada tipo tiene su propio modelo, controller
  * y rutas bajo companies/:companyId/documents/..., pero comparten el motor de
- * firma DocuSeal vía SigningModule.
+ * firma (Zapsign) vía SigningModule.
  */
 @Module({
   imports: [PromissoryNotesModule, MacroContractModule],

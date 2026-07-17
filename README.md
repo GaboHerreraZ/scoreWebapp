@@ -137,11 +137,6 @@ Both `.env` and `.env.staging` share the same variables. Only `DATABASE_URL`, `D
 | `ANTHROPIC_MODEL` | Claude model to use | No |
 | `ANTHROPIC_MAX_TOKENS` | Max tokens for AI responses | No |
 | `RESEND_API_KEY` | Resend email API key | No |
-| `DOCUSEAL_API_URL` | DocuSeal API URL | No |
-| `DOCUSEAL_API_KEY` | DocuSeal API key | No |
-| `DOCUSEAL_PROMISSORY_TEMPLATE_ID` | DocuSeal template ID for promissory notes | No |
-| `DOCUSEAL_WEBHOOK_SECRET` | DocuSeal webhook secret | No |
-| `SUPABASE_STORAGE_BUCKET_PROMISSORY` | Storage bucket name for promissory notes | No |
 | `EPAYCO_PUBLIC_KEY` | ePayco public key | No |
 | `EPAYCO_PRIVATE_KEY` | ePayco private key | No |
 | `EPAYCO_P_CUST_ID` | ePayco customer ID (for signature validation) | No |

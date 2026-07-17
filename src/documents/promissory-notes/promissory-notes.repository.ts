@@ -36,12 +36,6 @@ export class PromissoryNotesRepository {
     });
   }
 
-  async findByDocusealSubmissionId(submissionId: number) {
-    return this.prisma.promissoryNote.findFirst({
-      where: { docusealSubmissionId: submissionId },
-    });
-  }
-
   async findAll(params: {
     skip: number;
     take: number;
