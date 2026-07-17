@@ -27,6 +27,8 @@ export class MacroContractService {
   private readonly storageBucket: string;
   private readonly creditia = CREDITIA_PARTY;
   private readonly logoUrl: string;
+  /** Vigencia de la URL firmada del PDF en Storage (bucket privado). */
+  private readonly signedUrlTtlSeconds = 3600;
 
   constructor(
     private readonly repository: MacroContractRepository,
@@ -390,13 +392,29 @@ export class MacroContractService {
   }
 
   /**
-   * Devuelve una URL fresca (firmada) para que el cliente descargue/vea su
-   * contrato. Se pide a Zapsign en el momento porque su signed_file expira ~60
-   * min; el respaldo en Storage es la copia de largo plazo.
+   * Devuelve una URL fresca para que el cliente descargue/vea su contrato
+   * firmado, o null si aún no está firmado.
+   *
+   * La fuente es el respaldo en Supabase Storage (nuestra copia de largo plazo):
+   * el bucket es privado, así que se firma una URL temporal en cada llamada.
+   * Solo si el respaldo no existe —la descarga del webhook fue best-effort y
+   * pudo fallar— se recurre a Zapsign, cuyo signed_file expira ~60 min.
    */
   async getSignedContractUrl(companyId: string): Promise<string | null> {
     const contract = await this.repository.findByCompanyId(companyId);
     if (!contract || !contract.signedAt) return null;
+
+    if (contract.signedFileStoragePath) {
+      return this.supabaseService.createSignedUrl(
+        this.storageBucket,
+        contract.signedFileStoragePath,
+        this.signedUrlTtlSeconds,
+      );
+    }
+
+    this.logger.warn(
+      `Contrato ${contract.id} sin respaldo en Storage; se sirve desde Zapsign`,
+    );
     const state = await this.zapsign.getDocState(contract.zapsignDocToken);
     return state.signedFileUrl;
   }

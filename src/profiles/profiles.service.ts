@@ -122,6 +122,11 @@ export class ProfilesService {
       signedAt: signature?.signedAt ?? null,
       refusedAt: signature?.refusedAt ?? null,
       refusedReason: signature?.refusedReason ?? null,
+      // Hay PDF firmado disponible para ver/descargar. El perfil NO trae la URL:
+      // el bucket es privado y la URL firmada caduca (~1h), así que quedaría
+      // muerta en una sesión larga. El front pide una fresca al abrirlo, en
+      // GET /companies/:companyId/contract/download.
+      hasSignedDocument: !!signature?.signedAt,
     };
 
     if (userCompany) {

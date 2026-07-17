@@ -59,6 +59,7 @@ export class ProfilesRepository {
                     signedAt: true,
                     refusedAt: true,
                     refusedReason: true,
+                    signedFileStoragePath: true,
                     status: { select: { code: true, label: true } },
                   },
                 },
