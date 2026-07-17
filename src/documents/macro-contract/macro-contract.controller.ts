@@ -40,7 +40,7 @@ export class MacroContractController {
   @Get('download')
   @ApiOperation({
     summary:
-      'URL fresca del PDF firmado (se pide a Zapsign en el momento; expira ~60 min)',
+      'URL fresca del PDF firmado, servida desde el respaldo en Supabase Storage (expira ~60 min; pedirla al abrir el documento, no al cargar la pantalla)',
   })
   @ApiResponse({ status: 200, description: '{ url } o { url: null } si no está firmado' })
   async download(@Param('companyId', ParseUUIDPipe) companyId: string) {

@@ -54,6 +54,13 @@ class ContractStatusDto {
 
   @ApiPropertyOptional({ description: 'Motivo del cliente al rechazar.' })
   refusedReason?: string;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Hay PDF firmado disponible. La URL no viene aquí (es temporal): pedirla a GET /companies/{companyId}/contract/download al abrirlo.',
+  })
+  hasSignedDocument: boolean;
 }
 
 export class ProfileResponseDto {
