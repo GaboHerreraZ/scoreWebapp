@@ -57,6 +57,9 @@ model Parameter {
   blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
   contractSignaturesByStatus            ContractSignature[]   @relation("ContractSignatureStatus")
   scoringConfigurationsByPersonType     ScoringConfiguration[] @relation("ScoringConfigurationPersonType")
+  customerAuthorizationsByStatus        CustomerAuthorization[] @relation("CustomerAuthorizationStatus")
+  customerAuthorizationsByType          CustomerAuthorization[] @relation("CustomerAuthorizationType")
+  customerAuthorizationsByIdentType     CustomerAuthorization[] @relation("CustomerAuthorizationIdentType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -100,6 +103,8 @@ model Profile {
   createdFinancialStatements FinancialStatementPeriod[] @relation("FinancialStatementCreatedBy")
   createdFinancialAnalyses   FinancialAnalysis[]        @relation("FinancialAnalysisCreatedBy")
   createdScoringConfigurations ScoringConfiguration[]   @relation("ScoringConfigurationCreatedBy")
+  createdCustomerAuthorizations CustomerAuthorization[] @relation("CustomerAuthorizationCreatedBy")
+  revokedCustomerAuthorizations CustomerAuthorization[] @relation("CustomerAuthorizationRevokedBy")
 
   @@map("profiles")
 }
@@ -184,6 +189,7 @@ model Company {
   financialPeriods     FinancialStatementPeriod[]
   financialAnalyses    FinancialAnalysis[]
   scoringConfigurations ScoringConfiguration[]
+  customerAuthorizations CustomerAuthorization[]
 
   @@map("companies")
 }
@@ -508,6 +514,7 @@ model Customer {
   riskSnapshots      CustomerRiskSnapshot[]
   financialPeriods   FinancialStatementPeriod[]
   financialAnalyses  FinancialAnalysis[]
+  authorizations     CustomerAuthorization[]
 
   // Un cliente por identificación dentro de una empresa. Soporta el upsert de la
   // consulta al bureau (refrescar si existe, crear si no) de forma race-safe.
@@ -966,6 +973,81 @@ model ContractSignature {
 
   @@index([statusId])
   @@map("contract_signatures")
+}
+
+// ─── Autorización del titular consultado ────────────────────
+//
+// Consentimiento que firma el TITULAR CONSULTADO (persona/empresa a evaluar)
+// para que una EMPRESA lo consulte en centrales de riesgo. Es la contraparte de
+// ContractSignature pero al otro lado: allá firma el cliente de Creditia para
+// usar la app; aquí firma el tercero evaluado para que puedan consultarlo.
+//
+// Se llavea por la IDENTIDAD (companyId + identificationNumber), la MISMA llave
+// natural que Customer, NO por customerId: el Customer nace de la consulta al
+// bureau, que a su vez requiere esta firma (huevo-y-gallina). La autorización es
+// aguas arriba (existe antes del Customer) y guarda el snapshot de identidad que
+// necesita la plantilla; customerId se rellena (backfill) tras la 1ª consulta.
+//
+// El gate del bureau se DERIVA de signedAt (no revocado), igual que
+// ContractSignature.signedAt gobierna ContractSignedGuard.
+model CustomerAuthorization {
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  // Tipo de finalidad. 'core' = documento único (tratamiento + habeas data +
+  // custodia). 'disclosure' = divulgación a terceros (facultativa, 2ª firma; se
+  // implementa después). Parameter type 'customer_authorization_type'.
+  typeId Int @map("type_id")
+
+  // ── Identidad del titular = misma llave natural que Customer ──
+  // Snapshot capturado ANTES de que exista el Customer (variables {{TITULAR_*}}).
+  identificationTypeId Int     @map("identification_type_id")
+  identificationNumber String  @map("identification_number") @db.VarChar(50)
+  titularName          String  @map("titular_name") @db.VarChar(255) // = razón social/apellido
+  titularEmail         String  @map("titular_email") @db.VarChar(255) // = firmante Zapsign
+
+  // ── Enlace opcional al Customer (backfill tras la 1ª consulta exitosa) ──
+  customerId String? @map("customer_id") @db.Uuid
+
+  // ── Estado ──
+  statusId Int @map("status_id") // Parameter 'customer_authorization_status'
+
+  // ── Datos Zapsign (mismo patrón que ContractSignature) ──
+  templateId            String  @map("template_id") @db.VarChar(100)
+  zapsignDocToken       String  @unique @map("zapsign_doc_token") @db.VarChar(100)
+  signerToken           String? @map("signer_token") @db.VarChar(100)
+  signUrl               String? @map("sign_url") @db.VarChar(500)
+  signedDocumentUrl     String? @map("signed_document_url") @db.VarChar(500)
+  signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500)
+
+  // ── Auditoría de firma ──
+  sentAt        DateTime? @map("sent_at")
+  signedAt      DateTime? @map("signed_at") // ← gate del bureau
+  refusedAt     DateTime? @map("refused_at")
+  refusedReason String?   @map("refused_reason") @db.VarChar(1000)
+
+  // ── Revocatoria (no borra la firma, la desactiva; el PDF sigue siendo prueba) ──
+  revokedAt DateTime? @map("revoked_at")
+  revokedBy String?   @map("revoked_by") @db.Uuid
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company            Company   @relation(fields: [companyId], references: [id])
+  customer           Customer? @relation(fields: [customerId], references: [id])
+  type               Parameter @relation("CustomerAuthorizationType", fields: [typeId], references: [id])
+  status             Parameter @relation("CustomerAuthorizationStatus", fields: [statusId], references: [id])
+  identificationType Parameter @relation("CustomerAuthorizationIdentType", fields: [identificationTypeId], references: [id])
+  revokedByUser      Profile?  @relation("CustomerAuthorizationRevokedBy", fields: [revokedBy], references: [id])
+  createdByUser      Profile   @relation("CustomerAuthorizationCreatedBy", fields: [createdBy], references: [id])
+
+  // Una autorización por titular/empresa/finalidad. Cuando entre 'disclosure',
+  // convive con la 'core' del mismo titular sin chocar.
+  @@unique([companyId, identificationNumber, typeId])
+  @@index([statusId])
+  @@index([customerId])
+  @@map("customer_authorizations")
 }
 
 // ─── Notificaciones in-app ──────────────────────────────────

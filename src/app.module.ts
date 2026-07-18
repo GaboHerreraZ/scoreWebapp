@@ -34,6 +34,8 @@ import { AuthorizationModule } from './common/auth/authorization.module.js';
 import { ContactRequestsModule } from './contact-requests/contact-requests.module.js';
 import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
 import { BlogModule } from './blog/blog.module.js';
+import { CustomerAuthorizationsModule } from './customer-authorizations/customer-authorizations.module.js';
+import { ZapsignWebhooksModule } from './zapsign-webhooks/zapsign-webhooks.module.js';
 import { DebugController } from './common/debug/debug.controller.js';
 
 @Module({
@@ -73,6 +75,8 @@ import { DebugController } from './common/debug/debug.controller.js';
     ContactRequestsModule,
     SupportTicketsModule,
     BlogModule,
+    CustomerAuthorizationsModule,
+    ZapsignWebhooksModule,
   ],
   controllers: [DebugController],
   providers: [

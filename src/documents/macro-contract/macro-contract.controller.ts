@@ -24,7 +24,10 @@ export class MacroContractController {
     status: 201,
     description: 'Contrato enviado (o ya existente); devuelve el estado',
   })
-  @ApiResponse({ status: 400, description: 'Falta configuración o datos de la empresa' })
+  @ApiResponse({
+    status: 400,
+    description: 'Falta configuración o datos de la empresa',
+  })
   async resend(@Param('companyId', ParseUUIDPipe) companyId: string) {
     await this.service.sendContractForCompany(companyId);
     return this.service.getContractStatus(companyId);
@@ -32,7 +35,10 @@ export class MacroContractController {
 
   @Get()
   @ApiOperation({ summary: 'Estado del contrato macro de la empresa' })
-  @ApiResponse({ status: 200, description: 'Estado del contrato (o null si no existe)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado del contrato (o null si no existe)',
+  })
   getStatus(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.service.getContractStatus(companyId);
   }
@@ -42,7 +48,10 @@ export class MacroContractController {
     summary:
       'URL fresca del PDF firmado, servida desde el respaldo en Supabase Storage (expira ~60 min; pedirla al abrir el documento, no al cargar la pantalla)',
   })
-  @ApiResponse({ status: 200, description: '{ url } o { url: null } si no está firmado' })
+  @ApiResponse({
+    status: 200,
+    description: '{ url } o { url: null } si no está firmado',
+  })
   async download(@Param('companyId', ParseUUIDPipe) companyId: string) {
     const url = await this.service.getSignedContractUrl(companyId);
     return { url };

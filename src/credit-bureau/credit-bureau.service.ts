@@ -12,6 +12,7 @@ import {
 } from './providers/credit-bureau-provider.interface.js';
 import { ConsultCreditBureauDto } from './dto/consult-credit-bureau.dto.js';
 import { isConsultationFresh } from './utils/consultation-freshness.js';
+import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
 
 @Injectable()
 export class CreditBureauService {
@@ -20,6 +21,7 @@ export class CreditBureauService {
     private readonly provider: ICreditBureauProvider,
     private readonly repository: CreditBureauRepository,
     private readonly parametersRepository: ParametersRepository,
+    private readonly authorizationsService: CustomerAuthorizationsService,
   ) {}
 
   async consult(
@@ -27,6 +29,15 @@ export class CreditBureauService {
     userId: string,
     dto: ConsultCreditBureauDto,
   ) {
+    // GATE: el titular debe haber firmado la autorización (documento único) para
+    // esta empresa. Sin firma vigente → 403 CUSTOMER_AUTHORIZATION_REQUIRED, sin
+    // consultar ni crear/actualizar Customer. Cubre también la caché: no mostramos
+    // data (nueva ni previa) sin consentimiento vigente.
+    await this.authorizationsService.ensureCanConsult(
+      companyId,
+      dto.numeroIdentificacion,
+    );
+
     // 0. Caché: si el cliente ya existe y su última consulta sigue vigente
     //    (dentro de la ventana: hasta el día 10 del mes siguiente), se retorna
     //    de BBDD sin gastar una consulta a la central. La central actualiza su
@@ -36,7 +47,14 @@ export class CreditBureauService {
       companyId,
       dto.numeroIdentificacion,
     );
-    if (cached) return cached;
+    if (cached) {
+      await this.authorizationsService.linkConsultedCustomer(
+        companyId,
+        dto.numeroIdentificacion,
+        cached.customer.id,
+      );
+      return cached;
+    }
 
     // 1. Traducir el tipo de identificación al formato del proveedor
     const docType = this.provider.resolveDocType(dto.identificationTypeCode);
@@ -91,6 +109,13 @@ export class CreditBureauService {
         rawResponse: result.raw,
         httpStatus: result.httpStatus,
       });
+
+    // Backfill: enlaza la autorización firmada con el Customer recién creado.
+    await this.authorizationsService.linkConsultedCustomer(
+      companyId,
+      dto.numeroIdentificacion,
+      customer.id,
+    );
 
     return {
       fromCache: false,

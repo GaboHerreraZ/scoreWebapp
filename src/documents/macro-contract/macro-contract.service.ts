@@ -130,7 +130,7 @@ export class MacroContractService {
     //    el cliente firma (un solo firmante = completo).
     const clientSigner =
       doc.signers.find(
-        (s) => s.email?.toLowerCase() === admin.email!.toLowerCase(),
+        (s) => s.email?.toLowerCase() === admin.email.toLowerCase(),
       ) ?? doc.signers[0];
 
     // 4. Registrar el contrato en estado pending_contract.
@@ -364,6 +364,15 @@ export class MacroContractService {
       viewer?.times_viewed,
     );
     this.logger.log(`Visualización registrada para el contrato ${contract.id}`);
+  }
+
+  /**
+   * ¿Este doc token es un contrato macro? Lo usa el despachador de webhooks de
+   * Zapsign para enrutar el evento al handler correcto (Zapsign manda todos los
+   * eventos de la cuenta a una sola URL; el token es el discriminador).
+   */
+  async ownsDocument(docToken: string): Promise<boolean> {
+    return !!(await this.repository.findByDocToken(docToken));
   }
 
   /**
