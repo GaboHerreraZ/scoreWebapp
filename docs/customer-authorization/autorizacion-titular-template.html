@@ -1,0 +1,294 @@
+<!--
+  AUTORIZACIÓN DEL TITULAR CONSULTADO (DOCUMENTO ÚNICO) — CREDITIA
+  ===============================================================
+
+  Documento único que firma el TITULAR CONSULTADO (persona/empresa cuya
+  información se consultará en centrales de riesgo) antes de que la EMPRESA
+  cliente pueda consultarlo. Fusiona, en un solo acto y una sola firma, tres
+  autorizaciones que antes iban por separado:
+
+    PARTE PRIMERA  — Tratamiento de datos personales (Ley 1581 de 2012 · Dec. 1377 de 2013)
+    PARTE SEGUNDA  — Habeas Data / centrales de riesgo (Ley 1266 de 2008)
+    PARTE TERCERA  — Suministro y custodia de la información
+
+  NO incluye la autorización de DIVULGACIÓN a terceros: esa es una finalidad
+  facultativa y va en un documento independiente (segunda firma), por exigencia
+  de la SIC de no condicionar el servicio a una finalidad no necesaria.
+
+  El articulado de cada parte se conserva textual de los documentos originales
+  (habeas-data, data-authorization, custody-authorization); solo se dedupló el
+  encabezado/estilos/pie y las tres firmas se colapsaron en una sola al final.
+
+  Se sube a Zapsign como plantilla DOCX. Las variables {{DOBLES LLAVES}} las
+  rellena el backend al crear el documento (createDocFromTemplate). Un solo
+  firmante: el titular ({{TITULAR_EMAIL}}). El logo va por {{LOGO_URL}}.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Autorización del Titular Consultado — Creditia</title>
+<style>
+  :root {
+    --brand: #2563eb; --brand-dark: #1e3a8a; --accent: #f5a623;
+    --ink: #1a1a1a; --muted: #6b7c8f; --line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Calibri", "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.55; color: var(--ink); max-width: 820px; margin: 0 auto; padding: 0 44px 40px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 14px; border-bottom: 3px solid var(--brand); margin-bottom: 6px; }
+  .header img { height: 54px; width: auto; }
+  .header .meta { text-align: right; font-size: 8pt; color: var(--muted); line-height: 1.4; }
+  .header .meta strong { color: var(--ink); }
+  .doc-title { text-align: center; margin: 26px 0 4px; }
+  .doc-title h1 { font-size: 15pt; color: var(--brand-dark); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; }
+  .doc-title .subtitle { font-size: 9.5pt; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .doc-title .rule { width: 60px; height: 3px; background: var(--accent); margin: 12px auto 0; border-radius: 2px; }
+  .part-title { margin: 30px 0 4px; padding: 10px 14px; background: var(--brand-dark); color: #fff; border-radius: 6px; }
+  .part-title .kicker { display: block; font-size: 8pt; letter-spacing: 2px; text-transform: uppercase; opacity: 0.8; }
+  .part-title .name { display: block; font-size: 12pt; font-weight: bold; margin-top: 2px; }
+  .part-title .legal { display: block; font-size: 8pt; opacity: 0.85; margin-top: 2px; }
+  h2 { font-size: 11pt; color: var(--brand); margin: 22px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  p { text-align: justify; margin: 7px 0; }
+  .titular { background: #f8fafc; border-left: 3px solid var(--brand); padding: 12px 16px; border-radius: 0 6px 6px 0; }
+  .clause-title { font-weight: bold; color: var(--brand-dark); }
+  .fill { font-weight: bold; color: var(--ink); }
+  ul { margin: 6px 0 6px 4px; padding-left: 18px; }
+  li { margin: 4px 0; text-align: justify; }
+  .notice { margin-top: 18px; background: #f1f5fd; border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; font-size: 9.5pt; }
+  .notice h3 { margin: 0 0 6px; font-size: 10.5pt; color: var(--brand-dark); }
+  .page-break { page-break-before: always; }
+  .signatures { margin-top: 50px; }
+  .sign-box { width: 55%; }
+  .sign-line { border-top: 1.5px solid var(--ink); margin-top: 46px; padding-top: 8px; font-size: 9pt; line-height: 1.5; }
+  .sign-box strong { color: var(--brand-dark); font-size: 9.5pt; }
+  .footer { margin-top: 42px; padding-top: 14px; border-top: 2px solid var(--line); font-size: 8pt; color: var(--muted); text-align: center; line-height: 1.6; }
+  .footer .brand { font-weight: bold; color: var(--brand); }
+  .footer a { color: var(--brand); text-decoration: none; }
+  .footer .links { margin-top: 4px; }
+  .footer .links span { margin: 0 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="{{LOGO_URL}}" alt="Creditia" />
+  <div class="meta">
+    <strong>CREDITIA S.A.S.</strong><br />
+    NIT {{PROVEEDOR_NIT}}<br />
+    {{PROVEEDOR_CIUDAD}}, Colombia<br />
+    creditia.co
+  </div>
+</div>
+
+<div class="doc-title">
+  <h1>Autorización del Titular Consultado</h1>
+  <div class="subtitle">Tratamiento de Datos · Habeas Data · Custodia de la Información</div>
+  <div class="rule"></div>
+</div>
+
+<p>El presente documento reúne, en un solo acto, las autorizaciones que el TITULAR
+otorga a la EMPRESA y a CREDITIA para el tratamiento de sus datos, la consulta y
+reporte ante centrales de riesgo, y la custodia de su información. Cada parte se
+rige por su propio marco legal, según se indica. La firma electrónica al final
+del documento comprende y valida las tres partes.</p>
+
+<!-- ══════════════════ PARTE PRIMERA — TRATAMIENTO DE DATOS ══════════════════ -->
+<div class="part-title">
+  <span class="kicker">Parte Primera</span>
+  <span class="name">Autorización para el Tratamiento de Datos Personales y Aviso de Privacidad</span>
+  <span class="legal">Ley 1581 de 2012 · Decreto 1377 de 2013</span>
+</div>
+
+<div class="titular">
+<p>Yo, <span class="fill">{{TITULAR_NOMBRE}}</span>, identificado(a) con
+<span class="fill">{{TITULAR_TIPO_DOC}}</span> No. <span class="fill">{{TITULAR_NUM_DOC}}</span>,
+con correo electrónico <span class="fill">{{TITULAR_EMAIL}}</span> (en adelante, el
+<strong>TITULAR</strong>), de manera
+libre, previa, expresa, voluntaria e informada, <strong>AUTORIZO</strong> a
+<span class="fill">{{EMPRESA_RAZON_SOCIAL}}</span>, identificada con NIT
+<span class="fill">{{EMPRESA_NIT}}</span> (en adelante, la <strong>EMPRESA</strong>), y a
+<strong>CREDITIA S.A.S.</strong>, identificada con NIT {{PROVEEDOR_NIT}}, como operador tecnológico
+de la EMPRESA (en adelante, <strong>CREDITIA</strong>), para tratar mis datos personales en los
+términos y para las finalidades que se describen a continuación.</p>
+</div>
+
+<h2>Primera. Finalidades del tratamiento</h2>
+<p>Autorizo a la EMPRESA y a CREDITIA para recolectar, almacenar, usar, circular, procesar y
+tratar mis datos personales, incluidos los de carácter financiero, comercial y de servicios, con
+las siguientes finalidades:</p>
+<ul>
+  <li>Realizar el <strong>estudio y análisis de crédito</strong>, la evaluación de riesgo y la
+    toma de decisiones sobre el otorgamiento de crédito, cupos o condiciones comerciales.</li>
+  <li>Verificar, validar y actualizar la información suministrada, y prevenir el fraude, el lavado
+    de activos y la financiación del terrorismo.</li>
+  <li>Gestionar la relación comercial y contractual, y ejercer los derechos derivados de las
+    obligaciones que llegare a contraer.</li>
+  <li>Contactarme por medios físicos, electrónicos o telefónicos con fines informativos,
+    comerciales y de gestión de la relación.</li>
+</ul>
+<p>La autorización para <strong>consultar y reportar</strong> mi información ante las centrales de
+riesgo se otorga en la Parte Segunda de este documento, conforme a la Ley 1266 de 2008.</p>
+
+<h2>Segunda. Datos tratados</h2>
+<p>El tratamiento podrá recaer sobre datos de identificación, de contacto, financieros,
+crediticios, comerciales, de ubicación y demás datos suministrados por mí o recolectados de
+fuentes lícitas. No se solicitan datos sensibles salvo que sean estrictamente necesarios y medie
+autorización específica.</p>
+
+<h2>Tercera. Transferencia y encargo</h2>
+<p>Autorizo que mis datos sean compartidos con CREDITIA como <strong>encargado del tratamiento</strong>
+de la EMPRESA, así como con terceros que presten servicios de verificación o análisis, quienes
+quedan obligados a proteger la información conforme a la ley.</p>
+
+<h2>Cuarta. Derechos del titular</h2>
+<p>Como titular, tengo derecho a conocer, actualizar, rectificar y suprimir mis datos; a solicitar
+prueba de esta autorización; a ser informado sobre el uso dado a mis datos; a presentar quejas ante
+la Superintendencia de Industria y Comercio; y a revocar la autorización cuando no exista un deber
+legal o contractual que lo impida. Estos derechos los puedo ejercer a través de los canales de
+CREDITIA indicados en el aviso de privacidad.</p>
+
+<div class="notice">
+  <h3>Aviso de privacidad</h3>
+  <p style="margin-top:0;">CREDITIA S.A.S., identificada con NIT {{PROVEEDOR_NIT}} y domicilio en
+  {{PROVEEDOR_CIUDAD}}, Colombia, es responsable/encargada del tratamiento de los datos personales
+  recolectados. Los datos se tratan con las finalidades descritas en este documento y se conservan
+  durante el tiempo necesario para cumplirlas y atender obligaciones legales.</p>
+  <p>El titular puede consultar la Política de Tratamiento de Datos completa, así como ejercer sus
+  derechos de conocer, actualizar, rectificar, suprimir y revocar, escribiendo a
+  <a href="mailto:soporte@creditia.co">soporte@creditia.co</a> o a través de
+  <a href="https://creditia.co">creditia.co</a>. El presente aviso se rige por la Ley 1581 de 2012
+  y el Decreto 1377 de 2013.</p>
+</div>
+
+<!-- ══════════════════ PARTE SEGUNDA — HABEAS DATA ══════════════════ -->
+<div class="page-break"></div>
+<div class="part-title">
+  <span class="kicker">Parte Segunda</span>
+  <span class="name">Autorización de Habeas Data para Consulta y Reporte ante Centrales de Riesgo</span>
+  <span class="legal">Ley 1266 de 2008 · Habeas Data Financiero</span>
+</div>
+
+<div class="titular">
+<p>Así mismo, yo, <span class="fill">{{TITULAR_NOMBRE}}</span>, identificado(a) con
+<span class="fill">{{TITULAR_TIPO_DOC}}</span> No. <span class="fill">{{TITULAR_NUM_DOC}}</span>
+(el <strong>TITULAR</strong>),
+de manera libre, previa, expresa e informada, <strong>AUTORIZO</strong> de forma permanente e
+irrevocable —mientras subsista alguna obligación o relación comercial— a
+<span class="fill">{{EMPRESA_RAZON_SOCIAL}}</span>, identificada con NIT
+<span class="fill">{{EMPRESA_NIT}}</span> (la <strong>EMPRESA</strong>), y a
+<strong>CREDITIA S.A.S.</strong>, NIT {{PROVEEDOR_NIT}}, como operador tecnológico de la EMPRESA,
+para consultar, solicitar, suministrar, reportar, procesar y divulgar mi información ante las
+centrales de información financiera, crediticia, comercial y de servicios.</p>
+</div>
+
+<h2>Primera. Objeto de la autorización</h2>
+<p>La presente autorización se otorga en los términos de la <strong>Ley 1266 de 2008</strong> y
+permite el manejo de mi información en los siguientes operadores de bancos de datos y centrales de
+riesgo, sin limitarse a ellos: <strong>DataCrédito – Experian Colombia</strong>,
+<strong>TransUnion – CIFIN</strong> y demás centrales de información legalmente autorizadas.</p>
+
+<h2>Segunda. Facultades autorizadas</h2>
+<ul>
+  <li><strong>Consultar</strong>, en cualquier tiempo, mi comportamiento crediticio, financiero,
+    comercial y de servicios, así como mi historial y hábitos de pago.</li>
+  <li><strong>Reportar</strong> a las centrales de riesgo datos veraces sobre el nacimiento,
+    modificación, cumplimiento, incumplimiento, mora o extinción de mis obligaciones.</li>
+  <li><strong>Solicitar y procesar</strong> mi información para la evaluación y el otorgamiento de
+    crédito, cupos, garantías o condiciones comerciales.</li>
+  <li><strong>Compartir</strong> la información entre la EMPRESA, CREDITIA y las centrales de
+    riesgo durante todos los ciclos de la operación: originación, seguimiento y cobranza.</li>
+</ul>
+
+<h2>Tercera. Permanencia del dato</h2>
+<p>Declaro conocer que la información positiva permanecerá de manera indefinida y que la información
+negativa se sujeta a los términos de permanencia y caducidad del dato negativo establecidos en la
+Ley 1266 de 2008, según la cual el término de permanencia del dato negativo no podrá exceder el
+doble del tiempo de la mora, con un máximo de cuatro (4) años.</p>
+
+<h2>Cuarta. Derechos del titular ante las centrales</h2>
+<p>Como titular, tengo derecho a conocer, actualizar y rectificar mi información; a ser informado
+sobre el uso dado a mis datos; a presentar reclamos ante las fuentes, operadores y ante la
+Superintendencia de Industria y Comercio; y a acudir a los mecanismos de consulta y reclamo
+previstos en la Ley 1266 de 2008.</p>
+
+<!-- ══════════════════ PARTE TERCERA — CUSTODIA ══════════════════ -->
+<div class="page-break"></div>
+<div class="part-title">
+  <span class="kicker">Parte Tercera</span>
+  <span class="name">Autorización de Suministro y Archivo de Custodia de la Información</span>
+  <span class="legal">Conservación y custodia de documentos y datos</span>
+</div>
+
+<div class="titular">
+<p>Igualmente, yo, <span class="fill">{{TITULAR_NOMBRE}}</span>, identificado(a) con
+<span class="fill">{{TITULAR_TIPO_DOC}}</span> No. <span class="fill">{{TITULAR_NUM_DOC}}</span>
+(el <strong>TITULAR</strong>),
+de manera libre, expresa e informada, <strong>AUTORIZO</strong> a
+<span class="fill">{{EMPRESA_RAZON_SOCIAL}}</span>, NIT <span class="fill">{{EMPRESA_NIT}}</span>
+(la <strong>EMPRESA</strong>), y a <strong>CREDITIA S.A.S.</strong>, NIT
+{{PROVEEDOR_NIT}}, como operador tecnológico de la EMPRESA, para el suministro, archivo y custodia
+de la información y los documentos que entrego o que se generen con ocasión de la relación
+comercial, en los términos que se indican a continuación.</p>
+</div>
+
+<h2>Primera. Suministro de la información</h2>
+<p>Declaro que suministro de manera voluntaria la información y los documentos requeridos (datos de
+identificación, financieros, comerciales, estados financieros, soportes y demás), y garantizo que
+son veraces, completos y exactos. Autorizo a la EMPRESA y a CREDITIA a recibir, incorporar y
+utilizar dicha información para los fines de la relación comercial y del estudio de crédito.</p>
+
+<h2>Segunda. Archivo y custodia</h2>
+<p>Autorizo que la información y los documentos suministrados, así como los que se generen (incluidos
+los soportes de las operaciones, pagarés, contratos y autorizaciones), sean <strong>archivados y
+custodiados</strong> por la EMPRESA y por CREDITIA, en medios físicos o electrónicos, aplicando
+medidas de seguridad técnicas, administrativas y organizativas razonables para preservar su
+integridad, confidencialidad y disponibilidad.</p>
+
+<h2>Tercera. Término de conservación</h2>
+<p>La información se conservará durante el tiempo necesario para cumplir las finalidades de la
+relación comercial y para atender las obligaciones legales, contables y probatorias aplicables,
+incluidos los términos de conservación documental y de prescripción de las obligaciones.</p>
+
+<h2>Cuarta. Custodia por terceros y encargo</h2>
+<p>Autorizo que la custodia y el archivo puedan realizarse a través de CREDITIA como
+<strong>encargado</strong> de la EMPRESA y de proveedores de servicios de almacenamiento y custodia
+digital, quienes quedan obligados a proteger la información conforme a la ley y a las instrucciones
+del responsable.</p>
+
+<h2>Quinta. Seguridad y acceso</h2>
+<p>La EMPRESA y CREDITIA implementarán controles de acceso para que la información custodiada solo
+sea consultada por personal autorizado y para los fines aquí previstos, dejando trazabilidad de las
+operaciones de acceso, modificación y consulta.</p>
+
+<!-- ══════════════════ DECLARACIÓN Y FIRMA (una sola, cubre las tres partes) ══ -->
+<p style="margin-top:22px;">Declaro que he leído y entendido las tres partes de esta autorización
+—tratamiento de datos, Habeas Data y custodia— y que las otorgo de manera libre y voluntaria
+mediante firma electrónica, la cual reconozco como válida y vinculante conforme a la Ley 527 de
+1999 y el Decreto 2364 de 2012. Manifiesto que la información suministrada es veraz.</p>
+
+<div class="signatures">
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL TITULAR</strong><br />
+      {{TITULAR_NOMBRE}}<br />
+      {{TITULAR_TIPO_DOC}} No. {{TITULAR_NUM_DOC}}<br />
+      {{TITULAR_EMAIL}}
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span class="brand">CREDITIA</span> — Plataforma de Estudio y Análisis de Crédito
+  <div class="links">
+    <span>🌐 <a href="https://creditia.co">creditia.co</a></span>
+    <span>✉️ <a href="mailto:soporte@creditia.co">soporte@creditia.co</a></span>
+    <span>🔒 Ley 1581 de 2012 · Ley 1266 de 2008</span>
+  </div>
+  <div style="margin-top:6px;">
+    La fecha, hora, identidad del titular y evidencias de la firma constan en el
+    certificado de finalización adjunto a este documento.
+  </div>
+</div>
+
+</body>
+</html>

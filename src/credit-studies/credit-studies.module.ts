@@ -6,6 +6,7 @@ import { ParametersModule } from '../parameters/parameters.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { AnalysisPacksModule } from '../analysis-packs/analysis-packs.module.js';
 import { CreditBureauModule } from '../credit-bureau/credit-bureau.module.js';
+import { CustomerAuthorizationsModule } from '../customer-authorizations/customer-authorizations.module.js';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { CreditBureauModule } from '../credit-bureau/credit-bureau.module.js';
     NotificationsModule,
     AnalysisPacksModule,
     CreditBureauModule,
+    CustomerAuthorizationsModule,
   ],
   controllers: [CreditStudiesController],
   providers: [CreditStudiesService, CreditStudiesRepository],

@@ -13,6 +13,7 @@ import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
 import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
 import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
+import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
 import { runScoring } from '../scoring/scoring.engine.js';
 import {
   defaultWeightsFor,
@@ -77,6 +78,7 @@ export class CreditStudiesService {
     private readonly excelService: ExcelService,
     private readonly analysisPacksService: AnalysisPacksService,
     private readonly creditBureauService: CreditBureauService,
+    private readonly authorizationsService: CustomerAuthorizationsService,
   ) {}
 
   /**
@@ -96,6 +98,29 @@ export class CreditStudiesService {
     userId: string,
     dto: CreateStudyFromBureauDto,
   ) {
+    // 0. Autorización del titular (gate del bureau). Si NO ha firmado, se le envía
+    //    el documento (si hay contacto) y se corta el flujo devolviendo
+    //    'authorization_pending' —NO un error—: el front notifica al usuario que
+    //    debe firmar y, tras firmar, relanza este mismo endpoint. Idempotente: si
+    //    se vuelve a llamar sin firma, devuelve el mismo estado sin reenviar.
+    const gate = await this.authorizationsService.resolveForConsult(
+      companyId,
+      userId,
+      {
+        identificationTypeCode: dto.identificationTypeCode,
+        identificationNumber: dto.numeroIdentificacion,
+        // El nombre del titular en el documento = razón social/apellido validado.
+        titularName: dto.apellidoRazonSocial,
+        titularEmail: dto.titularEmail,
+      },
+    );
+    if (!gate.authorized) {
+      return {
+        status: 'authorization_pending' as const,
+        authorization: gate.authorization,
+      };
+    }
+
     // 1. Consultar la central (crea/actualiza el Customer). Si no hay info, el
     //    servicio de bureau lanza 404 "cliente no existe".
     const { customer } = await this.creditBureauService.consult(
@@ -138,8 +163,9 @@ export class CreditStudiesService {
     });
 
     // 4. El front consume el stepper vía GET /:id/steps (única fuente de verdad).
-    //    Aquí solo se devuelve el id del estudio recién creado.
-    return { creditStudyId: study.id };
+    //    Aquí solo se devuelve el id del estudio recién creado. El discriminador
+    //    `status` distingue este caso del 'authorization_pending'.
+    return { status: 'created' as const, creditStudyId: study.id };
   }
 
   /**
