@@ -70,8 +70,18 @@ interface RawDimension {
 
 export function runScoring(input: ScoringEngineInput): ScoringResult {
   const { indicators, request } = input;
+  // ¿Los años más recientes de ambas fuentes NO coinciden? (p. ej. PDF 2026 y
+  // central 2025: el año del PDF aún no fue reportado a las entidades). En ese
+  // caso el cálculo corre sobre el PDF (el servicio ya eligió sus indicadores)
+  // y la veracidad no es contrastable → se penaliza en evalVeracity.
+  const fiscalYearMismatch =
+    input.truthFigures !== null &&
+    input.pdfFigures !== null &&
+    input.truthFigures.fiscalYear !== input.pdfFigures.fiscalYear;
   const source = input.truthFigures
-    ? 'datacredito'
+    ? fiscalYearMismatch
+      ? 'pdf'
+      : 'datacredito'
     : input.pdfFigures
       ? 'pdf'
       : 'none';
@@ -152,8 +162,9 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     alerts.unshift({
       type: 'warning',
       dimension: 'general',
-      message:
-        'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera de esta empresa, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
+      message: fiscalYearMismatch
+        ? `Análisis calculado con estados financieros auto-reportados (PDF). El año más reciente del PDF (${input.pdfFigures?.fiscalYear ?? 'desconocido'}) aún no aparece reportado en la central (su año más reciente es ${input.truthFigures?.fiscalYear ?? 'desconocido'}), por lo que las cifras del cálculo NO pudieron verificarse contra DataCrédito. Decida con cautela.`
+        : 'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera de esta empresa, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
     });
   } else if (source === 'datacredito' && !input.pdfFigures) {
     // Corrió sobre la fuente de verdad, pero sin PDF no hubo contraste de
@@ -622,11 +633,13 @@ function evalCapitalExposure(
 }
 
 // ─── Dim 6: Veracidad (contraste PDF ↔ DataCrédito, mismo año) ──────────────
-// El trato cuando falta una fuente depende del tipo de persona:
+// El contraste SOLO es válido entre el MISMO año fiscal de ambas fuentes. El
+// trato cuando falta una fuente (o los años no coinciden) depende del tipo:
 //  - PJ: la empresa ESTÁ OBLIGADA a reportar EEFF a la central. Si no hay con qué
-//    contrastar (p. ej. no hay EEFF en DataCrédito), NO podemos verificar que
-//    digan la verdad → la veracidad puntúa 0 (no se exime). Distinto de un
-//    maquillaje detectado, pero igual de penalizado: no hay respaldo.
+//    contrastar (no hay EEFF en DataCrédito, o el año más reciente del PDF aún
+//    no aparece reportado), NO podemos verificar que digan la verdad → la
+//    veracidad puntúa 0 (no se exime). Distinto de un maquillaje detectado,
+//    pero igual de penalizado: no hay respaldo.
 //  - PN: la central NO reporta EEFF de PN, así que nunca hay contraste posible →
 //    la dimensión no aplica (ratio null) y su peso se redistribuye.
 function evalVeracity(
@@ -649,6 +662,26 @@ function evalVeracity(
       ratio: 0,
       status: 'unverifiable',
       alerts: [{ type: 'danger', dimension: 'veracity', message }],
+    };
+  }
+  // Años más recientes distintos: no son el mismo período → contrastar sería
+  // comparar peras con manzanas (diferencias "naturales" leídas como maquillaje,
+  // o cifras no comparables dadas por consistentes). Típico de EEFF cargados
+  // antes de la ventana de reporte (PDF 2026 vs central 2025).
+  if (truth.fiscalYear !== pdf.fiscalYear) {
+    if (personType === 'naturalPerson') {
+      return { ratio: null, status: 'not_evaluable', alerts: [] };
+    }
+    return {
+      ratio: 0,
+      status: 'period_mismatch',
+      alerts: [
+        {
+          type: 'danger',
+          dimension: 'veracity',
+          message: `No fue posible verificar la veracidad: el año más reciente del PDF (${pdf.fiscalYear ?? 'desconocido'}) no coincide con el más reciente reportado en la central (${truth.fiscalYear ?? 'desconocido'}). El período del PDF probablemente aún no ha sido reportado ante las entidades, por lo que sus cifras no son contrastables; la dimensión se penaliza hasta que la central publique ese año.`,
+        },
+      ],
     };
   }
   const fields: Array<{ key: keyof GrossFigures; label: string }> = [
