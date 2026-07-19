@@ -32,7 +32,7 @@ dimensiones nuevas, (c) hacer los pesos configurables por empresa.
 
 | Tema | Decisión |
 |------|----------|
-| **Fuente de cálculo** | **DataCrédito** (fuente de verdad, no maquillable). Fallback a PDF si el cliente no tiene EEFF en la central. |
+| **Fuente de cálculo** | **DataCrédito** (fuente de verdad, no maquillable), pero SOLO si su año más reciente **coincide** con el del PDF. Fallback a PDF si el cliente no tiene EEFF en la central **o si el año más reciente del PDF aún no aparece reportado** (p. ej. cargado en ene-mar antes de la ventana de reporte) — en ese caso la Veracidad se penaliza (§4.6). |
 | **Rol del PDF** | Insumo del **contraste** (detección de maquillaje), ya no del cálculo. |
 | **Dimensiones** | Las 5 actuales + **Dim 6 Veracidad** + **Dim 7 Riesgo de la central** = 7. |
 | **Dim 6 (Veracidad)** | Maquillaje penaliza la dimensión (no elimina). Umbrales: >10% warning, >25% danger. |
@@ -328,9 +328,23 @@ Para cada cifra: `diff = |PDF − DataCrédito| / DataCrédito`.
 
 - **No elimina** el estudio (decisión tomada), pero un `manipulated` deja la
   dimensión en 0 y genera una alerta `danger` visible.
-- **Cuando falta una fuente, el trato DEPENDE del tipo de persona** (⚠️ regla
-  clave, corregida): la Veracidad necesita **ambas** fuentes (PDF + EEFF de la
-  central) para contrastar. Si falta una:
+- **Emparejamiento por año fiscal (⚠️ regla clave):** el contraste SOLO es
+  válido entre el **mismo año** de ambas fuentes. Si el año más reciente del
+  PDF **no coincide** con el más reciente de la central (típico: EEFF del año
+  N cargados en enero–marzo de N+1, cuando la central todavía va en N−1 porque
+  el plazo de reporte a las entidades no ha vencido — la misma ventana de la
+  red flag de `verificabilidad` de la extracción):
+  - El **cálculo de las demás dimensiones corre sobre el PDF** (es el año más
+    nuevo; la central no lo puede confirmar ni desmentir), con
+    `calculationSource: 'pdf'` y la alerta general explicando el porqué.
+  - La **Veracidad se penaliza fuerte** en PJ: puntúa **0**
+    (`status: 'period_mismatch'`, alerta `danger` con ambos años). No se
+    contrasta un año común más viejo: el período que sustenta el cálculo es el
+    que no tiene respaldo. La central vuelve a ser la fuente del cálculo (y el
+    contraste se rehace) cuando publique ese año y se re-analice.
+- **Cuando falta una fuente, el trato DEPENDE del tipo de persona**: la
+  Veracidad necesita **ambas** fuentes (PDF + EEFF de la central) para
+  contrastar. Si falta una:
   - **PJ (persona jurídica):** la empresa **está obligada** a reportar sus EEFF a
     la central. Si no hay con qué contrastar (típicamente: la central no tiene
     EEFF de la empresa), **NO se exime** — no pudimos verificar que digan la

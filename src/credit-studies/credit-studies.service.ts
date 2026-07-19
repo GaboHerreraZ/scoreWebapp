@@ -468,7 +468,22 @@ export class CreditStudiesService {
     // congelado con sus indicadores/ratios y sus períodos (año corriente).
     const datacredito = analyses.find((a) => a.source === 'datacredito');
     const pdf = analyses.find((a) => a.source === 'pdf_upload');
-    const truthAnalysis = datacredito ?? pdf;
+
+    // La central solo es la fuente del CÁLCULO si su año más reciente COINCIDE
+    // con el del PDF (o si no hay PDF). Si el PDF trae un año más nuevo que la
+    // central aún no tiene (p. ej. EEFF cargados en ene-mar, antes de la ventana
+    // de reporte a las entidades), el cálculo corre sobre el PDF y el motor
+    // penaliza la veracidad (no hay contraste posible del mismo período).
+    const pdfYear = pdf?.periods[0]?.fiscalYear ?? null;
+    const bureauYear = datacredito?.periods[0]?.fiscalYear ?? null;
+    const sameFiscalYear =
+      pdfYear !== null && bureauYear !== null && pdfYear === bureauYear;
+    const truthAnalysis =
+      pdf && datacredito
+        ? sameFiscalYear
+          ? datacredito
+          : pdf
+        : (datacredito ?? pdf);
 
     if (!truthAnalysis) {
       throw new BadRequestException(
@@ -602,6 +617,7 @@ export class CreditStudiesService {
     const current = analysis.periods[0];
     if (!current) return null;
     return {
+      fiscalYear: current.fiscalYear ?? null,
       ordinaryActivityRevenue: current.ordinaryActivityRevenue,
       totalAssets: current.totalAssets,
       totalLiabilities: current.totalLiabilities,

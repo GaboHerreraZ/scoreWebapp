@@ -8,6 +8,10 @@ import type { ScoringDimension, EnabledWeights } from './scoring.constants.js';
 
 /** Cifras crudas de un año (subset relevante para el contraste de veracidad). */
 export interface GrossFigures {
+  /** Año fiscal del período. El contraste de veracidad SOLO es válido entre el
+   *  MISMO año de ambas fuentes; si no coinciden, el motor penaliza la
+   *  veracidad y calcula sobre el PDF (año más nuevo aún no reportado). */
+  fiscalYear: number | null;
   ordinaryActivityRevenue: number | null;
   totalAssets: number | null;
   totalLiabilities: number | null;
