@@ -90,6 +90,7 @@ npm run test:e2e           # Run e2e tests
 - `DIRECT_URL` — Direct PostgreSQL connection (port 5432, used for migrations)
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key
+- `SUPABASE_JWT_SECRET` — (opcional) JWT secret para validar tokens HS256 localmente; proyectos con signing keys nuevas usan JWKS y no lo necesitan
 - `PORT` — Server port (default 3000)
 - `AI_MAX_TOKENS` — Output limit for the credit-study narrative analysis
 - `AI_MAX_TOKENS_EXTRACTION` — Output limit for PDF extraction (data + reliability flags)

@@ -37,9 +37,9 @@ const ALL_SCREENS = [
   'support-tickets',
   'platform-admins', // gestión de usuarios del portal: SOLO rol admin
   'blog-posts',
-  "scoring-dimensions",
+  'scoring-dimensions',
   'datacredito',
-  'discount-calculator'
+  'discount-calculator',
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.
@@ -358,19 +358,47 @@ export class AdminService {
       this.prisma.company.count({ where }),
     ]);
 
-    const data = await Promise.all(
-      companies.map(async (c) => {
-        const credits = await this.resolveCredits(c.id);
-        return {
-          id: c.id,
-          name: c.name,
-          nit: c.nit,
-          isActive: c.isActive,
-          availableCredits: credits.availableCredits,
-          activePacks: credits.activePacks,
-        };
-      }),
+    // Saldo de créditos de TODA la página en 2 queries (status + packs en
+    // lote), en vez de resolveCredits por empresa (2 queries por fila).
+    const activeStatus = await this.parametersRepository.findByTypeAndCode(
+      'analysis_pack_status',
+      'active',
     );
+    const packsByCompany = new Map<
+      string,
+      { availableCredits: number; activePacks: number }
+    >();
+    if (activeStatus) {
+      const packs =
+        await this.analysisPacksRepository.findActivePacksWithBalanceForCompanies(
+          companies.map((c) => c.id),
+          activeStatus.id,
+        );
+      for (const p of packs) {
+        const entry = packsByCompany.get(p.companyId) ?? {
+          availableCredits: 0,
+          activePacks: 0,
+        };
+        entry.availableCredits += p.quantityPurchased - p.quantityConsumed;
+        entry.activePacks += 1;
+        packsByCompany.set(p.companyId, entry);
+      }
+    }
+
+    const data = companies.map((c) => {
+      const credits = packsByCompany.get(c.id) ?? {
+        availableCredits: 0,
+        activePacks: 0,
+      };
+      return {
+        id: c.id,
+        name: c.name,
+        nit: c.nit,
+        isActive: c.isActive,
+        availableCredits: credits.availableCredits,
+        activePacks: credits.activePacks,
+      };
+    });
 
     return {
       data,

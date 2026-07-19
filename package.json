@@ -54,6 +54,7 @@
     "epayco-sdk-node": "^1.4.4",
     "exceljs": "^4.4.0",
     "handlebars": "^4.7.9",
+    "jose": "^6.2.3",
     "pg": "^8.18.0",
     "puppeteer": "^25.3.0",
     "reflect-metadata": "^0.2.2",
