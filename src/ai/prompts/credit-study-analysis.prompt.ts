@@ -320,7 +320,18 @@ RED FLAGS DE FIABILIDAD DEL PDF (el documento auditado contra si mismo):
 ${flagsText}`;
 }
 
-export const FINANCIAL_PDF_EXTRACTION_PROMPT = `Eres un experto en contabilidad y auditoria colombiana (NIIF). Analiza este PDF de estados financieros y realiza DOS tareas:
+/**
+ * Prompt de extracción de EEFF del PDF. Es una FUNCIÓN (no constante) porque
+ * necesita la fecha actual: la red flag de "verificabilidad" depende de en qué
+ * mes del año se carga el documento (ventana en la que el año fiscal más
+ * reciente aún no ha sido reportado ante las entidades).
+ */
+export function buildFinancialPdfExtractionPrompt(currentDate: Date): string {
+  const isoDate = currentDate.toISOString().slice(0, 10); // YYYY-MM-DD
+  const currentYear = currentDate.getFullYear();
+  return `Eres un experto en contabilidad y auditoria colombiana (NIIF). Analiza este PDF de estados financieros y realiza DOS tareas:
+
+FECHA ACTUAL: ${isoDate} (anio en curso: ${currentYear}). Usala para las reglas que dependen del calendario (ver categoria "verificabilidad").
 
 TAREA 1 — EXTRACCION DE DATOS:
 Extrae las cifras financieras en formato numerico.
@@ -407,7 +418,7 @@ FORMATO DE RESPUESTA (JSON con dos secciones):
   "reliabilityFlags": [
     {
       "severity": "danger | warning | info",
-      "category": "balance | resultados | relacionados | tendencia | notas | legibilidad | otro",
+      "category": "balance | resultados | relacionados | tendencia | notas | legibilidad | verificabilidad | otro",
       "title": "Titulo corto del hallazgo",
       "detail": "Explicacion concreta con las cifras que lo sustentan, en pesos colombianos con separador de miles."
     }
@@ -451,12 +462,13 @@ GUIA PARA DETECTAR RED FLAGS (no es exhaustiva; usa tu criterio profesional):
 - tendencia: caida sostenida de ingresos; deterioro del patrimonio; flujo de financiacion fuertemente negativo frente a la operacion.
 - notas: partidas que aparecen un ano y desaparecen al siguiente sin explicacion; notas que contradicen las cifras (ej: "rotacion de cartera cada 5 dias" cuando los numeros indican otra cosa); ausencia de notas que deberian existir; salvedades o parrafos de enfasis del revisor fiscal.
 - legibilidad: el documento NO es un PDF digital sino un ESCANEO o FOTOGRAFIA de las paginas (texto como imagen, paginas torcidas o con sombras, artefactos fotograficos, baja resolucion). En ese caso las cifras se leyeron por OCR visual y pueden contener errores de lectura (digitos confundidos, separadores de miles perdidos). Emite SIEMPRE una flag con esta categoria cuando el documento sea escaneado/fotografiado: severity "warning" si se lee con claridad, "danger" si hay partes borrosas, cortadas o ilegibles (indica CUALES cifras son dudosas). Si el PDF es digital, NO emitas esta flag.
+- verificabilidad: REGLA DE CALENDARIO (usa la FECHA ACTUAL del encabezado). En Colombia las empresas reportan los estados financieros del anio N ante las entidades pertinentes (Supersociedades, camaras de comercio) durante los primeros meses del anio N+1. Por eso, si la FECHA ACTUAL cae en los TRES primeros meses del anio (enero, febrero o marzo) Y el periodo MAS RECIENTE del PDF es el anio inmediatamente anterior al anio en curso, ese periodo probablemente AUN NO ha sido reportado oficialmente: NO existe forma de contrastarlo contra la central de riesgo (DataCredito), y el cliente podria presentar ante Creditia unas cifras distintas de las que luego reporte oficialmente. Emite SIEMPRE una flag severity "warning" con esta categoria cuando se cumplan AMBAS condiciones, indicando el anio no verificable (ej: titulo "Periodo 2025 posiblemente aun no reportado ante las entidades"; detalle: el documento se carga en {mes} de {anio en curso} y el periodo mas reciente es {anio}, cuyo plazo de reporte oficial normalmente no ha vencido — las cifras de ese anio no son contrastables contra la central y deben tratarse con cautela). Los periodos anteriores (N−2 hacia atras) NO generan esta flag: su plazo de reporte ya vencio. Si la FECHA ACTUAL es abril o posterior, NO emitas esta flag.
 
 REGLAS PARA reliabilityFlags:
 - Reporta SOLO hallazgos con sustento real en el documento. NO inventes.
 - Cada flag debe citar las cifras concretas que la respaldan.
 - severity: "danger" = compromete seriamente la fiabilidad o sugiere ocultamiento; "warning" = inconsistencia que requiere revision; "info" = observacion menor o contextual.
-- Si los estados financieros se ven solidos y consistentes, devuelve un arreglo vacio: "reliabilityFlags": []. Excepcion: la flag de "legibilidad" por documento escaneado se emite aunque las cifras se vean consistentes (advierte COMO se leyeron, no un problema contable).
+- Si los estados financieros se ven solidos y consistentes, devuelve un arreglo vacio: "reliabilityFlags": []. Excepciones que se emiten AUNQUE las cifras se vean consistentes: (a) la flag de "legibilidad" por documento escaneado (advierte COMO se leyeron las cifras, no un problema contable) y (b) la flag de "verificabilidad" por periodo aun no reportado (advierte que las cifras NO se pueden contrastar contra la central, no un problema contable).
 - Maximo 12 flags, priorizando las de mayor severidad.
 
 VERIFICACION ARITMETICA OBLIGATORIA (evita falsos positivos):
@@ -468,3 +480,4 @@ VERIFICACION ARITMETICA OBLIGATORIA (evita falsos positivos):
 - Para porcentajes: recalcula el porcentaje y confirma que el numero citado es correcto antes de usarlo.
 - Si no estas seguro de un calculo, NO emitas el flag. Es preferible omitir un hallazgo dudoso que emitir uno falso o contradictorio.
 - Revisa cada flag una vez mas antes de incluirlo: si su detalle no sustenta exactamente lo que dice su titulo, eliminalo.`;
+}
