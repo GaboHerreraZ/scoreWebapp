@@ -28,6 +28,7 @@ import { CompaniesService } from './companies.service.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
 
 @ApiTags('Companies')
 @ApiBearerAuth()
@@ -84,7 +85,9 @@ export class CompaniesController {
   }
 
   @Patch(':id/logo')
-  @UseInterceptors(FileInterceptor('logo'))
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } }),
+  )
   @ApiOperation({ summary: 'Upload or update company logo' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

@@ -38,7 +38,7 @@ import { SupportTicketsModule } from './support-tickets/support-tickets.module.j
 import { BlogModule } from './blog/blog.module.js';
 import { CustomerAuthorizationsModule } from './customer-authorizations/customer-authorizations.module.js';
 import { ZapsignWebhooksModule } from './zapsign-webhooks/zapsign-webhooks.module.js';
-import { DebugController } from './common/debug/debug.controller.js';
+import { HealthController } from './common/health/health.controller.js';
 
 @Module({
   imports: [
@@ -82,7 +82,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     CustomerAuthorizationsModule,
     ZapsignWebhooksModule,
   ],
-  controllers: [DebugController],
+  controllers: [HealthController],
   providers: [
     // El ThrottlerGuard va primero para que el rate-limit aplique también a
     // rutas @Public (el AuthGuard las dejaría pasar sin contar).

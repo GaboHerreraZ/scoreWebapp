@@ -33,6 +33,7 @@ import { UpdateScoringDimensionDto } from '../scoring/dto/update-scoring-dimensi
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
+import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
 
 @ApiTags('Admin Portal')
 @ApiBearerAuth()
@@ -97,7 +98,9 @@ export class AdminController {
   }
 
   @Patch('platform-admins/:id/avatar')
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(
+    FileInterceptor('avatar', { limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } }),
+  )
   @ApiOperation({
     summary:
       'Subir/actualizar la foto de un usuario del portal. Solo rol admin.',
