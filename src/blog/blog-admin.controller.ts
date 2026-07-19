@@ -26,6 +26,7 @@ import { CreateBlogPostDto } from './dto/create-blog-post.dto.js';
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto.js';
 import { FilterBlogPostDto } from './dto/filter-blog-post.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
+import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
 
 const COVER_ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp'];
 const COVER_MAX_SIZE = 2 * 1024 * 1024; // 2MB
@@ -72,7 +73,9 @@ export class BlogAdminController {
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor('cover'))
+  @UseInterceptors(
+    FileInterceptor('cover', { limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Crear un artículo (multipart; portada opcional en campo "cover")',
@@ -91,7 +94,9 @@ export class BlogAdminController {
   }
 
   @Patch(':id')
-  @UseInterceptors(FileInterceptor('cover'))
+  @UseInterceptors(
+    FileInterceptor('cover', { limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:

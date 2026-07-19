@@ -23,6 +23,7 @@ import type { Request } from 'express';
 import { FinancialStatementsService } from './financial-statements.service.js';
 import { ExtractPdfDto } from './dto/extract-pdf.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
+import { MAX_PDF_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
 
 @ApiTags('Financial Statements')
 @ApiBearerAuth()
@@ -36,7 +37,9 @@ export class FinancialStatementsController {
   ) {}
 
   @Post('extract-pdf')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_PDF_UPLOAD_BYTES } }),
+  )
   @ApiOperation({
     summary:
       'Extraer los estados financieros de un PDF y adjuntarlos al estudio (períodos + análisis con indicadores)',

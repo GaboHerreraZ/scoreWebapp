@@ -104,6 +104,13 @@ There are **two separate Supabase projects**, mapped by env file:
 | `.env.staging` | `bjawxcnsjjobweucxfpf` | us-east-2 | **STAGING** — `npm run start:dev`, `prisma:migrate:*` scripts |
 | `.env` / `.env.pro` | `rggavdujvohqxfgjzuyd` | us-east-1 | **PRODUCTION** — `start:pro`, `*:pro` scripts |
 
+**IMPORTANT:** `build:prod` solo genera el cliente y compila — **ya NO ejecuta
+migraciones**. En Railway las migraciones van en el **Pre-Deploy Command**
+(`npm run prisma:migrate:pro`): corre tras el build y antes del cambio de
+tráfico, con las variables del servicio inyectadas; si falla, el deploy se
+aborta y la versión anterior sigue viva. (En Railway no existe `.env` —
+dotenv-cli tolera el archivo faltante y usa las variables inyectadas.)
+
 **CRITICAL:** Never run `npx prisma ...` directly. `prisma.config.ts` loads `.env` by
 default = **PRODUCTION**, so a bare `npx prisma migrate ...` applies changes to prod.
 Always use the npm scripts (they prepend the correct `dotenv -e`). `prisma.config.ts`
