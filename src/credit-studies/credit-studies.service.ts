@@ -30,6 +30,13 @@ import type {
   PaymentBehaviorMonth,
   LegalStatusInput,
 } from '../scoring/scoring.types.js';
+import type {
+  MappedCreditPortfolioItem,
+  MappedPaymentBehaviorItem,
+  MappedCreditSector,
+  MappedLinkNode,
+  MappedRiskAlert,
+} from '../credit-bureau/providers/provider-result.js';
 
 interface ViabilityDimension {
   score?: number;
@@ -37,6 +44,88 @@ interface ViabilityDimension {
   status?: string;
   label?: string;
   reason?: string;
+}
+
+// Fila del último snapshot de riesgo tal como la selecciona findStepsData. Los
+// bloques (cartera/comportamiento/sectores/malla) vienen como JSON de Prisma; el
+// helper los transforma a los tipos de dominio Mapped*.
+interface RiskSnapshotRow {
+  createdAt: Date;
+  score: number | null;
+  viabilidad: string | null;
+  viabilidadLabel: string | null;
+  ratingRecaudos: string | null;
+  ratingRecaudosLabel: string | null;
+  nivelRiesgo: string | null;
+  nivelRiesgoLabel: string | null;
+  ratingSectorial: string | null;
+  ratingSectorialLabel: string | null;
+  montoSugerido: number | null;
+  saldoActual: number | null;
+  porcentajeDeuda: number | null;
+  saldoMora: number | null;
+  hasAlertas: boolean;
+  reportedIncome: number | null;
+  quotaToIncomePct: number | null;
+  creditPortfolio: Prisma.JsonValue;
+  paymentBehavior: Prisma.JsonValue;
+  creditSectors: Prisma.JsonValue;
+  linkNetwork: Prisma.JsonValue;
+  alerts: Prisma.JsonValue;
+}
+
+/** Empareja un código escalar con su label del manual; null si ambos faltan. */
+function codeLabel(code: string | null, label: string | null) {
+  if (code === null && label === null) return null;
+  return { code, label };
+}
+
+/**
+ * Construye el bloque `centralRisk` del step1 a partir del último snapshot de
+ * riesgo del customer. Unificado PN+PJ: cada tipo llena su mitad (income solo
+ * PN; nivelRiesgo/ratingSectorial/creditPortfolio/linkNetwork solo PJ) y el otro
+ * llega null, para que el front use un único mapper. null si el customer nunca
+ * fue consultado en la central.
+ */
+function buildCentralRisk(s: RiskSnapshotRow | null) {
+  if (!s) return null;
+  return {
+    consultedAt: s.createdAt,
+    score: s.score,
+    hasAlertas: s.hasAlertas,
+    // Detalle de las alertas (el "cuáles" detrás de hasAlertas). PN: textos;
+    // PJ: entidades alertadas de la malla (self/linked). null si no hay.
+    alerts: (s.alerts as unknown as MappedRiskAlert[] | null) ?? null,
+    // PN
+    viabilidad: codeLabel(s.viabilidad, s.viabilidadLabel),
+    ratingRecaudos: codeLabel(s.ratingRecaudos, s.ratingRecaudosLabel),
+    income:
+      s.reportedIncome === null && s.quotaToIncomePct === null
+        ? null
+        : {
+            reportedIncome: s.reportedIncome,
+            quotaToIncomePct: s.quotaToIncomePct,
+          },
+    // PJ
+    nivelRiesgo: codeLabel(s.nivelRiesgo, s.nivelRiesgoLabel),
+    ratingSectorial: codeLabel(s.ratingSectorial, s.ratingSectorialLabel),
+    creditPortfolio:
+      (s.creditPortfolio as unknown as MappedCreditPortfolioItem[] | null) ??
+      null,
+    linkNetwork: (s.linkNetwork as unknown as MappedLinkNode | null) ?? null,
+    // Compartidos PN+PJ
+    indebtedness: {
+      saldoActual: s.saldoActual,
+      porcentajeDeuda: s.porcentajeDeuda,
+      saldoMora: s.saldoMora,
+      montoSugerido: s.montoSugerido,
+    },
+    paymentBehavior:
+      (s.paymentBehavior as unknown as MappedPaymentBehaviorItem[] | null) ??
+      null,
+    creditSectors:
+      (s.creditSectors as unknown as MappedCreditSector[] | null) ?? null,
+  };
 }
 
 interface ViabilityAlert {
@@ -190,6 +279,13 @@ export class CreditStudiesService {
     // igual para mostrarlo legible.
     const isLegalEntity = study.customer?.personType?.code === 'legalEntity';
 
+    // Separamos el último snapshot de riesgo del customer: NO se devuelve crudo
+    // (array anidado) sino transformado en el bloque `centralRisk`. El resto del
+    // customer se expone tal cual (null si el estudio no tiene customer).
+    const { riskSnapshots, ...customerRest } = study.customer ?? {};
+    const customer = study.customer ? customerRest : null;
+    const centralRisk = buildCentralRisk(riskSnapshots?.[0] ?? null);
+
     // step2: estados financieros por fuente (pdf_upload / datacredito). Cada
     // fuente trae sus 2 años más recientes (cifras crudas) + indicadores del
     // núcleo + ratios de presentación. null si aún no hay ningún análisis.
@@ -228,7 +324,7 @@ export class CreditStudiesService {
         requestedTerm: study.requestedTerm,
         requestedCreditLine: study.requestedCreditLine,
       },
-      step1: { isLegalEntity, customer: study.customer },
+      step1: { isLegalEntity, customer, centralRisk },
       step2,
       step3,
     };
@@ -498,6 +594,8 @@ export class CreditStudiesService {
       montoSugerido: number | null;
       porcentajeDeuda: number | null;
       saldoMora: number | null;
+      reportedIncome: number | null;
+      quotaToIncomePct: number | null;
       paymentBehavior: unknown;
     } | null,
   ): CentralRiskInput | null {
@@ -509,6 +607,8 @@ export class CreditStudiesService {
       montoSugerido: snapshot.montoSugerido,
       porcentajeDeuda: snapshot.porcentajeDeuda,
       saldoMora: snapshot.saldoMora,
+      reportedIncome: snapshot.reportedIncome,
+      quotaToIncomePct: snapshot.quotaToIncomePct,
       hasArrears: this.hasArrears(snapshot.paymentBehavior),
       paymentBehavior: this.toPaymentBehavior(snapshot.paymentBehavior),
     };

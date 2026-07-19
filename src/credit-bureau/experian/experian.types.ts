@@ -25,12 +25,19 @@ export interface ExperianDatosBasicos {
   // PJ
   razonSocial?: string;
   digitoVerificacion?: string;
-  // PN
+  // PN — DataCrédito manda el nombre completo en un solo campo (nombreCompleto),
+  // NO desglosado; y la demografía ligera (rangoEdad, estadoDocumento,
+  // nacionalidad) viene aquí dentro, no en informacionDemografica.
+  nombreCompleto?: string;
   primerNombre?: string;
   segundoNombre?: string;
   primerApellido?: string;
   segundoApellido?: string;
-  // ambos
+  rangoEdad?: string;
+  estadoDocumento?: string;
+  nacionalidad?: string;
+  // ambos. tipoDocumento llega como código ('1','2'), sigla ('CC','NIT') o
+  // etiqueta larga ('CÉDULA DE CIUDADANÍA') según PN/PJ.
   tipoDocumento?: string;
   numeroDocumento?: string;
 }
@@ -224,10 +231,20 @@ export interface ExperianEstadosFinancieros {
   detalle?: ExperianEstadoFinancieroGrupo[];
 }
 
+// Endeudamiento (solo PN): ingreso mensual reportado y % del ingreso ya
+// comprometido en cuotas. Es el único dato financiero que la central tiene de una
+// persona (la PJ reporta EEFF; la PN no) → sirve de referencia de capacidad.
+export interface ExperianEndeudamiento {
+  conInformacion?: boolean;
+  ingreso?: string; // ingreso mensual reportado ('1313000.0')
+  porcentajeCuotaVsIngreso?: string; // % del ingreso ya comprometido ('3.8')
+}
+
 export interface ExperianRespuesta {
   validacion?: ExperianValidacion;
   comportamientoCrediticio?: ExperianComportamientoCrediticio;
   informacionRiesgo?: ExperianInformacionRiesgo;
+  endeudamiento?: ExperianEndeudamiento; // ingreso reportado (PN)
   estadosFinancieros?: ExperianEstadosFinancieros; // EEFF (PJ)
   mallaVinculos?: ExperianMallaVinculos; // Tabla 15 (PJ)
 }

@@ -46,6 +46,11 @@ export interface CentralRiskInput {
   montoSugerido: number | null; // referencia de la central (señal/alerta, NO techo)
   porcentajeDeuda: number | null; // % de deuda usada (endeudamiento en la central)
   saldoMora: number | null; // saldo actualmente en mora ($)
+  /** Ingreso mensual reportado por la central (solo PN). Referencia de capacidad
+   *  de pago para contrastar contra los EEFF del PDF. null en PJ. */
+  reportedIncome: number | null;
+  /** % del ingreso ya comprometido en cuotas vigentes (solo PN). */
+  quotaToIncomePct: number | null;
 }
 
 /**

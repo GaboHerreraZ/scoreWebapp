@@ -18,6 +18,7 @@ import type {
   MappedPaymentBehaviorItem,
   MappedCreditSector,
   MappedLinkNode,
+  MappedRiskAlert,
 } from '../providers/provider-result.js';
 import {
   translate,
@@ -81,6 +82,25 @@ export function toExperianDocType(paramCode: string): string | null {
 }
 
 /**
+ * Resuelve el code del Parameter 'identification_type' a partir del tipoDocumento
+ * de Experian, que llega en formatos distintos según PN/PJ: código ('1','2'),
+ * sigla ('CC','NIT') o etiqueta larga ('CÉDULA DE CIUDADANÍA' — típico en PN).
+ */
+function resolveDocParamCode(tipoDocumento?: string): string | null {
+  const raw = (tipoDocumento ?? '').trim().toLowerCase();
+  if (!raw || raw === '-') return null;
+  const direct = EXPERIAN_DOC_TO_PARAM_CODE[raw];
+  if (direct) return direct;
+  // Etiqueta larga (p. ej. 'CÉDULA DE CIUDADANÍA'): se busca por prefijo cortado
+  // ANTES de la vocal acentuada, para no depender de normalizar acentos.
+  if (raw.includes('ciudadan')) return 'cc';
+  if (raw.includes('extranjer')) return 'ce';
+  if (raw.includes('pasaporte')) return 'pas';
+  if (raw.includes('nit')) return 'nit';
+  return null;
+}
+
+/**
  * Traduce la respuesta cruda de MiDecisor a los objetos de dominio. Determina si
  * hubo información válida (conInformacion). Si no la hay, customer/risk quedan
  * null y el llamador NO debe persistir (retorna "cliente no existe").
@@ -113,7 +133,11 @@ export function mapMiDecisorResponse(raw: unknown): MappedConsultation {
 
   return {
     meta,
-    customer: mapCustomer(personType, validacion),
+    customer: mapCustomer(
+      personType,
+      validacion,
+      info.numeroIdDigitado ?? null,
+    ),
     risk: mapRisk(personType, respuesta),
   };
 }
@@ -130,14 +154,23 @@ function resolvePersonType(tipoDocumento?: string): PersonType {
 function mapCustomer(
   personType: PersonType,
   validacion: ExperianValidacion,
+  // Número tal como se DIGITÓ en la consulta (echo del bureau). Se usa como llave
+  // del Customer para que coincida con lo que buscan el caché y el gate de
+  // autorización; el bureau a veces devuelve el numeroDocumento con ceros a la
+  // izquierda (p. ej. cédula '01092529335' vs '1092529335' digitada).
+  numeroDigitado: string | null,
 ): MappedCustomer {
   const datosBasicos = validacion.datosBasicos ?? {};
   const demografica = validacion.informacionDemografica ?? {};
 
+  // PJ: razón social. PN: DataCrédito manda el nombre en un solo campo
+  // (nombreCompleto), no desglosado; se cae al desglose por si alguna variante
+  // sí lo trae.
   const businessName =
     personType === 'PJ'
       ? (datosBasicos.razonSocial ?? '')
-      : joinName(
+      : datosBasicos.nombreCompleto?.trim() ||
+        joinName(
           datosBasicos.primerNombre,
           datosBasicos.segundoNombre,
           datosBasicos.primerApellido,
@@ -145,12 +178,9 @@ function mapCustomer(
         );
 
   return {
-    identificationTypeCode:
-      EXPERIAN_DOC_TO_PARAM_CODE[
-        (datosBasicos.tipoDocumento ?? '').toLowerCase()
-      ] ?? null,
+    identificationTypeCode: resolveDocParamCode(datosBasicos.tipoDocumento),
     businessName,
-    identificationNumber: datosBasicos.numeroDocumento ?? '',
+    identificationNumber: numeroDigitado ?? datosBasicos.numeroDocumento ?? '',
     verificationDigit: datosBasicos.digitoVerificacion ?? null,
     firstName: personType === 'PN' ? (datosBasicos.primerNombre ?? null) : null,
     secondName:
@@ -159,23 +189,29 @@ function mapCustomer(
       personType === 'PN' ? (datosBasicos.primerApellido ?? null) : null,
     secondLastName:
       personType === 'PN' ? (datosBasicos.segundoApellido ?? null) : null,
+    // La demografía ligera puede venir en datosBasicos (variante PN observada) o
+    // en un bloque informacionDemografica aparte: se leen ambos, datosBasicos
+    // primero. fechaNacimiento/ciudad/género solo existen en el bloque aparte.
     birthDate:
       personType === 'PN' ? parseDate(demografica.fechaNacimiento) : null,
-    birthCity: personType === 'PN' ? (demografica.ciudadNacimiento ?? null) : null,
+    birthCity:
+      personType === 'PN' ? (demografica.ciudadNacimiento ?? null) : null,
     gender: personType === 'PN' ? (demografica.genero ?? null) : null,
-    ageRange: personType === 'PN' ? (demografica.rangoEdad ?? null) : null,
+    ageRange:
+      personType === 'PN'
+        ? (datosBasicos.rangoEdad ?? demografica.rangoEdad ?? null)
+        : null,
     documentStatus:
-      personType === 'PN' ? (demografica.estadoDocumento ?? null) : null,
-    bureauProfile:
-      personType === 'PJ' ? mapBureauProfile(validacion) : null,
+      personType === 'PN'
+        ? (datosBasicos.estadoDocumento ?? demografica.estadoDocumento ?? null)
+        : null,
+    bureauProfile: personType === 'PJ' ? mapBureauProfile(validacion) : null,
   };
 }
 
 // Traduce el bloque PJ de Experian al perfil de dominio (nombres propios). El
 // Customer nunca guarda dialecto del proveedor: esta función es la frontera.
-function mapBureauProfile(
-  validacion: ExperianValidacion,
-): MappedBureauProfile {
+function mapBureauProfile(validacion: ExperianValidacion): MappedBureauProfile {
   const pg = validacion.perfilGeneral;
   const mat = validacion.matricula;
   const rl = validacion.representanteLegal;
@@ -271,11 +307,14 @@ function mapRisk(
   const riesgo = respuesta.informacionRiesgo ?? {};
   const comportamiento = respuesta.comportamientoCrediticio ?? {};
   const indicadores = comportamiento.indicadoresValores ?? {};
+  const endeudamiento = respuesta.endeudamiento ?? {}; // ingreso reportado (PN)
 
   const viabilidad = personType === 'PN' ? (riesgo.viabilidad ?? null) : null;
   const ratingRecaudos =
     personType === 'PN' ? (riesgo.ratingRecaudos ?? null) : null;
   const nivelRiesgo = personType === 'PJ' ? (riesgo.nivel ?? null) : null;
+  // Detalle de alertas: hasAlertas se deriva de aquí para que siempre concuerden.
+  const alerts = resolveAlerts(personType, respuesta);
   // Tabla 14: el código tabulado es ratingRiesgoSectorial (0-5). Se conserva
   // descripcionRiesgoSectorial como fallback si la central ya manda el texto.
   const ratingSectorial =
@@ -302,7 +341,11 @@ function mapRisk(
     saldoActual: toNumber(indicadores.saldoActual),
     porcentajeDeuda: toNumber(indicadores.porcentajeDeuda),
     saldoMora: toNumber(indicadores.saldoMora),
-    hasAlertas: resolveHasAlertas(personType, respuesta),
+    hasAlertas: (alerts?.length ?? 0) > 0,
+    alerts,
+    // Endeudamiento reportado (PN): ingreso mensual + % ya comprometido.
+    reportedIncome: toNumber(endeudamiento.ingreso),
+    quotaToIncomePct: toNumber(endeudamiento.porcentajeCuotaVsIngreso),
     // Bloques temporales (cambian por consulta)
     creditPortfolio:
       personType === 'PJ' ? mapCreditPortfolio(comportamiento) : null, // Tabla 8
@@ -373,9 +416,8 @@ function mapLinkNode(
     name: node.nombre ?? null,
     documentType: node.tipoId ?? null,
     documentNumber: node.id ?? null,
-    alertCount: typeof node.cantidadAlertas === 'number'
-      ? node.cantidadAlertas
-      : null,
+    alertCount:
+      typeof node.cantidadAlertas === 'number' ? node.cantidadAlertas : null,
     linkType,
     linkTypeLabel: translate(LINK_TYPE, linkType),
     children: Array.isArray(node.nodos)
@@ -387,9 +429,7 @@ function mapLinkNode(
 }
 
 // Tabla 1 — códigos de respuesta con descripción (solo la clave TX está tabulada).
-function mapResponseCodes(
-  info: ExperianInfoTransaccion,
-): MappedResponseCode[] {
+function mapResponseCodes(info: ExperianInfoTransaccion): MappedResponseCode[] {
   const codes = info.codigosRespuesta;
   if (!Array.isArray(codes)) return [];
   return codes.map((c) => ({
@@ -399,18 +439,59 @@ function mapResponseCodes(
   }));
 }
 
-function resolveHasAlertas(
+// Detalle de las alertas de la central (el "cuáles" detrás de hasAlertas).
+//  - PN: cada entrada de `informacionRiesgo.alertas` es un texto sobre el titular.
+//  - PJ: no hay lista de texto; las alertas son los nodos de la malla de vínculos
+//    con `cantidadAlertas > 0` (la raíz = la propia empresa → 'self'; el resto,
+//    vínculos → 'linked'). Se recorre el árbol completo.
+function resolveAlerts(
   personType: PersonType,
   respuesta: ExperianRespuesta,
-): boolean {
+): MappedRiskAlert[] | null {
   if (personType === 'PN') {
     const alertas = respuesta.informacionRiesgo?.alertas;
-    return Array.isArray(alertas) && alertas.length > 0;
+    if (!Array.isArray(alertas)) return null;
+    const mapped = alertas
+      .map((a) => (a?.alerta ?? '').trim())
+      .filter((text) => text.length > 0)
+      .map(
+        (text): MappedRiskAlert => ({
+          source: 'self',
+          message: text,
+          subject: null,
+          identification: null,
+          count: null,
+        }),
+      );
+    return mapped.length > 0 ? mapped : null;
   }
-  // PJ: hay alertas si algún nodo de la malla de vínculos está alertado.
-  const resumen = respuesta.mallaVinculos?.resumenData;
-  if (!Array.isArray(resumen)) return false;
-  return resumen.some((r: { alertados?: number }) => (r?.alertados ?? 0) > 0);
+  // PJ: recolectar los nodos alertados de la malla de vínculos.
+  const root = respuesta.mallaVinculos?.vinculados;
+  if (!root) return null;
+  const acc: MappedRiskAlert[] = [];
+  collectAlertedNodes(root, true, acc);
+  return acc.length > 0 ? acc : null;
+}
+
+function collectAlertedNodes(
+  node: ExperianVinculoNodo,
+  isRoot: boolean,
+  acc: MappedRiskAlert[],
+): void {
+  const count =
+    typeof node.cantidadAlertas === 'number' ? node.cantidadAlertas : 0;
+  if (count > 0) {
+    acc.push({
+      source: isRoot ? 'self' : 'linked',
+      message: null,
+      subject: node.nombre ?? null,
+      identification: node.id ?? null,
+      count,
+    });
+  }
+  if (Array.isArray(node.nodos)) {
+    for (const child of node.nodos) collectAlertedNodes(child, false, acc);
+  }
 }
 
 // ── Helpers de parsing ──────────────────────────────────────────────────────

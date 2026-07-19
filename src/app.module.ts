@@ -14,6 +14,7 @@ import { CreditBureauModule } from './credit-bureau/credit-bureau.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { UserCompaniesModule } from './user-companies/user-companies.module.js';
 import { ConsultationPricesModule } from './consultation-prices/consultation-prices.module.js';
+import { PricingCalculatorModule } from './pricing-calculator/pricing-calculator.module.js';
 import { PackOfferingsModule } from './pack-offerings/pack-offerings.module.js';
 import { AnalysisPacksModule } from './analysis-packs/analysis-packs.module.js';
 import { PaymentAlertsModule } from './payment-alerts/payment-alerts.module.js';
@@ -57,6 +58,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     ProfilesModule,
     UserCompaniesModule,
     ConsultationPricesModule,
+    PricingCalculatorModule,
     PackOfferingsModule,
     AnalysisPacksModule,
     PaymentAlertsModule,

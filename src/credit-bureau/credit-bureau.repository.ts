@@ -34,8 +34,16 @@ export class CreditBureauRepository {
    * Devuelve la consulta guardada con el customer.
    */
   async persistConsultation(params: PersistConsultationParams) {
-    const { companyId, userId, provider, meta, customer: customerData, risk, rawResponse, httpStatus } =
-      params;
+    const {
+      companyId,
+      userId,
+      provider,
+      meta,
+      customer: customerData,
+      risk,
+      rawResponse,
+      httpStatus,
+    } = params;
 
     return this.prisma.$transaction(async (tx) => {
       const customer = await this.upsertCustomer(tx, params, customerData);
@@ -78,10 +86,13 @@ export class CreditBureauRepository {
             porcentajeDeuda: risk.porcentajeDeuda,
             saldoMora: risk.saldoMora,
             hasAlertas: risk.hasAlertas,
+            reportedIncome: risk.reportedIncome,
+            quotaToIncomePct: risk.quotaToIncomePct,
             creditPortfolio: toJson(risk.creditPortfolio),
             paymentBehavior: toJson(risk.paymentBehavior),
             creditSectors: toJson(risk.creditSectors),
             linkNetwork: toJson(risk.linkNetwork),
+            alerts: toJson(risk.alerts),
           },
         });
       }

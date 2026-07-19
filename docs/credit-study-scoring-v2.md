@@ -198,6 +198,29 @@ alerta informativa: > 1.5× → `warning`; > 3× → `danger`
 el monto: en el mercado real el `montoSugerido` suele ser muy conservador
 frente a lo que los EEFF del cliente soportan (ver 4.8); el analista pondera.
 
+**Referencia de ingreso (SOLO PN, no puntúa).** Para persona natural la central
+**sí** reporta dos datos de endeudamiento que la PJ no tiene: `reportedIncome`
+(ingreso mensual del titular) y `quotaToIncomePct` (% del ingreso ya
+comprometido en cuotas vigentes). No hay EEFF de PN en la central (por eso la
+Veracidad no aplica, 4.6), pero **este ingreso es la referencia externa para
+contrastar la capacidad de pago que el PDF declara**. Genera dos alertas
+informativas (`incomeReferenceAlerts`), sin tocar el ratio ni el veredicto:
+
+- **`danger`** si la capacidad de pago mensual que implican los EEFF del PDF
+  supera el ingreso que reporta la central: *una persona no puede destinar a
+  pagar más de lo que gana* → señal de PDF posiblemente inflado ("revise la
+  veracidad del PDF"). Es el sustituto natural de la Veracidad para PN: en vez
+  de contrastar balances (que la central no tiene), contrasta la caja implícita
+  contra el ingreso reportado.
+- **`warning`** si la cuota estimada del cupo pedido supera el **ingreso mensual
+  disponible** = `reportedIncome × (1 − quotaToIncomePct/100)`: la persona ya
+  tiene comprometida buena parte de su ingreso y la nueva cuota no le cabe. El
+  monto avalado sigue saliendo de los EEFF; esto es solo una señal para el
+  analista.
+
+Ambas requieren `reportedIncome > 0`; si la central no lo trae (o es PJ), no se
+emiten. Ver el caso trabajado en §13.6.
+
 > ⚠️ **Regla eliminatoria:** si la capacidad mensual es **≤ 0** (su deuda
 > actual ya se come todo el EBITDA), el estudio se **rechaza directo**, sin
 > importar el resto de dimensiones (§6.2).
@@ -448,6 +471,56 @@ leyeron las cifras (warning si el escaneo es claro, danger si hay partes borrosa
 o ilegibles). Complementa la validación del endpoint `extract-pdf`, que rechaza
 de entrada archivos que ni siquiera son PDF (imágenes u otros documentos
 renombrados a `.pdf`, verificados por los bytes mágicos `%PDF-`).
+
+### 4.10 Cómo se comporta el modelo con una Persona Natural (PN)
+
+Las dimensiones de §4 se escribieron pensando en una empresa (PJ), pero el motor
+es el **mismo** para PN: corre las mismas fórmulas con dos diferencias
+estructurales, no una lógica aparte. Esta sección las consolida para que quede
+claro **qué cambia y qué no** cuando el cliente estudiado es una persona natural.
+
+**Punto de partida — de dónde salen las cifras.** La central (DataCrédito) **no
+reporta estados financieros de una PN** (a diferencia de la PJ, obligada a
+reportarlos). Por eso, para PN la fuente de las cifras es **siempre el PDF** que
+el titular carga: `createFromBureau` deja todo estudio en
+`pendingFinancialStatements` y la PN **exige PDF** para poder analizarse. En el
+resultado esto se declara: `calculationSource: 'pdf'`, `financialsVerified:
+false`, y una alerta `warning` de "cifras auto-reportadas, sin verificar contra
+la central" (§11 — salvedad de la fuente).
+
+**Qué dimensiones aplican a una PN** (con los pesos default PN de §5.2):
+
+| Dimensión | ¿Aplica a PN? | Cómo se calcula |
+|-----------|:-------------:|-----------------|
+| Salud financiera | **Sí** | Z-Altman sobre los EEFF del PDF (idéntico a PJ). |
+| Capacidad de pago | **Sí** (obligatoria) | EBITDA→capacidad→cobertura sobre el PDF (idéntico a PJ), **+ referencia de ingreso de la central** (4.2). |
+| Coherencia de plazos | **Sí** | Plazo pedido vs rotación de cartera del PDF (idéntico a PJ). |
+| Exposición del capital | **Sí** | Ciclo de caja del PDF vs cupo (idéntico a PJ). |
+| Veracidad | **No** (`not_evaluable`) | La central no tiene EEFF de PN → no hay balances que contrastar. Peso 0 por config; no se redistribuye porque nace en 0. Su función la cumple la **referencia de ingreso** (4.2). |
+| Riesgo de la central | **Sí** (obligatoria) | Score/sector/mora de la central (idéntico a PJ). |
+
+Es decir: **una PN se evalúa con 6 dimensiones** (todas menos la Veracidad), sobre
+las cifras del PDF, con el ingreso reportado por la central como contraste externo
+de la capacidad de pago.
+
+**Por qué el ingreso reemplaza a la Veracidad en PN.** En PJ la Veracidad detecta
+maquillaje comparando el PDF contra los EEFF de la central. En PN no hay EEFF con
+qué comparar, pero la central sí entrega el **ingreso mensual** del titular: si el
+PDF implica una capacidad de pago mayor a lo que la persona gana, es la misma
+señal de "cifras infladas" por otra vía (alerta `danger`, 4.2). No puntúa como
+dimensión —es alerta informativa—, pero le da al analista el mismo contraste que
+la Veracidad le da en PJ.
+
+**Reglas eliminatorias y caps:** aplican igual que en PJ (capacidad ≤ 0 → rechazo;
+riesgo alto de la central o `montoSugerido = 0` → cap `conditional`). El estado
+legal (matrícula/liquidación) no aplica a PN porque no tiene perfil de cámara de
+comercio (`bureauProfile` es null en PN).
+
+**Caso límite pendiente:** una PN **sin PDF y sin EEFF en ninguna fuente** (p. ej.
+un asalariado sin negocio) no puede evaluarse con dimensiones financieras. Ese
+modelo alterno —basar el análisis solo en el ingreso y el comportamiento de la
+central— queda pendiente de diseño en documento aparte. El flujo actual **exige
+PDF** para PN, así que no llega a ese escenario.
 
 ---
 
@@ -762,7 +835,16 @@ Cada empresa tiene una config vigente **por tipo**. `performStudy` elige la del
 tipo de persona del cliente del estudio. En **PN** la Veracidad no aplica (peso 0
 + sin contraste) → se redistribuye → PN se evalúa con 6 dimensiones. PN además
 **exige PDF** (Experian no reporta EEFF de PN), por lo que `createFromBureau` crea
-todo estudio (PN y PJ) en estado `pendingFinancialStatements`.
+todo estudio (PN y PJ) en estado `pendingFinancialStatements`. Ver §4.10 para el
+comportamiento consolidado del modelo con PN.
+
+⚠️ **Referencia de ingreso PN (implementado).** El mapper de Experian extrae
+`endeudamiento.ingreso` → `reportedIncome` y `endeudamiento.porcentajeCuotaVsIngreso`
+→ `quotaToIncomePct` (solo PN; null en PJ), persistidos en
+`customer_risk_snapshots` (migración `20260718040000_add_reported_income_pn`,
+staging+prod) y propagados al motor vía `CentralRiskInput`. Se usan como
+**alerta-referencia** en la Capacidad de pago (§4.2), sin alterar el ratio ni el
+veredicto: sustituyen el contraste de Veracidad que en PN no es posible.
 
 ### Endpoints
 | Método | Ruta | Qué hace |
@@ -819,9 +901,11 @@ El resultado declara con qué se calculó:
   referencia y dispara alertas (1.5×/3×). Vive en `recommendedCreditLine` y en
   `approvedCreditLine` del JSON. El plazo aprobado (`recommendedTerm`) refleja
   el plazo solicitado (no lo recalculamos). Igual en PN y PJ.
-- **Caso PN sin estados financieros de ninguna fuente:** requiere un modelo de
-  análisis distinto (una persona natural sin EEFF no puede evaluarse con las
-  dimensiones financieras). Pendiente de diseño en documento aparte.
+- **PN se evalúa sobre el PDF, con 6 dimensiones** (todas menos Veracidad) y el
+  **ingreso reportado por la central como contraste** de la capacidad de pago
+  (§4.10). El caso límite de una PN **sin PDF y sin EEFF de ninguna fuente** (un
+  asalariado sin negocio) sí requiere un modelo distinto, pendiente de diseño en
+  documento aparte; el flujo actual exige PDF para PN y no llega a ese escenario.
 
 ### Archivos
 | Archivo | Rol |
@@ -930,13 +1014,14 @@ objeto**, construido por un único builder (`buildStep3`):
 
 ---
 
-## 13. Guía aplicada: tres clientes, tres veredictos (con números)
+## 13. Guía aplicada: clientes y veredictos (con números)
 
 > Esta sección es para **entender el modelo de punta a punta sin saber de
-> código**: una empresa cliente de Creditia estudia a tres clientes distintos
+> código**: una empresa cliente de Creditia estudia a varios clientes distintos
 > (datos simulados pero realistas) y se muestra el cálculo completo de cada
-> dimensión hasta el veredicto. Los tres casos usan las fórmulas EXACTAS del
-> motor (§4).
+> dimensión hasta el veredicto. Todos los casos usan las fórmulas EXACTAS del
+> motor (§4). Los casos **A–C son personas jurídicas** (§13.2–13.4); el caso **D
+> es una persona natural** (§13.6), que muestra las diferencias de §4.10.
 
 **Supuestos comunes de los tres casos:**
 
@@ -1150,3 +1235,81 @@ El bloque `approvedCreditLine` refleja el recorte al techo de la central
 5. **La mora vieja no persigue al cliente.** La mora de El Tornillo (hace 8
    meses, ya normalizada) le costó centésimas; la misma mora reciente, como la
    de El Atajo, pesa mucho más.
+
+### 13.6 Escenario D — Persona Natural: "María Gómez (comerciante)" ⚠️
+
+> Los tres casos anteriores son personas jurídicas. Este muestra cómo cambia el
+> cálculo para una **persona natural** (§4.10): 6 dimensiones en vez de 7 (sin
+> Veracidad), cifras del **PDF** (la central no reporta EEFF de PN) y el **ingreso
+> reportado por la central** como contraste de la capacidad de pago.
+
+**Supuestos:** cliente **persona natural** con actividad comercial; cargó su PDF
+de EEFF. La empresa tiene los **pesos default PN** (§5.2): Capacidad 38, Riesgo
+central 25, Salud 19, Exposición 10, Coherencia 8, Veracidad **0**. Cifras en
+millones (M).
+
+**Pide:** cupo de **$4M a 60 días** → cuota estimada = 4 ÷ (60/30) = **$2M/mes**.
+
+**Sus cifras** (del PDF, única fuente para PN):
+
+| Cifra | Valor |
+|-------|------:|
+| Ingresos / costo de ventas / gastos | 180 / 120 / 24 |
+| **EBITDA** (180 − 120 − 24) | **36** |
+| Activo total (corriente) | 90 (60) |
+| Pasivo total (corriente) | 40 (25) |
+| Patrimonio / utilidades retenidas | 50 / 20 |
+| Servicio de deuda (6 oblig. CP + 2 gastos fin.) | **8** |
+| Rotaciones: cartera / inventarios / proveedores | 30 / 40 / 25 días |
+| **Central (PN):** score / monto sugerido / mora | **690** / **$10M** / sin mora |
+| **Central (PN):** ingreso reportado / % cuota-ingreso | **$2M/mes** / **40%** |
+
+**Cálculo dimensión por dimensión:**
+
+1. **Salud financiera** — Z-Altman:
+   `1.2×(60−25)/90 + 1.4×20/90 + 3.3×36/90 + 0.6×50/40 + 180/90`
+   `= 0.47 + 0.31 + 1.32 + 0.75 + 2.0 =` **Z ≈ 4.85 > 3** → zona segura → **1.0**.
+2. **Capacidad de pago** — EBITDA ajustado = 36 × 1 = 36; capacidad anual =
+   36 − 8 = 28 → **$2.33M/mes**. Cobertura = 2.33 ÷ 2 = **1.17** (entre 1.0 y
+   1.2) → ajustada → **0.6**. **Referencia de ingreso de la central** (4.2):
+   - `danger`: la capacidad que implica el PDF ($2.33M/mes) **supera el ingreso
+     que reporta la central** ($2M/mes) → *no puede destinar a pagar más de lo
+     que gana* → revisar la veracidad del PDF.
+   - `warning`: la cuota ($2M) supera el **ingreso disponible** = 2 × (1 − 0.40)
+     = **$1.2M/mes** → ya tiene comprometido el 40% del ingreso.
+   *(Ambas son informativas: el ratio sigue 0.6, no cambian el score.)*
+3. **Coherencia de plazos** — pide 60 días y cobra a 30 → cobra antes de
+   pagarnos → cómodo → **1.0**.
+4. **Exposición del capital** — ciclo de caja = 30 + 40 − 25 = 45 días;
+   exposición sana = 2.33 × (45/30) = $3.5M. Pide $4M (el 114%, ≤ 1.5) →
+   aceptable → **0.6** (warning).
+5. **Veracidad** — **no aplica en PN** (`not_evaluable`, peso 0): la central no
+   tiene EEFF de PN con qué contrastar. Su función la cumple la referencia de
+   ingreso del punto 2.
+6. **Riesgo de la central** — score 690 → banda **Aceptable** (650–699) → base
+   0.6; sin mora, sector normal → **0.6**.
+
+| Dimensión | Cumplimiento | × Peso | = Puntos |
+|-----------|-------------:|-------:|---------:|
+| Capacidad de pago | 0.6 | 38 | 22.8 |
+| Riesgo de la central | 0.6 | 25 | 15.0 |
+| Salud financiera | 1.0 | 19 | 19.0 |
+| Exposición del capital | 0.6 | 10 | 6.0 |
+| Coherencia de plazos | 1.0 | 8 | 8.0 |
+| Veracidad | — (no aplica) | 0 | 0.0 |
+| **Score de viabilidad** | | | **70.8** |
+
+**Veredicto: `conditional`** (40 ≤ 70.8 < 75). **Monto aprobado: $4M** (dentro
+del techo de la central, $10M). `calculationSource: 'pdf'`,
+`financialsVerified: false` → alerta `warning` de cifras auto-reportadas. La
+lectura para la empresa: puede otorgar **con condiciones**, pero con dos señales
+que conviene aclarar — el PDF implica una capacidad de pago mayor al ingreso que
+la persona declara ante la central, y la nueva cuota supera su ingreso ya
+disponible. Es exactamente el rol que la Veracidad cumple en PJ, resuelto para PN
+por la vía del ingreso.
+
+> **Moraleja PN:** el modelo no inventa una lógica nueva para persona natural —
+> corre las mismas dimensiones sobre el PDF y apaga la Veracidad, reemplazándola
+> por el contraste contra el ingreso reportado. Un PDF de PN que "se pasa de
+> optimista" se delata cuando su capacidad de pago implícita supera lo que la
+> persona gana según la central.
