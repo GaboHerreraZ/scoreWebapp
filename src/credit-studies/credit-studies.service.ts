@@ -11,6 +11,10 @@ import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
+import { PdfService } from '../common/pdf/pdf.service.js';
+import { buildReportViewModel } from './pdf/credit-study-report.mapper.js';
+import type { StepsData } from './pdf/credit-study-report.mapper.js';
+import { renderReportHtml } from './pdf/credit-study-report.renderer.js';
 import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
 import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
 import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
@@ -168,6 +172,7 @@ export class CreditStudiesService {
     private readonly analysisPacksService: AnalysisPacksService,
     private readonly creditBureauService: CreditBureauService,
     private readonly authorizationsService: CustomerAuthorizationsService,
+    private readonly pdfService: PdfService,
   ) {}
 
   /**
@@ -328,6 +333,49 @@ export class CreditStudiesService {
       step2,
       step3,
     };
+  }
+
+  /**
+   * Genera el PDF del "Concepto de Viabilidad" de un estudio. Se alimenta del
+   * MISMO getSteps que consume el front (única fuente de verdad → PDF y pantalla
+   * siempre coinciden), mapea a un view-model pre-formateado, lo renderiza con la
+   * plantilla Handlebars y lo pasa a Chromium headless. Devuelve el buffer + el
+   * nombre de archivo sugerido. 404 si el estudio no existe en la empresa.
+   */
+  async generateReportPdf(id: string, companyId: string) {
+    const steps = await this.getSteps(id, companyId);
+    const company = await this.repository.findCompanyHeader(companyId);
+
+    const generatedAt = new Intl.DateTimeFormat('es-CO', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+    const viewModel = buildReportViewModel(
+      steps as unknown as StepsData,
+      company ?? { name: null, nit: null, city: null },
+      generatedAt,
+    );
+    const html = renderReportHtml(viewModel);
+    const buffer = await this.pdfService.htmlToPdf(html, {
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: `<div style="width:100%;font-size:8px;color:#9ca3af;padding:0 14mm;text-align:right;">
+        Página <span class="pageNumber"></span> de <span class="totalPages"></span>
+      </div>`,
+      margin: { top: '16mm', bottom: '18mm', left: '14mm', right: '14mm' },
+    });
+
+    const safeName = (steps.step1?.customer?.businessName ?? 'estudio')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // quita diacríticos (tildes/ñ)
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+    const fileName = `concepto-viabilidad-${safeName || 'estudio'}.pdf`;
+
+    return { buffer, fileName };
   }
 
   /**

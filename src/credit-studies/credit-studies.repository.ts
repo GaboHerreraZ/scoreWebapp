@@ -333,6 +333,14 @@ export class CreditStudiesRepository {
     });
   }
 
+  /** Datos de la empresa para el encabezado del PDF (nombre, NIT, ciudad). */
+  async findCompanyHeader(companyId: string) {
+    return this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { name: true, nit: true, city: true },
+    });
+  }
+
   async customerBelongsToCompany(
     customerId: string,
     companyId: string,
