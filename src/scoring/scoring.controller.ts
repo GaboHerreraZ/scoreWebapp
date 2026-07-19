@@ -75,6 +75,32 @@ export class ScoringController {
     return this.scoringService.getById(companyId, id);
   }
 
+  @Post('reset')
+  @ApiOperation({
+    summary:
+      'Restaurar la configuración de un tipo de persona a los valores por defecto del sistema',
+    description:
+      'Crea una nueva versión con los pesos default del tipo (naturalPerson | legalEntity) y la marca vigente; la anterior pasa a histórica. No requiere body: los pesos los pone el sistema.',
+  })
+  @ApiQuery({ name: 'personType', enum: ['naturalPerson', 'legalEntity'] })
+  @ApiResponse({
+    status: 201,
+    description: 'Config restaurada a defaults y vigente',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Tipo de persona inválido o una dimensión del default está desactivada en el catálogo',
+  })
+  resetToDefaults(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Query('personType') personType: string,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user.id as string;
+    return this.scoringService.resetToDefaults(companyId, userId, personType);
+  }
+
   @Post()
   @ApiOperation({
     summary:

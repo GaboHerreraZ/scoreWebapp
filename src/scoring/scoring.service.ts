@@ -150,6 +150,58 @@ export class ScoringService {
     });
   }
 
+  /**
+   * Restaura la configuración de un tipo de persona a los pesos DEFAULT del
+   * sistema (defaultWeightsFor). No borra ni muta la vigente: crea una nueva
+   * versión con los defaults y la marca vigente (la anterior pasa a histórica),
+   * igual que createVersion → queda auditada (createdBy/createdAt) y el historial
+   * se preserva. No requiere body: los pesos los pone el sistema.
+   */
+  async resetToDefaults(
+    companyId: string,
+    userId: string,
+    personTypeCode: string,
+  ) {
+    const personType = await this.resolvePersonType(personTypeCode);
+
+    const defaults = defaultWeightsFor(personTypeCode as PersonTypeCode);
+    const codes = Object.keys(defaults) as ScoringDimension[];
+
+    // Resolver los codes default contra el catálogo: deben existir y estar
+    // activos (defensa: si un admin desactivó una dimensión que el default usa,
+    // el reset no puede habilitarla).
+    const catalog = await this.repository.findDimensionsByCodes(codes);
+    const byCode = new Map(catalog.map((d) => [d.code, d]));
+    for (const code of codes) {
+      const dim = byCode.get(code);
+      if (!dim) {
+        throw new BadRequestException(
+          `La dimensión por defecto "${code}" no existe en el catálogo.`,
+        );
+      }
+      if (!dim.isActive) {
+        throw new BadRequestException(
+          `La dimensión por defecto "${code}" está desactivada del catálogo; ` +
+            `no se puede restaurar el default hasta reactivarla.`,
+        );
+      }
+    }
+
+    // Los defaults del sistema deben ser válidos por construcción, pero se
+    // validan igual (única puerta antes de persistir).
+    validateWeights(defaults, personTypeCode as PersonTypeCode);
+
+    return this.repository.createVersion({
+      companyId,
+      personTypeId: personType.id,
+      createdBy: userId,
+      weights: codes.map((code) => ({
+        dimensionId: byCode.get(code)!.id,
+        weight: defaults[code]!,
+      })),
+    });
+  }
+
   /** Una configuración específica por id (validando pertenencia a la empresa). */
   async getById(companyId: string, id: string) {
     const history = await this.repository.findHistory(companyId);
