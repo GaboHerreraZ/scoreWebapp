@@ -131,6 +131,33 @@ export class CreditStudiesController {
     return this.creditStudiesService.getSteps(id, companyId);
   }
 
+  @Get(':id/pdf')
+  @ApiOperation({
+    summary: 'Exportar el Concepto de Viabilidad del estudio como PDF',
+    description:
+      'Renderiza el mismo resultado que muestra el front (GET /:id/steps) en un PDF A4.',
+  })
+  @ApiResponse({ status: 200, description: 'Archivo PDF (.pdf)' })
+  @ApiResponse({
+    status: 404,
+    description: 'Credit study not found in this company',
+  })
+  async exportPdf(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, fileName } =
+      await this.creditStudiesService.generateReportPdf(id, companyId);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a credit study by ID' })
   @ApiResponse({ status: 200, description: 'Credit study found' })

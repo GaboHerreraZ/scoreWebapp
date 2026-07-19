@@ -30,6 +30,7 @@ import { DocumentsModule } from './documents/documents.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { EpaycoModule } from './epayco/epayco.module.js';
 import { ExcelModule } from './common/excel/excel.module.js';
+import { PdfModule } from './common/pdf/pdf.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuthorizationModule } from './common/auth/authorization.module.js';
 import { ContactRequestsModule } from './contact-requests/contact-requests.module.js';
@@ -47,6 +48,7 @@ import { DebugController } from './common/debug/debug.controller.js';
     // endpoints públicos sensibles aplican un @Throttle más estricto.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     ExcelModule,
+    PdfModule,
     PrismaModule,
     AuthModule,
     AuthorizationModule,

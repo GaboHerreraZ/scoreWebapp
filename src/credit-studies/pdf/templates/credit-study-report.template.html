@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<!--
+  Plantilla del PDF "Concepto de Viabilidad". La rellena el backend con el
+  view-model plano y pre-formateado que arma credit-study-report.mapper.ts
+  (réplica de la lógica del front). NO editar los placeholders sin actualizar
+  el mapper. Ver ese archivo para el contrato de datos y las reglas de color.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Estudio de Crédito — {{customer.businessName}}</title>
+<style>
+  /* ─── Paleta (cámbiala por la de marca en un solo lugar) ─────────────── */
+  :root {
+    --primary: #4f46e5;
+    --primary-600: #4338ca;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --surface: #f9fafb;
+
+    --green-bg: #ecfdf5;  --green-bd: #a7f3d0;  --green-tx: #047857;  --green-dot: #10b981;
+    --amber-bg: #fffbeb;  --amber-bd: #fde68a;  --amber-tx: #b45309;  --amber-dot: #f59e0b;
+    --red-bg:   #fef2f2;  --red-bd:   #fecaca;  --red-tx:   #b91c1c;  --red-dot:   #ef4444;
+    --gray-bg:  #f3f4f6;  --gray-bd:  #e5e7eb;  --gray-tx:  #6b7280;  --gray-dot:  #9ca3af;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, system-ui, sans-serif;
+    background: #ffffff;
+    color: var(--ink);
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+
+  .page { max-width: 190mm; margin: 0 auto; }
+
+  /* ─── Tipografía / utilidades ────────────────────────────────────────── */
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 13px; margin: 0; }
+  .muted { color: var(--muted); }
+  .xs { font-size: 9.5px; }
+  .sm { font-size: 10.5px; }
+  .bold { font-weight: 700; }
+  .semibold { font-weight: 600; }
+  .right { text-align: right; }
+  .center { text-align: center; }
+  .uppercase { text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; }
+  .between { justify-content: space-between; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 8px; }
+  .gap-3 { gap: 12px; }
+  .wrap { flex-wrap: wrap; }
+  .mt-1 { margin-top: 4px; } .mt-2 { margin-top: 8px; } .mt-4 { margin-top: 16px; }
+  .section { break-inside: avoid; margin-top: 18px; }
+  .block-label { font-size: 9.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+
+  /* ─── Encabezado del documento ───────────────────────────────────────── */
+  .doc-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding-bottom: 12px; border-bottom: 2px solid var(--primary);
+  }
+  .brand { font-size: 16px; font-weight: 800; color: var(--primary); }
+  .doc-title { font-size: 13px; font-weight: 700; margin-top: 2px; }
+
+  /* ─── Cards / cajas ──────────────────────────────────────────────────── */
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .grid { display: grid; gap: 10px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .g5 { grid-template-columns: repeat(5, 1fr); }
+  .cell { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .cell .k { font-size: 9.5px; color: var(--muted); }
+  .cell .v { font-size: 12px; font-weight: 700; margin-top: 2px; }
+
+  /* ─── Banner de veredicto ────────────────────────────────────────────── */
+  .verdict { border: 1px solid; border-radius: 12px; padding: 18px; text-align: center; }
+  .verdict .title { font-size: 20px; font-weight: 800; }
+  .verdict .desc { font-size: 11px; margin-top: 4px; max-width: 130mm; margin-left: auto; margin-right: auto; }
+  .verdict.status--approved    { background: var(--green-bg); border-color: var(--green-bd); }
+  .verdict.status--approved .title    { color: var(--green-tx); }
+  .verdict.status--conditional { background: var(--amber-bg); border-color: var(--amber-bd); }
+  .verdict.status--conditional .title { color: var(--amber-tx); }
+  .verdict.status--rejected    { background: var(--red-bg); border-color: var(--red-bd); }
+  .verdict.status--rejected .title    { color: var(--red-tx); }
+  .verdict.status--pending     { background: var(--gray-bg); border-color: var(--gray-bd); }
+  .verdict.status--pending .title     { color: var(--gray-tx); }
+
+  /* pills */
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 700;
+          padding: 3px 9px; border-radius: 999px; }
+  .pill.green { background: var(--green-bg); color: var(--green-tx); }
+  .pill.amber { background: var(--amber-bg); color: var(--amber-tx); }
+  .pill.red   { background: var(--red-bg);   color: var(--red-tx); }
+  .pill.gray  { background: var(--gray-bg);  color: var(--gray-tx); }
+
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px;
+             padding-top: 12px; border-top: 1px solid rgba(0,0,0,.08); }
+  .metric { text-align: center; }
+  .metric .k { font-size: 9px; font-weight: 700; color: var(--muted); }
+  .metric .v { font-size: 12.5px; font-weight: 700; margin-top: 2px; }
+
+  /* ─── Tablas ─────────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  thead th { background: var(--surface); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+             font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: none; }
+  .table-wrap { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+
+  /* ─── Alertas ────────────────────────────────────────────────────────── */
+  .alert { display: flex; gap: 8px; padding: 9px 11px; border-radius: 8px; border: 1px solid; margin-bottom: 6px; }
+  .alert.self   { background: var(--red-bg);   border-color: var(--red-bd);   color: var(--red-tx); }
+  .alert.linked { background: var(--amber-bg); border-color: var(--amber-bd); color: var(--amber-tx); }
+  .alert .ico { font-weight: 800; }
+
+  /* ─── Comportamiento de pago (chips) ─────────────────────────────────── */
+  .pb-track { display: flex; flex-wrap: wrap; gap: 5px; }
+  .pb { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 42px;
+        border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; }
+  .pb .dot { width: 7px; height: 7px; border-radius: 999px; }
+  .pb .code { font-size: 10px; font-weight: 800; }
+  .pb .mon { font-size: 8px; color: var(--muted); }
+  .pb.ok   { background: var(--green-bg); } .pb.ok .dot   { background: var(--green-dot); } .pb.ok .code   { color: var(--green-tx); }
+  .pb.warn { background: var(--amber-bg); } .pb.warn .dot { background: var(--amber-dot); } .pb.warn .code { color: var(--amber-tx); }
+  .pb.bad  { background: var(--red-bg);   } .pb.bad .dot  { background: var(--red-dot);   } .pb.bad .code  { color: var(--red-tx); }
+  .pb.none { background: var(--gray-bg);  } .pb.none .dot { background: var(--gray-dot);  } .pb.none .code { color: var(--gray-tx); }
+
+  /* ─── Dimensiones (barras) ───────────────────────────────────────────── */
+  .dim { margin-bottom: 10px; }
+  .dim-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .bar { height: 7px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 999px; }
+  .bar > span.good { background: var(--green-dot); }
+  .bar > span.mid  { background: var(--amber-dot); }
+  .bar > span.low  { background: var(--red-dot); }
+  .badge { font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .badge.good { background: var(--green-bg); color: var(--green-tx); }
+  .badge.mid  { background: var(--amber-bg); color: var(--amber-tx); }
+  .badge.low  { background: var(--red-bg);   color: var(--red-tx); }
+
+  /* ─── Red de vínculos ────────────────────────────────────────────────── */
+  .link-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  .link-row:last-child { border-bottom: none; }
+
+  /* ─── Análisis IA ────────────────────────────────────────────────────── */
+  .ai { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--surface); }
+  .ai .body { white-space: pre-wrap; font-size: 10.5px; margin-top: 6px; }
+
+  /* ─── Pie ────────────────────────────────────────────────────────────── */
+  .disclaimer { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line);
+                font-size: 9px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════ Encabezado ══════════ -->
+  <div class="doc-head">
+    <div>
+      <div class="brand">{{company.name}}</div>
+      <div class="doc-title">Estudio de Crédito · Concepto de Viabilidad</div>
+      <div class="xs muted mt-1">NIT {{company.nit}} · {{company.city}}</div>
+    </div>
+    <div class="right xs muted">
+      <div>Generado: <span class="semibold">{{generatedAt}}</span></div>
+      {{#if request.resolutionDate}}<div>Resolución: <span class="semibold">{{request.resolutionDate}}</span></div>{{/if}}
+      <div class="mt-1">Cliente: <span class="semibold" style="color:var(--ink)">{{customer.businessName}}</span></div>
+      <div>Identificación: <span class="semibold" style="color:var(--ink)">{{customer.identificationNumber}}</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════ Veredicto de viabilidad ══════════ -->
+  <!-- status: { key, title, description }  ·  score: { value, max } -->
+  <div class="verdict status--{{status.key}} section" style="margin-top:16px">
+    <div class="title">{{status.title}}</div>
+    <div class="desc muted">{{status.description}}</div>
+
+    <!-- Fuente + verificación (siempre visibles junto al veredicto) -->
+    <div class="row center gap-2 wrap mt-2" style="justify-content:center">
+      {{#if source.label}}
+        <span class="pill {{#if source.verified}}green{{else}}amber{{/if}}">Fuente: {{source.label}}</span>
+      {{/if}}
+      {{#if source.hasVerification}}
+        {{#if source.verified}}
+          <span class="pill green">Cifras verificadas</span>
+        {{else}}
+          <span class="pill amber">Cifras sin verificar</span>
+        {{/if}}
+      {{/if}}
+    </div>
+
+    <!-- Métricas principales (valores ya formateados) -->
+    <div class="metrics">
+      <div class="metric"><div class="k">Cupo Solicitado</div><div class="v">{{request.requestedAmount}}</div></div>
+      <div class="metric"><div class="k">Cupo Viable</div><div class="v">{{request.approvedAmount}}</div></div>
+      <div class="metric"><div class="k">Plazo Solicitado</div><div class="v">{{request.requestedTerm}}</div></div>
+      {{#if request.bureauSuggestedAmount}}
+      <div class="metric"><div class="k">Sugerido por la Central</div><div class="v">{{request.bureauSuggestedAmount}}</div></div>
+      {{/if}}
+      <div class="metric"><div class="k">Score</div><div class="v">{{score.value}} / {{score.max}}</div></div>
+    </div>
+
+    {{#if cappedByBureau}}
+    <div class="pill amber mt-2" style="margin-top:10px">El cupo viable se ajustó al monto máximo avalado por la central de riesgo.</div>
+    {{/if}}
+  </div>
+
+  <!-- ══════════ Cifras Financieras Clave ══════════ -->
+  <!-- keyFigures: [ { label, value } ]  (value ya formateado) -->
+  {{#if keyFigures.length}}
+  <div class="section">
+    <div class="row between items-center" style="margin-bottom:8px">
+      <h2>Cifras Financieras Clave</h2>
+      {{#if source.label}}<span class="pill {{#if source.verified}}green{{else}}amber{{/if}}">{{source.label}}</span>{{/if}}
+    </div>
+    <div class="grid g4">
+      {{#each keyFigures}}
+      <div class="cell"><div class="k">{{this.label}}</div><div class="v">{{this.value}}</div></div>
+      {{/each}}
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Comportamiento en Centrales de Riesgo ══════════ -->
+  {{#if centralRisk}}
+  <div class="section">
+    <div class="row between items-center" style="margin-bottom:8px">
+      <h2>Comportamiento en Centrales de Riesgo</h2>
+      {{#if centralRisk.hasAlertas}}
+        <span class="pill red">Alertas detectadas</span>
+      {{else}}
+        <span class="pill green">Sin alertas</span>
+      {{/if}}
+    </div>
+    {{#if centralRisk.consultedAt}}<div class="xs muted" style="margin-bottom:10px">Consultado el {{centralRisk.consultedAt}}</div>{{/if}}
+
+    <div class="card">
+
+      <!-- Alertas: self (cliente) / linked (vínculos) -->
+      <!-- alerts: [ { source: 'self'|'linked', subject, count, message, identification } ] -->
+      {{#if centralRisk.selfAlerts.length}}
+      <div class="block-label">Alertas del cliente</div>
+      {{#each centralRisk.selfAlerts}}
+      <div class="alert self">
+        <span class="ico">!</span>
+        <div>
+          {{#if this.subject}}<div class="semibold">{{this.subject}}{{#if this.count}} · {{this.count}} alerta(s){{/if}}</div>{{/if}}
+          <div>{{this.message}}</div>
+          {{#if this.identification}}<div class="xs">Identificación: {{this.identification}}</div>{{/if}}
+        </div>
+      </div>
+      {{/each}}
+      {{/if}}
+
+      {{#if centralRisk.linkedAlerts.length}}
+      <div class="block-label mt-4">Alertas de vínculos (riesgo de grupo)</div>
+      {{#each centralRisk.linkedAlerts}}
+      <div class="alert linked">
+        <span class="ico">⚑</span>
+        <div>
+          {{#if this.subject}}<div class="semibold">{{this.subject}}{{#if this.count}} · {{this.count}} alerta(s){{/if}}</div>{{/if}}
+          <div>{{this.message}}</div>
+          {{#if this.identification}}<div class="xs">Identificación: {{this.identification}}</div>{{/if}}
+        </div>
+      </div>
+      {{/each}}
+      {{/if}}
+
+      <!-- Calificaciones cualitativas (labels; PN: viabilidad/recaudos · PJ: nivel/sectorial) -->
+      {{#if centralRisk.ratings.length}}
+      <div class="grid g2 mt-4">
+        {{#each centralRisk.ratings}}
+        <div class="cell"><div class="k">{{this.label}}</div><div class="v" style="font-size:11px">{{this.value}}</div></div>
+        {{/each}}
+      </div>
+      {{/if}}
+
+      <!-- Endeudamiento (valores ya formateados) -->
+      {{#if centralRisk.indebtedness}}
+      <div class="block-label mt-4">Endeudamiento reportado</div>
+      <div class="grid g4">
+        <div class="cell"><div class="k">Saldo actual</div><div class="v">{{centralRisk.indebtedness.saldoActual}}</div></div>
+        <div class="cell"><div class="k">% de deuda</div><div class="v">{{centralRisk.indebtedness.porcentajeDeuda}}</div></div>
+        <div class="cell"><div class="k">Saldo en mora</div><div class="v">{{centralRisk.indebtedness.saldoMora}}</div></div>
+        <div class="cell"><div class="k">Monto sugerido</div><div class="v">{{centralRisk.indebtedness.montoSugerido}}</div></div>
+      </div>
+      {{/if}}
+
+      <!-- Ingreso (solo PN) -->
+      {{#if centralRisk.income}}
+      <div class="block-label mt-4">Capacidad de pago (central)</div>
+      <div class="grid g2">
+        <div class="cell"><div class="k">Ingreso reportado (mensual)</div><div class="v">{{centralRisk.income.reportedIncome}}</div></div>
+        <div class="cell"><div class="k">Cuotas / ingreso</div><div class="v">{{centralRisk.income.quotaToIncomePct}}</div></div>
+      </div>
+      {{/if}}
+
+      <!-- Portafolio por tipo de crédito (solo PJ) -->
+      {{#if centralRisk.creditPortfolio.length}}
+      <div class="block-label mt-4">Portafolio por tipo de crédito</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tipo de crédito</th><th class="right">Saldo</th><th class="right">% participación</th></tr></thead>
+          <tbody>
+            {{#each centralRisk.creditPortfolio}}
+            <tr><td class="semibold">{{this.tipoCredito}}</td><td class="right">{{this.saldo}}</td><td class="right">{{this.porcentajePart}}</td></tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+      {{/if}}
+
+      <!-- Comportamiento de pago mensual -->
+      <!-- paymentBehavior: [ { code, sev: 'ok'|'warn'|'bad'|'none', month } ] -->
+      {{#if centralRisk.paymentBehavior.length}}
+      <div class="block-label mt-4">Comportamiento de pago (mes más antiguo → más reciente)</div>
+      <div class="pb-track">
+        {{#each centralRisk.paymentBehavior}}
+        <div class="pb {{this.sev}}">
+          <span class="dot"></span>
+          <span class="code">{{this.code}}</span>
+          <span class="mon">{{this.month}}</span>
+        </div>
+        {{/each}}
+      </div>
+      {{/if}}
+
+      <!-- Sectores de crédito -->
+      {{#if centralRisk.creditSectors.length}}
+      <div class="block-label mt-4">Sectores de crédito</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Sector</th><th class="center">Vigentes</th><th class="center">Cerrados</th>
+            <th class="right">Saldo actual</th><th class="right">Saldo en mora</th><th class="right">% deuda</th>
+          </tr></thead>
+          <tbody>
+            {{#each centralRisk.creditSectors}}
+            <tr>
+              <td class="semibold">{{this.sector}}</td>
+              <td class="center">{{this.creditosVigentes}}</td>
+              <td class="center">{{this.creditosCerrados}}</td>
+              <td class="right">{{this.saldoActual}}</td>
+              <td class="right">{{this.saldoMora}}</td>
+              <td class="right">{{this.porcentajeDeuda}}</td>
+            </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+      {{/if}}
+
+      <!-- Red de vínculos económicos (solo PJ) -->
+      <!-- linkNetwork: [ { name, document, linkTypeLabel, alertCount, depth } ]  (ya aplanada) -->
+      {{#if centralRisk.linkNetwork.length}}
+      <div class="block-label mt-4">Red de vínculos económicos</div>
+      <div class="table-wrap">
+        {{#each centralRisk.linkNetwork}}
+        <div class="link-row" style="padding-left: {{this.indentPx}}px">
+          <div style="flex:1">
+            <div class="semibold">{{this.name}}</div>
+            <div class="xs muted">{{this.document}}</div>
+          </div>
+          {{#if this.linkTypeLabel}}<span class="pill gray">{{this.linkTypeLabel}}</span>{{/if}}
+          {{#if this.alertCount}}<span class="pill red">⚠ {{this.alertCount}}</span>{{/if}}
+        </div>
+        {{/each}}
+      </div>
+      {{/if}}
+
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Dimensiones del scoring ══════════ -->
+  <!-- dimensions: [ { label, weight, fillPct (0-100), level: 'good'|'mid'|'low', statusLabel } ] -->
+  {{#if dimensions.length}}
+  <div class="section">
+    <h2 style="margin-bottom:10px">Dimensiones Evaluadas</h2>
+    <div class="card">
+      {{#each dimensions}}
+      <div class="dim">
+        <div class="dim-head">
+          <span class="semibold">{{this.label}}</span>
+          <span class="badge {{this.level}}">{{this.statusLabel}}</span>
+        </div>
+        <div class="bar"><span class="{{this.level}}" style="width: {{this.fillPct}}%"></span></div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Alertas del análisis ══════════ -->
+  <!-- alertGroups: [ { type: 'danger'|'warning'|'info'|'success', label, messages: [] } ] -->
+  {{#if alertGroups.length}}
+  <div class="section">
+    <h2 style="margin-bottom:10px">Alertas y Observaciones del Análisis</h2>
+    {{#each alertGroups}}
+    <div class="block-label">{{this.label}}</div>
+    <ul style="margin:0 0 10px; padding-left:16px">
+      {{#each this.messages}}<li class="sm">{{this}}</li>{{/each}}
+    </ul>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Análisis con IA ══════════ -->
+  {{#if aiAnalysis}}
+  <div class="section">
+    <h2 style="margin-bottom:8px">Análisis con Inteligencia Artificial</h2>
+    <div class="ai">
+      <div class="xs muted">{{aiAnalysis.model}} · {{aiAnalysis.createdAt}}</div>
+      <div class="body">{{aiAnalysis.result}}</div>
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Resumen del cupo ══════════ -->
+  <div class="section">
+    <h2 style="margin-bottom:10px">Resumen del Cupo</h2>
+    <div class="card grid g2">
+      <div>
+        <div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Cliente</span><span class="semibold">{{customer.businessName}}</span></div>
+        <div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Identificación</span><span class="semibold">{{customer.identificationNumber}}</span></div>
+        <div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Cupo Solicitado</span><span class="semibold">{{request.requestedAmount}}</span></div>
+        <div class="row between" style="padding:4px 0"><span class="muted">Cupo Viable</span><span class="semibold">{{request.approvedAmount}}</span></div>
+      </div>
+      <div>
+        <div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Fecha de Resolución</span><span class="semibold">{{request.resolutionDate}}</span></div>
+        <div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Plazo Solicitado</span><span class="semibold">{{request.requestedTerm}}</span></div>
+        {{#if source.label}}<div class="row between" style="padding:4px 0; border-bottom:1px solid var(--line)"><span class="muted">Fuente del Cálculo</span><span class="semibold">{{source.label}}</span></div>{{/if}}
+        <div class="row between items-center" style="padding:4px 0"><span class="muted">Estado</span><span class="pill {{status.pillClass}}">{{status.title}}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ Salvedad legal ══════════ -->
+  <div class="disclaimer">
+    Este documento es un <span class="semibold">concepto de viabilidad</span> emitido por {{company.name}} con base en la
+    información disponible al momento de la consulta{{#if source.label}} (fuente: {{source.label}}{{#if source.hasVerification}}, cifras {{#if source.verified}}verificadas{{else}}sin verificar{{/if}}{{/if}}){{/if}}.
+    No constituye una aprobación ni una obligación de otorgamiento de crédito. La decisión final de otorgar el cupo, y el riesgo asociado, corresponden exclusivamente a la empresa.
+    Documento generado el {{generatedAt}}.
+  </div>
+
+</div>
+</body>
+</html>
