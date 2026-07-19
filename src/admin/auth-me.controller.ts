@@ -1,6 +1,11 @@
 import { Controller, Get, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { AdminService } from './admin.service.js';
 
 /**

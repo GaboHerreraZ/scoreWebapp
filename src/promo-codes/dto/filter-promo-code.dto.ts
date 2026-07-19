@@ -11,7 +11,9 @@ export class FilterPromoCodeDto extends PaginationDto {
   @IsIn(['company', 'global'])
   scope?: 'company' | 'global';
 
-  @ApiPropertyOptional({ description: 'Filtrar por estado activo (true/false)' })
+  @ApiPropertyOptional({
+    description: 'Filtrar por estado activo (true/false)',
+  })
   @IsOptional()
   @IsBooleanString()
   isActive?: string;

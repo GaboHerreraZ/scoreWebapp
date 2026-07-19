@@ -154,10 +154,15 @@ export class PromoCodesService {
     const code = this.normalizeCode(rawCode);
     const promo = await this.repository.findByCode(code);
 
-    if (!promo) return { valid: false, reason: 'No existe un código con ese texto' };
-    if (!promo.isActive) return { valid: false, reason: 'El código está inactivo' };
+    if (!promo)
+      return { valid: false, reason: 'No existe un código con ese texto' };
+    if (!promo.isActive)
+      return { valid: false, reason: 'El código está inactivo' };
     if (promo.redemptionsCount >= promo.maxRedemptions)
-      return { valid: false, reason: 'El código ya agotó sus usos disponibles' };
+      return {
+        valid: false,
+        reason: 'El código ya agotó sus usos disponibles',
+      };
 
     const now = new Date();
     if (promo.validFrom && now < promo.validFrom)

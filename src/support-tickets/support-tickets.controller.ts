@@ -20,7 +20,9 @@ export class SupportTicketsController {
   constructor(private readonly service: SupportTicketsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Listar tickets (panel soporte, paginado y filtrable)' })
+  @ApiOperation({
+    summary: 'Listar tickets (panel soporte, paginado y filtrable)',
+  })
   @ApiResponse({ status: 200, description: 'data + meta de paginación' })
   findAll(@Query() filters: FilterSupportTicketDto) {
     return this.service.findAll(filters);

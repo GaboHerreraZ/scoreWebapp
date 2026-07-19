@@ -22,7 +22,11 @@ export class AdminStatsRepository {
   /** Ventas del periodo: créditos vendidos, ingresos, nº compras. */
   async salesSummary(from: Date, to: Date) {
     const rows = await this.prisma.$queryRaw<
-      Array<{ credits_sold: bigint | null; revenue: number | null; purchases: bigint }>
+      Array<{
+        credits_sold: bigint | null;
+        revenue: number | null;
+        purchases: bigint;
+      }>
     >`
       SELECT
         COALESCE(SUM(quantity_purchased), 0) AS credits_sold,

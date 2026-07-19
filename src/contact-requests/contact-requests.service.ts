@@ -31,7 +31,10 @@ export class ContactRequestsService {
     meta: { ipAddress?: string; userAgent?: string },
   ) {
     const [subject, newStatus] = await Promise.all([
-      this.repository.findParameterByTypeAndCode('contact_subject', dto.subject),
+      this.repository.findParameterByTypeAndCode(
+        'contact_subject',
+        dto.subject,
+      ),
       this.repository.findParameterByTypeAndCode('contact_status', 'new'),
     ]);
     if (!subject || !newStatus) {
@@ -176,11 +179,7 @@ export class ContactRequestsService {
    * Gestiona un lead: estado, asignación y/o notas. Al pasar a 'closed' marca
    * handledBy (admin del token) y handledAt; al reabrir, los limpia.
    */
-  async update(
-    id: string,
-    dto: UpdateContactRequestDto,
-    userId: string,
-  ) {
+  async update(id: string, dto: UpdateContactRequestDto, userId: string) {
     await this.findOne(id);
 
     const data: Prisma.ContactRequestUncheckedUpdateInput = {};

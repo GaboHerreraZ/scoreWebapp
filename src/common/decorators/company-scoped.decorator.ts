@@ -6,4 +6,5 @@ import { CompanyAccessGuard } from '../auth/company-access.guard.js';
  * que exige ser miembro activo de la empresa (`:companyId`) o PlatformAdmin
  * (impersonation de soporte). Usar en los controllers `/companies/:companyId/*`.
  */
-export const CompanyScoped = () => applyDecorators(UseGuards(CompanyAccessGuard));
+export const CompanyScoped = () =>
+  applyDecorators(UseGuards(CompanyAccessGuard));

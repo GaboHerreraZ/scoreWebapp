@@ -361,7 +361,9 @@ export class EpaycoService {
       }
       return sessionId as string;
     } catch (error: any) {
-      this.logger.error(`Error creando sesión de pago ePayco: ${error.message}`);
+      this.logger.error(
+        `Error creando sesión de pago ePayco: ${error.message}`,
+      );
       throw new BadRequestException(
         'Error iniciando el pago. Por favor intenta de nuevo más tarde.',
       );

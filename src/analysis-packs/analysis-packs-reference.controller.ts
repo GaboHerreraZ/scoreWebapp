@@ -35,10 +35,7 @@ export class AnalysisPacksReferenceController {
   })
   @ApiResponse({ status: 403, description: 'Sin acceso a esta compra' })
   @ApiResponse({ status: 404, description: 'Referencia no encontrada' })
-  getByReference(
-    @Param('refPayco') refPayco: string,
-    @Req() req: Request,
-  ) {
+  getByReference(@Param('refPayco') refPayco: string, @Req() req: Request) {
     const userId = (req as any).user.id as string;
     return this.service.getStatusByReference(refPayco, userId);
   }

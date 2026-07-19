@@ -262,8 +262,6 @@ export class DashboardRepository {
       select: { id: true, code: true, label: true },
     });
 
-    return new Map(
-      params.map((p) => [p.id, { code: p.code, label: p.label }]),
-    );
+    return new Map(params.map((p) => [p.id, { code: p.code, label: p.label }]));
   }
 }

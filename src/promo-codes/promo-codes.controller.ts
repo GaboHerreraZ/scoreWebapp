@@ -33,7 +33,9 @@ export class PromoCodesController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar códigos promocionales (paginado, filtrable)' })
+  @ApiOperation({
+    summary: 'Listar códigos promocionales (paginado, filtrable)',
+  })
   @ApiResponse({ status: 200, description: 'data + meta de paginación' })
   findAll(@Query() filters: FilterPromoCodeDto) {
     return this.service.findAll(filters);
@@ -49,7 +51,8 @@ export class PromoCodesController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: 'Editar código (solo isActive, vigencia y nota; el resto es inmutable)',
+    summary:
+      'Editar código (solo isActive, vigencia y nota; el resto es inmutable)',
   })
   @ApiResponse({ status: 200, description: 'Código actualizado' })
   @ApiResponse({ status: 404, description: 'No encontrado' })

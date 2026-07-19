@@ -347,13 +347,14 @@ export class AnalysisPacksService {
     // Se retornan TODAS las bolsas de la empresa, sin importar su estado
     // (active, exhausted, expired, pending_payment, cancelled), para tener
     // trazabilidad completa de todos los intentos.
-    const { data: packs, total } =
-      await this.repository.findByCompanyPaginated({
+    const { data: packs, total } = await this.repository.findByCompanyPaginated(
+      {
         companyId,
         skip,
         take: limit,
         excludeStatusIds: [],
-      });
+      },
+    );
 
     const packIds = packs.map((p) => p.id);
     const [consumptions, paymentEvents] = await Promise.all([
@@ -428,7 +429,9 @@ export class AnalysisPacksService {
   async getStatusByReference(ref: string, userId: string) {
     const pack = await this.repository.findByReceiptRef(ref);
     if (!pack) {
-      throw new NotFoundException('No se encontró una compra con esa referencia');
+      throw new NotFoundException(
+        'No se encontró una compra con esa referencia',
+      );
     }
 
     // Control de acceso: miembro activo de la empresa, o PlatformAdmin (soporte).
@@ -796,10 +799,9 @@ export class AnalysisPacksService {
           typeCode: 'payment_failed',
           severityCode: 'info',
           title: 'Pago rechazado',
-          message:
-            `Un intento de pago de la bolsa fue ${
-              responseCode === 2 ? 'rechazado' : 'fallido'
-            }. La bolsa sigue pendiente de pago para que el cliente reintente.`,
+          message: `Un intento de pago de la bolsa fue ${
+            responseCode === 2 ? 'rechazado' : 'fallido'
+          }. La bolsa sigue pendiente de pago para que el cliente reintente.`,
           metadata: {
             codResponse: responseCode,
             epaycoRef: dto.x_ref_payco ?? null,
@@ -912,9 +914,7 @@ export class AnalysisPacksService {
    * loguea pero NO interrumpe el procesamiento del webhook.
    */
   private async notifyReversal(
-    pack: NonNullable<
-      Awaited<ReturnType<AnalysisPacksRepository['findById']>>
-    >,
+    pack: NonNullable<Awaited<ReturnType<AnalysisPacksRepository['findById']>>>,
     consumed: boolean,
   ) {
     const planName = pack.packOffering?.name ?? 'Bolsa de consultas';

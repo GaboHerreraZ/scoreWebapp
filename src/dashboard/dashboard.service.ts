@@ -40,16 +40,8 @@ export class DashboardService {
   async getBasicDashboard(companyId: string) {
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      1,
-    );
-    const startOfPrevMonth = new Date(
-      now.getFullYear(),
-      now.getMonth() - 1,
-      1,
-    );
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     // studyDate es DATE: el fin de mes inclusivo es el último instante previo al
     // arranque del mes siguiente.
     const endOfThisMonth = new Date(startOfNextMonth.getTime() - 1);
@@ -201,7 +193,9 @@ export class DashboardService {
       consultedCustomers: bureauRows.length,
       // Clientes nunca consultados + consultados sin score = sin perfil de riesgo.
       withoutHistory:
-        totalCustomers - bureauRows.length + (bureauRows.length - scores.length),
+        totalCustomers -
+        bureauRows.length +
+        (bureauRows.length - scores.length),
       withArrears: bureauRows.filter(
         (r) => r.saldoMora !== null && r.saldoMora > 0,
       ).length,
@@ -244,8 +238,7 @@ export class DashboardService {
           creditCurrent.totalRequested > 0
             ? Number(
                 (
-                  (creditCurrent.totalApproved /
-                    creditCurrent.totalRequested) *
+                  (creditCurrent.totalApproved / creditCurrent.totalRequested) *
                   100
                 ).toFixed(1),
               )

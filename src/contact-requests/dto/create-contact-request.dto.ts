@@ -1,10 +1,4 @@
-import {
-  IsIn,
-  IsString,
-  IsEmail,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsIn, IsString, IsEmail, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export const CONTACT_SUBJECTS = [
