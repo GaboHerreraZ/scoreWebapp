@@ -8,7 +8,7 @@ import { AiAnalysesRepository } from './ai-analyses.repository.js';
 import { AiService } from '../ai/ai.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import {
-  FINANCIAL_PDF_EXTRACTION_PROMPT,
+  buildFinancialPdfExtractionPrompt,
   CREDIT_STUDY_SYSTEM_PROMPT,
   buildCreditStudyUserMessage,
   type CreditStudyPromptInput,
@@ -315,11 +315,15 @@ export class AiAnalysesService {
     // 1. Get extraction type parameter
     const typeId = await this.getTypeId('financialStatementsPdfUpload');
 
+    // El prompt se construye con la fecha actual: la flag de "verificabilidad"
+    // (período aún no reportado ante las entidades) depende del mes de carga.
+    const extractionPrompt = buildFinancialPdfExtractionPrompt(new Date());
+
     // 2. Call Claude AI to extract data from PDF
     try {
       const aiResult = await this.aiService.extractFromPdf(
         pdfBuffer,
-        FINANCIAL_PDF_EXTRACTION_PROMPT,
+        extractionPrompt,
       );
 
       const estimatedCostUsd = this.aiService.estimateCostUsd(
@@ -361,7 +365,7 @@ export class AiAnalysesService {
         creditStudyId: context?.creditStudyId,
         customerId: context?.customerId,
         performedBy: userId,
-        prompt: FINANCIAL_PDF_EXTRACTION_PROMPT,
+        prompt: extractionPrompt,
         pdfFile: new Uint8Array(pdfBuffer),
         result: aiResult.content,
         model: aiResult.model,
@@ -394,7 +398,7 @@ export class AiAnalysesService {
         typeId,
         companyId,
         performedBy: userId,
-        prompt: FINANCIAL_PDF_EXTRACTION_PROMPT,
+        prompt: extractionPrompt,
         result: null,
         model: 'unknown',
         status: 'error',

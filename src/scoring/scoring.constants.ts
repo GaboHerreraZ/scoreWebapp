@@ -191,6 +191,9 @@ export const PDF_RELIABILITY_FLAG_CATEGORY_LABEL: Record<string, string> = {
   tendencia: 'Tendencia',
   notas: 'Notas a los estados financieros',
   legibilidad: 'Legibilidad del documento',
+  // Período aún no reportado ante las entidades (carga en ene-mar del año
+  // siguiente): las cifras no son contrastables contra la central todavía.
+  verificabilidad: 'Verificabilidad ante la central',
   otro: 'Otro',
 };
 
