@@ -441,6 +441,7 @@ model UserCompany {
   invitedByUser Profile?  @relation("UserCompanyInvitedBy", fields: [invitedBy], references: [id])
 
   @@unique([userId, companyId])
+  @@index([companyId]) // listar miembros de una empresa (el unique empieza por userId y no sirve)
   @@map("user_companies")
 }
 
@@ -519,6 +520,7 @@ model Customer {
   // Un cliente por identificación dentro de una empresa. Soporta el upsert de la
   // consulta al bureau (refrescar si existe, crear si no) de forma race-safe.
   @@unique([companyId, identificationNumber])
+  @@index([companyId, businessName]) // listado (filtro por empresa + orden alfabético)
   @@map("customers")
 }
 
@@ -574,6 +576,9 @@ model CreditStudy {
   analysisConsumption AnalysisConsumption?
   financialAnalyses   CreditStudyFinancialAnalysis[]
 
+  @@index([companyId, studyDate]) // listado principal y dashboard (orden por fecha)
+  @@index([companyId, statusId]) // conteos/filtros por estado (dashboard)
+  @@index([customerId]) // estudios de un cliente (ficha + métricas)
   @@map("credit_studies")
 }
 
@@ -890,6 +895,8 @@ model Invitation {
   invitedByUser Profile?  @relation("InvitationInvitedBy", fields: [invitedBy], references: [id])
   status        Parameter @relation("InvitationStatus", fields: [statusId], references: [id])
 
+  @@index([companyId, statusId]) // invitaciones pendientes de una empresa
+  @@index([email]) // invitaciones pendientes de un correo (aceptación/registro)
   @@map("invitations")
 }
 
@@ -1185,7 +1192,7 @@ model PromoCode {
   redemptions    PromoCodeRedemption[]
   analysisPacks  AnalysisPack[]
 
-  @@index([code])
+  // (sin @@index([code]): code ya es @unique y ese índice lo cubre)
   @@index([scopeId, isActive])
   @@map("promo_codes")
 }

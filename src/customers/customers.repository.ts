@@ -21,6 +21,10 @@ export class CustomersRepository {
         where,
         orderBy,
         include: { personType: true },
+        // bureauProfile es un JSONB grande (perfil PJ completo del bureau) que
+        // solo consume la vista de DETALLE (findById); en el listado infla
+        // cada fila sin uso.
+        omit: { bureauProfile: true },
       }),
       this.prisma.customer.count({ where }),
     ]);
@@ -63,6 +67,9 @@ export class CustomersRepository {
         identificationType: true,
         economicActivity: true,
       },
+      // El export solo usa identidad + contacto + labels de los parámetros;
+      // sin esto, cada fila arrastra el perfil completo del bureau.
+      omit: { bureauProfile: true },
     });
   }
 

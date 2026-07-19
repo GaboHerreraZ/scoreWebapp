@@ -256,7 +256,7 @@ export class AnalysisPacksRepository {
             studyDate: true,
             createdBy: true,
             customer: { select: { id: true, businessName: true } },
-            status: { select: { label: true,  code: true } },
+            status: { select: { label: true, code: true } },
           },
         },
       },
@@ -280,6 +280,40 @@ export class AnalysisPacksRepository {
       },
       orderBy: { endDate: 'asc' },
       include: this.defaultInclude,
+    });
+  }
+
+  /**
+   * Variante en lote de findActivePacksWithBalance para VARIAS empresas en una
+   * sola query (listado cross-tenant del panel admin). Mismos criterios de
+   * vigencia; select mínimo porque solo se necesita el saldo por empresa.
+   */
+  async findActivePacksWithBalanceForCompanies(
+    companyIds: string[],
+    activeStatusId: number,
+  ) {
+    if (companyIds.length === 0) {
+      return [];
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.prisma.analysisPack.findMany({
+      where: {
+        companyId: { in: companyIds },
+        statusId: activeStatusId,
+        endDate: { gte: today },
+      },
+      orderBy: { endDate: 'asc' },
+      select: {
+        id: true,
+        companyId: true,
+        quantityPurchased: true,
+        quantityConsumed: true,
+        startDate: true,
+        endDate: true,
+      },
     });
   }
 
