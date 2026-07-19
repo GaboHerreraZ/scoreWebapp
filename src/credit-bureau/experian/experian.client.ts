@@ -86,7 +86,6 @@ export class ExperianClient {
       : { username: this.usernamePn, password: this.passwordPn };
   }
 
-
   private async getToken(credentials: {
     username: string;
     password: string;

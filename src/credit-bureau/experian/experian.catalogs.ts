@@ -32,7 +32,9 @@ const TX_EXACT: Record<string, string> = {
 };
 
 /** Describe un código de respuesta TX (Tabla 1). Maneja los rangos 01-08 / 09-16. */
-export function describeTxCode(valor: string | null | undefined): string | null {
+export function describeTxCode(
+  valor: string | null | undefined,
+): string | null {
   if (valor === null || valor === undefined) return null;
   const v = String(valor).trim();
   if (v === '') return null;
@@ -46,7 +48,8 @@ export function describeTxCode(valor: string | null | undefined): string | null 
 
 // Tabla 5 — Organización jurídica (PJ). key = valor tal cual llega (mayúsculas).
 export const LEGAL_ORGANIZATION: Record<string, string> = {
-  'SIN ASIGNACION ORGANIZACION JURIDICA': 'Sin asignación organización jurídica',
+  'SIN ASIGNACION ORGANIZACION JURIDICA':
+    'Sin asignación organización jurídica',
   'PERSONA NATURAL': 'Persona natural',
   CIVIL: 'Civil',
   'EMPRESA UNIPERSONAL': 'Empresa unipersonal',

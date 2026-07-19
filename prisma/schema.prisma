@@ -803,6 +803,12 @@ model CustomerRiskSnapshot {
   saldoMora       Float?  @map("saldo_mora")
   hasAlertas      Boolean @default(false) @map("has_alertas")
 
+  // Endeudamiento reportado (solo PN): ingreso mensual y % del ingreso ya
+  // comprometido en cuotas. Referencia de capacidad de pago de la persona (la
+  // central no tiene EEFF de PN). null en PJ.
+  reportedIncome   Float? @map("reported_income")
+  quotaToIncomePct Float? @map("quota_to_income_pct")
+
   // Descripciones del manual Experian para los códigos escalares de riesgo
   // (Tablas 11-14). El código crudo vive en su columna; el label es puro display.
   viabilidadLabel      String? @map("viabilidad_label") @db.VarChar(80) // Tabla 11 (PN)
@@ -817,6 +823,7 @@ model CustomerRiskSnapshot {
   paymentBehavior Json? @map("payment_behavior") // Tabla 9  (PN+PJ): vector mensual
   creditSectors   Json? @map("credit_sectors") // Tabla 10 (PN+PJ): sectores
   linkNetwork     Json? @map("link_network") // Tabla 15 (PJ): malla de vínculos
+  alerts          Json? @map("alerts") // detalle de alertas (PN: textos; PJ: nodos alertados)
 
   createdAt DateTime @default(now()) @map("created_at")
 

@@ -130,6 +130,18 @@ export interface MappedCreditSector {
   porcentajeDeuda: string | null;
 }
 
+// Alerta de la central. Unificada PN+PJ: en PN es una alerta de texto sobre el
+// propio titular (`informacionRiesgo.alertas`); en PJ es un nodo de la malla de
+// vínculos con alertas (`cantidadAlertas > 0`), sea la propia empresa (`self`) o
+// un vínculo (`linked`). Cada tipo llena su mitad; el otro va null.
+export interface MappedRiskAlert {
+  source: 'self' | 'linked';
+  message: string | null; // PN: texto de la central. PJ: null (no hay texto).
+  subject: string | null; // PJ: nombre de la entidad alertada. PN: null.
+  identification: string | null; // PJ: documento de la entidad. PN: null.
+  count: number | null; // PJ: nº de alertas del nodo. PN: null.
+}
+
 // Tabla 15 — nodo de la malla de vínculos (PJ), recursivo.
 export interface MappedLinkNode {
   name: string | null;
@@ -156,6 +168,15 @@ export interface MappedRiskSnapshot {
   porcentajeDeuda: number | null;
   saldoMora: number | null;
   hasAlertas: boolean;
+  // Detalle de las alertas de la central (el "cuáles" detrás de hasAlertas).
+  // null si no hay. hasAlertas se deriva de aquí (length > 0) para que sean
+  // siempre consistentes.
+  alerts: MappedRiskAlert[] | null;
+  // Endeudamiento reportado (solo PN): ingreso mensual y % ya comprometido en
+  // cuotas. Referencia de capacidad de pago de la persona (la central no tiene
+  // EEFF de PN). null en PJ.
+  reportedIncome: number | null;
+  quotaToIncomePct: number | null;
   // Bloques temporales (JSONB en customer_risk_snapshots). null si no aplica.
   creditPortfolio: MappedCreditPortfolioItem[] | null; // Tabla 8 (PJ)
   paymentBehavior: MappedPaymentBehaviorItem[] | null; // Tabla 9 (PN+PJ)

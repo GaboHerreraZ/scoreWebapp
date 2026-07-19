@@ -20,9 +20,7 @@ export class ExperianProvider implements ICreditBureauProvider {
     return toExperianDocType(identificationTypeCode);
   }
 
-  async consult(
-    params: ProviderConsultParams,
-  ): Promise<ProviderConsultResult> {
+  async consult(params: ProviderConsultParams): Promise<ProviderConsultResult> {
     const { httpStatus, raw } = await this.client.queryMiDecisor({
       tipoIdentificacion: params.docType,
       numeroIdentificacion: params.identificationNumber,

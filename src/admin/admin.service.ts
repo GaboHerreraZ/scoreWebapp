@@ -38,7 +38,8 @@ const ALL_SCREENS = [
   'platform-admins', // gestión de usuarios del portal: SOLO rol admin
   'blog-posts',
   "scoring-dimensions",
-  'datacredito'
+  'datacredito',
+  'discount-calculator'
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.

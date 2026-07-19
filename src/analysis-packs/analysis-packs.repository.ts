@@ -291,15 +291,6 @@ export class AnalysisPacksRepository {
     return this.prisma.paymentEvent.create({ data });
   }
 
-  /** ¿Ya procesamos esta transacción ePayco? (idempotencia del webhook). */
-  async existsByTransactionId(transactionId: string): Promise<boolean> {
-    const found = await this.prisma.analysisPack.findFirst({
-      where: { epaycoTransactionId: transactionId },
-      select: { id: true },
-    });
-    return !!found;
-  }
-
   /**
    * Activa la bolsa tras confirmación de pago exitosa. Sólo pasa de
    * pending_payment → active (claim atómico con updateMany); si otra

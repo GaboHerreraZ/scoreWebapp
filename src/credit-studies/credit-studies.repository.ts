@@ -165,6 +165,39 @@ export class CreditStudiesRepository {
             bureauProfile: true,
             bureauCreated: true,
             lastConsultedAt: true,
+            // Último snapshot de riesgo de la central (para el bloque centralRisk
+            // del step1). Trae los escalares + labels + los bloques JSON (cartera,
+            // comportamiento, sectores, malla de vínculos). PN llena income; PJ
+            // llena nivel/rating/cartera/malla. El servicio lo transforma y NO lo
+            // devuelve crudo dentro de customer.
+            riskSnapshots: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                createdAt: true,
+                score: true,
+                viabilidad: true,
+                viabilidadLabel: true,
+                ratingRecaudos: true,
+                ratingRecaudosLabel: true,
+                nivelRiesgo: true,
+                nivelRiesgoLabel: true,
+                ratingSectorial: true,
+                ratingSectorialLabel: true,
+                montoSugerido: true,
+                saldoActual: true,
+                porcentajeDeuda: true,
+                saldoMora: true,
+                hasAlertas: true,
+                reportedIncome: true,
+                quotaToIncomePct: true,
+                creditPortfolio: true,
+                paymentBehavior: true,
+                creditSectors: true,
+                linkNetwork: true,
+                alerts: true,
+              },
+            },
           },
         },
         status: {

@@ -618,17 +618,24 @@ export class AnalysisPacksService {
       );
     }
 
-    // 3. Idempotencia por transacción
-    if (dto.x_transaction_id) {
-      const already = await this.repository.existsByTransactionId(
-        dto.x_transaction_id,
+    // 3. Idempotencia por transacción, ACOTADA A ESTA BOLSA (clave: bolsa + txn).
+    //    NO se llavea global por x_transaction_id: en modo test de ePayco ese id
+    //    se REPITE entre checkouts distintos (x_ref_payco === x_transaction_id),
+    //    así que un check global marcaría como "duplicado" el pago legítimo de
+    //    OTRA bolsa y la dejaría sin activar (webhook responde received:true pero
+    //    la bolsa queda en pending_payment). La activación en sí ya es atómica
+    //    (claim pending→active), por lo que este check solo evita re-ejecutar los
+    //    efectos secundarios ante un reenvío del MISMO pago sobre la MISMA bolsa.
+    //    Usa el valor ya cargado en `pack` (findById arriba); solo lo habrá puesto
+    //    una confirmación previa de esta misma bolsa.
+    if (
+      dto.x_transaction_id &&
+      pack.epaycoTransactionId === dto.x_transaction_id
+    ) {
+      this.logger.log(
+        `Webhook duplicado ignorado para la bolsa ${pack.id}: transacción=${dto.x_transaction_id}`,
       );
-      if (already) {
-        this.logger.log(
-          `Webhook duplicado ignorado: transacción=${dto.x_transaction_id}`,
-        );
-        return { received: true };
-      }
+      return { received: true };
     }
 
     const [pendingStatus, activeStatus] = await Promise.all([
