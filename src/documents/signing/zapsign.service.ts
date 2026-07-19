@@ -163,7 +163,9 @@ export class ZapsignService {
         signers: (json.signers ?? []) as ZapsignSigner[],
       };
     } catch (err) {
-      this.logger.error(`Zapsign getDocState failed: ${(err as Error).message}`);
+      this.logger.error(
+        `Zapsign getDocState failed: ${(err as Error).message}`,
+      );
       throw new InternalServerErrorException(
         'No se pudo consultar el estado del contrato en Zapsign.',
       );

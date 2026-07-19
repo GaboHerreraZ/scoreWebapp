@@ -29,15 +29,14 @@ export class SupportTicketsService {
    * correos (confirmación al cliente + aviso a admins, best-effort). companyId
    * viene de la ruta; createdBy del token (Profile = id de Supabase).
    */
-  async create(
-    companyId: string,
-    dto: CreateSupportTicketDto,
-    userId: string,
-  ) {
+  async create(companyId: string, dto: CreateSupportTicketDto, userId: string) {
     const [area, type, priority, openStatus] = await Promise.all([
       this.repository.findParameterByTypeAndCode('support_area', dto.area),
       this.repository.findParameterByTypeAndCode('support_type', dto.type),
-      this.repository.findParameterByTypeAndCode('support_priority', dto.priority),
+      this.repository.findParameterByTypeAndCode(
+        'support_priority',
+        dto.priority,
+      ),
       this.repository.findParameterByTypeAndCode('support_status', 'open'),
     ]);
     if (!area || !type || !priority || !openStatus) {

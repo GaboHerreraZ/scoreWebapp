@@ -8,7 +8,8 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class StatsPeriodDto {
   @ApiPropertyOptional({
-    description: 'Inicio del periodo (ISO). Default: primer día del mes actual.',
+    description:
+      'Inicio del periodo (ISO). Default: primer día del mes actual.',
     example: '2026-06-01T00:00:00.000Z',
   })
   @IsOptional()

@@ -9,7 +9,12 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { SupportTicketsService } from './support-tickets.service.js';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto.js';
 import { FilterSupportTicketDto } from './dto/filter-support-ticket.dto.js';
@@ -29,7 +34,10 @@ export class CompanySupportTicketsController {
 
   @Post()
   @ApiOperation({ summary: 'Crear un ticket de soporte' })
-  @ApiResponse({ status: 201, description: '{ id, reference, status, createdAt }' })
+  @ApiResponse({
+    status: 201,
+    description: '{ id, reference, status, createdAt }',
+  })
   create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Body() dto: CreateSupportTicketDto,

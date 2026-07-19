@@ -62,7 +62,6 @@ export function extractDocToken(
   payload: ZapsignWebhookPayload,
 ): string | undefined {
   return (
-    payload?.token ??
-    (payload as { doc?: { token?: string } })?.doc?.token
+    payload?.token ?? (payload as { doc?: { token?: string } })?.doc?.token
   );
 }

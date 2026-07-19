@@ -14,7 +14,9 @@ export class SupportTicketsRepository {
     status: { select: { code: true, label: true } },
     company: { select: { id: true, name: true, nit: true } },
     assignedToAdmin: { select: { id: true, email: true } },
-    createdByUser: { select: { id: true, name: true, lastName: true, email: true } },
+    createdByUser: {
+      select: { id: true, name: true, lastName: true, email: true },
+    },
   } as const;
 
   async findParameterByTypeAndCode(type: string, code: string) {

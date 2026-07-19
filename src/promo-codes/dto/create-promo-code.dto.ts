@@ -34,7 +34,8 @@ export class CreatePromoCodeDto {
   scope!: 'company' | 'global';
 
   @ApiPropertyOptional({
-    description: 'Empresa a la que se ata el código. Requerido si scope=company.',
+    description:
+      'Empresa a la que se ata el código. Requerido si scope=company.',
     example: '4cc725de-1919-4228-b4ff-161a32b1be5b',
   })
   @ValidateIf((o) => o.scope === 'company')

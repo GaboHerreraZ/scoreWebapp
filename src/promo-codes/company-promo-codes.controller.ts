@@ -1,5 +1,10 @@
 import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { PromoCodesService } from './promo-codes.service.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
@@ -16,7 +21,9 @@ export class CompanyPromoCodesController {
   constructor(private readonly service: PromoCodesService) {}
 
   @Get('validate')
-  @ApiOperation({ summary: 'Validar un código para esta empresa (sin canjear)' })
+  @ApiOperation({
+    summary: 'Validar un código para esta empresa (sin canjear)',
+  })
   @ApiResponse({
     status: 200,
     description: '{ valid, reason?, code?, discountPercent? }',

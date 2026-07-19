@@ -29,7 +29,10 @@ class OnboardingProfileDto {
   @MaxLength(50)
   phone?: string;
 
-  @ApiPropertyOptional({ example: 104, description: 'Parameter ID tipo de documento' })
+  @ApiPropertyOptional({
+    example: 104,
+    description: 'Parameter ID tipo de documento',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

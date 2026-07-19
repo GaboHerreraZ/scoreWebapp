@@ -1,5 +1,10 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { PricingCalculatorService } from './pricing-calculator.service.js';
 import { SimulatePricingDto } from './dto/simulate-pricing.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';

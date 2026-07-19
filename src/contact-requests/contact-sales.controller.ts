@@ -18,9 +18,14 @@ export class ContactSalesController {
   @Post()
   @Public()
   @Throttle({ default: { limit: 5, ttl: 600_000 } }) // 5 envíos por IP / 10 min
-  @ApiOperation({ summary: 'Enviar una solicitud de contacto comercial (público)' })
+  @ApiOperation({
+    summary: 'Enviar una solicitud de contacto comercial (público)',
+  })
   @ApiResponse({ status: 201, description: '{ received: true, id }' })
-  @ApiResponse({ status: 429, description: 'Demasiadas solicitudes (rate limit)' })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiadas solicitudes (rate limit)',
+  })
   create(@Body() dto: CreateContactRequestDto, @Req() req: Request) {
     const ipAddress =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||

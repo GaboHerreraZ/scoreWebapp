@@ -10,7 +10,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Datos para crear un usuario del portal (Supabase Auth + PlatformAdmin). */
 export class CreatePlatformAdminDto {
-  @ApiProperty({ description: 'Correo del usuario', example: 'maria@creditia.co' })
+  @ApiProperty({
+    description: 'Correo del usuario',
+    example: 'maria@creditia.co',
+  })
   @IsEmail()
   @MaxLength(255)
   email!: string;
@@ -37,7 +40,8 @@ export class CreatePlatformAdminDto {
   phone?: string;
 
   @ApiProperty({
-    description: 'Id del rol del equipo interno (Parameter platform_admin_role)',
+    description:
+      'Id del rol del equipo interno (Parameter platform_admin_role)',
     example: 70,
   })
   @IsInt()

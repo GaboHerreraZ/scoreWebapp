@@ -38,13 +38,17 @@ export class CreateSupportTicketDto {
   @IsIn(SUPPORT_PRIORITIES)
   priority!: (typeof SUPPORT_PRIORITIES)[number];
 
-  @ApiProperty({ example: "El estudio quedó en 'En Revisión' tras cargar el PDF" })
+  @ApiProperty({
+    example: "El estudio quedó en 'En Revisión' tras cargar el PDF",
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(255)
   subject!: string;
 
-  @ApiProperty({ example: 'Cargué los estados financieros y el análisis nunca se ejecutó...' })
+  @ApiProperty({
+    example: 'Cargué los estados financieros y el análisis nunca se ejecutó...',
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(5000)
@@ -66,7 +70,8 @@ export class CreateSupportTicketDto {
   relatedEntityId?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Contexto técnico del front (appRoute, userAgent, viewport...)',
+    description:
+      'Contexto técnico del front (appRoute, userAgent, viewport...)',
   })
   @IsOptional()
   @IsObject()

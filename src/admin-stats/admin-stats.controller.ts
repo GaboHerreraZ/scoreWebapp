@@ -27,9 +27,13 @@ export class AdminStatsController {
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
   @ApiOperation({
-    summary: 'Resumen del periodo (ventas, consumo) + comparación con el anterior',
+    summary:
+      'Resumen del periodo (ventas, consumo) + comparación con el anterior',
   })
-  @ApiResponse({ status: 200, description: 'period, sales, usage, previous, deltas' })
+  @ApiResponse({
+    status: 200,
+    description: 'period, sales, usage, previous, deltas',
+  })
   overview(@Query() dto: StatsPeriodDto) {
     return this.service.getOverview(dto);
   }
@@ -37,7 +41,9 @@ export class AdminStatsController {
   @Get('top-consumers')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
-  @ApiOperation({ summary: 'Top empresas por consumo (candidatas a promoción)' })
+  @ApiOperation({
+    summary: 'Top empresas por consumo (candidatas a promoción)',
+  })
   @ApiResponse({ status: 200, description: 'data + meta + period' })
   topConsumers(@Query() dto: StatsRankingDto) {
     return this.service.getTopConsumers(dto);
@@ -47,7 +53,8 @@ export class AdminStatsController {
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
   @ApiOperation({
-    summary: 'Empresas que compraron y NO consumen en el periodo (riesgo churn)',
+    summary:
+      'Empresas que compraron y NO consumen en el periodo (riesgo churn)',
   })
   @ApiResponse({ status: 200, description: 'data + meta + period' })
   inactiveClients(@Query() dto: StatsRankingDto) {
@@ -57,7 +64,9 @@ export class AdminStatsController {
   @Get('utilization')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
-  @ApiOperation({ summary: 'Aprovechamiento por empresa (comprado vs consumido)' })
+  @ApiOperation({
+    summary: 'Aprovechamiento por empresa (comprado vs consumido)',
+  })
   @ApiResponse({ status: 200, description: 'data + meta + period' })
   utilization(@Query() dto: StatsRankingDto) {
     return this.service.getUtilization(dto);
@@ -74,7 +83,10 @@ export class AdminStatsController {
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
   @ApiOperation({ summary: 'Consultas consumidas por mes (serie temporal)' })
-  @ApiResponse({ status: 200, description: 'months + data[{ month, consumed }]' })
+  @ApiResponse({
+    status: 200,
+    description: 'months + data[{ month, consumed }]',
+  })
   monthlyTrend(@Query() dto: MonthlyTrendDto) {
     return this.service.getMonthlyTrend(dto.months);
   }
@@ -82,7 +94,9 @@ export class AdminStatsController {
   @Get('promo-usage')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(STATS_TTL)
-  @ApiOperation({ summary: 'Uso de códigos promocionales (canjes y descuento)' })
+  @ApiOperation({
+    summary: 'Uso de códigos promocionales (canjes y descuento)',
+  })
   @ApiResponse({ status: 200, description: 'data + meta + period' })
   promoUsage(@Query() dto: StatsRankingDto) {
     return this.service.getPromoUsage(dto);

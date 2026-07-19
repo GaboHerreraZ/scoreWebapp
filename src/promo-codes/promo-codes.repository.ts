@@ -96,7 +96,15 @@ export class PromoCodesRepository {
     discountAmount: number;
   }): Promise<
     | { ok: true }
-    | { ok: false; reason: 'not_found' | 'inactive' | 'exhausted' | 'expired' | 'already_redeemed' }
+    | {
+        ok: false;
+        reason:
+          | 'not_found'
+          | 'inactive'
+          | 'exhausted'
+          | 'expired'
+          | 'already_redeemed';
+      }
   > {
     return this.prisma.$transaction(async (tx) => {
       // Lock pesimista sobre la fila del código para serializar canjes

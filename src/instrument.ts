@@ -11,7 +11,8 @@ const dsn = process.env['SENTRY_DSN'];
 if (dsn) {
   Sentry.init({
     dsn,
-    environment: process.env['SENTRY_ENV'] ?? process.env['NODE_ENV'] ?? 'development',
+    environment:
+      process.env['SENTRY_ENV'] ?? process.env['NODE_ENV'] ?? 'development',
     // Performance/tracing apagado por defecto (cuida la cuota del free tier).
     // Subir gradualmente con SENTRY_TRACES_SAMPLE_RATE si se quiere tracing.
     tracesSampleRate: Number(process.env['SENTRY_TRACES_SAMPLE_RATE'] ?? 0),

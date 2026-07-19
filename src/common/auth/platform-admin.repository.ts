@@ -97,9 +97,7 @@ export class PlatformAdminRepository {
       where: { isActive: true },
       select: { email: true },
     });
-    const emails = admins
-      .map((a) => a.email)
-      .filter((e): e is string => !!e);
+    const emails = admins.map((a) => a.email).filter((e): e is string => !!e);
 
     const supportEmail =
       this.configService.get<string>('SUPPORT_EMAIL') || 'soporte@creditia.co';
