@@ -118,7 +118,7 @@ export class MailService {
     currency: string;
     consumed: string;
     quantity: string;
-    epaycoRef: string;
+    providerReference: string;
     actionNote: string;
   }) {
     const {
@@ -129,7 +129,7 @@ export class MailService {
       currency,
       consumed,
       quantity,
-      epaycoRef,
+      providerReference,
       actionNote,
     } = params;
 
@@ -140,7 +140,7 @@ export class MailService {
       currency,
       consumed,
       quantity,
-      epaycoRef,
+      providerReference,
       actionNote,
       logoUrl: this.logoUrl,
     });

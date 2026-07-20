@@ -160,7 +160,7 @@ model Company {
   billingState     String?  @map("billing_state") @db.VarChar(150)
   billingCity      String?  @map("billing_city") @db.VarChar(150)
   billingPhone     String?  @map("billing_phone") @db.VarChar(50)
-  epaycoCustomerId String?  @map("epayco_customer_id") @db.VarChar(100)
+  providerCustomerId String? @map("provider_customer_id") @db.VarChar(100) // id de cliente en el proveedor de pagos (hoy ePayco)
   isActive         Boolean  @default(true) @map("is_active")
   isOnboardingReady Boolean @default(false) @map("is_onboarding_ready")
   createdAt        DateTime @default(now()) @map("created_at")
@@ -357,16 +357,18 @@ model AnalysisPack {
 
   statusId            Int      @map("status_id") // Parameter 'analysis_pack_status'
 
-  // ePayco — pago ÚNICO vía Smart Checkout v2 (no suscripción recurrente)
-  epaycoSessionId     String?  @map("epayco_session_id") @db.VarChar(100) // sesión del checkout v2 (1 por intento)
-  epaycoRef           String?  @map("epayco_ref") @db.VarChar(100)
-  epaycoTransactionId String?  @map("epayco_transaction_id") @db.VarChar(100)
-  // Datos del comprobante de pago (de la confirmación de ePayco), para recibo,
-  // conciliación bancaria y soporte.
-  epaycoFranchise     String?   @map("epayco_franchise") @db.VarChar(20) // VS, MC, PSE...
-  epaycoCardLast4     String?   @map("epayco_card_last4") @db.VarChar(30) // x_cardnumber (ya enmascarado por ePayco)
-  epaycoApprovalCode  String?   @map("epayco_approval_code") @db.VarChar(40) // código de aprobación bancario
-  epaycoResponseReason String?  @map("epayco_response_reason") @db.VarChar(255) // motivo (útil si fue rechazado)
+  // Proveedor de pagos (agnóstico; provider = quién procesó, hoy ePayco).
+  // Pago ÚNICO vía Smart Checkout v2 (no suscripción recurrente).
+  provider              String   @default("epayco") @db.VarChar(50)
+  providerSessionId     String?  @map("provider_session_id") @db.VarChar(100) // sesión del checkout (1 por intento)
+  providerReference     String?  @map("provider_reference") @db.VarChar(100) // x_ref_payco
+  providerTransactionId String?  @map("provider_transaction_id") @db.VarChar(100)
+  // Datos del comprobante de pago (de la confirmación del proveedor), para
+  // recibo, conciliación bancaria y soporte.
+  providerFranchise      String?  @map("provider_franchise") @db.VarChar(20) // VS, MC, PSE...
+  providerCardLast4      String?  @map("provider_card_last4") @db.VarChar(30) // ya enmascarado por el proveedor
+  providerApprovalCode   String?  @map("provider_approval_code") @db.VarChar(40) // código de aprobación bancario
+  providerResponseReason String?  @map("provider_response_reason") @db.VarChar(255) // motivo (útil si fue rechazado)
   paidAt              DateTime? @map("paid_at") // fecha/hora real del cobro (x_transaction_date)
   isTest              Boolean  @default(false) @map("is_test") // x_test_request: transacción de prueba
   // Secreto del link de pago (compra sin sesión); se invalida (null) al pagar.
@@ -1165,11 +1167,12 @@ model PaymentAlert {
 // el historial de TODOS los intentos. No se actualiza: es append-only.
 
 model PaymentEvent {
-  id                  String   @id @default(uuid()) @db.Uuid
-  analysisPackId      String?  @map("analysis_pack_id") @db.Uuid // bolsa (x_extra1); null si no se identificó
-  companyId           String?  @map("company_id") @db.Uuid
-  epaycoRef           String?  @map("epayco_ref") @db.VarChar(100)
-  epaycoTransactionId String?  @map("epayco_transaction_id") @db.VarChar(100)
+  id                    String   @id @default(uuid()) @db.Uuid
+  analysisPackId        String?  @map("analysis_pack_id") @db.Uuid // bolsa (x_extra1); null si no se identificó
+  companyId             String?  @map("company_id") @db.Uuid
+  provider              String   @default("epayco") @db.VarChar(50) // proveedor de pagos que emitió el evento
+  providerReference     String?  @map("provider_reference") @db.VarChar(100) // x_ref_payco
+  providerTransactionId String?  @map("provider_transaction_id") @db.VarChar(100)
   codResponse         Int?     @map("cod_response") // 1=aceptada 2=rechazada 4=fallida 6=reversada...
   responseText        String?  @map("response_text") @db.VarChar(255)
   amount              Float?
@@ -1182,7 +1185,7 @@ model PaymentEvent {
   company      Company?      @relation(fields: [companyId], references: [id])
 
   @@index([analysisPackId, createdAt])
-  @@index([epaycoTransactionId])
+  @@index([providerTransactionId])
   @@map("payment_events")
 }
 
