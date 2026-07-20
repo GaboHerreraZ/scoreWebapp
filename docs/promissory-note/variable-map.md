@@ -11,9 +11,13 @@ El **acreedor es la EMPRESA** cliente de Creditia (no Creditia). El consecutivo
 `NOTE_NUMBER` es **único por empresa** (`promissory_notes.note_number`, unique
 `(company_id, note_number)`); el `id` global sigue siendo el PK técnico.
 
-Se sube a Zapsign como plantilla DOCX; el backend rellena las variables al crear
-el documento (`createDocFromTemplate`), igual que el contrato macro y la
-autorización del titular. Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`.
+La plantilla HTML vive en
+`src/documents/promissory-notes/templates/pagare-template.html` (NO en docs/):
+es fuente única tanto del modelo DOCX que se sube a Zapsign como del **preview**
+en runtime (`POST .../promissory-notes/preview` la devuelve rellenada). El
+backend rellena las variables al crear el documento (`createDocFromTemplate`),
+igual que el contrato macro y la autorización del titular.
+Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`.
 
 ## Reglas de emisión (las valida `PromissoryNotesService.issue`)
 

@@ -6,6 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { PromissoryNotesRepository } from './promissory-notes.repository.js';
 import { ParametersRepository } from '../../parameters/parameters.repository.js';
@@ -39,6 +42,12 @@ export class PromissoryNotesService {
   private readonly templateId: string;
   private readonly storageBucket: string;
   private readonly logoUrl: string;
+  /** Plantilla HTML del pagaré (fuente única: modelo Zapsign + preview). */
+  private readonly templatePath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    'templates',
+    'pagare-template.html',
+  );
   /** Vigencia de la URL firmada del PDF en Storage (bucket privado). */
   private readonly signedUrlTtlSeconds = 3600;
 
@@ -101,17 +110,14 @@ export class PromissoryNotesService {
   }
 
   /**
-   * Emite el pagaré de un estudio viable y lo envía a firma del consultado.
-   * Reserva el consecutivo por empresa ANTES de crear el documento (el número
-   * va impreso en el texto); si el proveedor de firma falla, la fila se elimina.
+   * Carga el estudio y corre TODAS las validaciones de emisión (viabilidad,
+   * tope de monto, unicidad por estudio, email del firmante, datos bancarios).
+   * Compartido por preview() e issue() para que nunca diverjan.
    */
-  async issue(companyId: string, userId: string, dto: CreatePromissoryNoteDto) {
-    if (!this.templateId) {
-      throw new BadRequestException(
-        'ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID no configurado',
-      );
-    }
-
+  private async resolveIssueContext(
+    companyId: string,
+    dto: CreatePromissoryNoteDto,
+  ) {
     const study = await this.prisma.creditStudy.findFirst({
       where: { id: dto.creditStudyId, companyId },
       include: {
@@ -155,7 +161,8 @@ export class PromissoryNotesService {
 
     // ── El firmante es el consultado: necesita email ──
     const customer = study.customer;
-    if (!customer.email) {
+    const signerEmail = customer.email;
+    if (!signerEmail) {
       throw new BadRequestException(
         'El cliente no tiene correo registrado; es necesario para enviarle el pagaré a firma.',
       );
@@ -179,6 +186,130 @@ export class PromissoryNotesService {
     );
     const amount = Math.round(dto.amount);
     const amountInWords = numberToSpanishWords(amount);
+
+    return {
+      study,
+      customer,
+      company,
+      signerEmail,
+      issuedAt,
+      dueDate,
+      amount,
+      amountInWords,
+    };
+  }
+
+  /**
+   * Variables {{...}} del documento, compartidas por el modelo de Zapsign
+   * (issue → createDocFromTemplate) y el preview (render del HTML local). Una
+   * sola función para que el preview y el documento real nunca diverjan.
+   */
+  private buildTemplateData(
+    ctx: {
+      customer: {
+        businessName: string;
+        identificationNumber: string;
+        address: string | null;
+        phone: string | null;
+        identificationType: { label: string } | null;
+      };
+      company: {
+        name: string;
+        nit: string;
+        address: string;
+        city: string;
+        accountNumber: string | null;
+        accountType: { label: string } | null;
+        accountBank: { label: string } | null;
+      };
+      signerEmail: string;
+      issuedAt: Date;
+      dueDate: Date;
+      amount: number;
+      amountInWords: string;
+    },
+    noteNumber: number,
+  ): Record<string, string> {
+    const { customer, company, signerEmail, issuedAt, dueDate } = ctx;
+    const firma = bogotaDateParts(issuedAt);
+    const pago = bogotaDateParts(dueDate);
+    return {
+      LOGO_URL: this.logoUrl,
+      NOTE_NUMBER: String(noteNumber),
+      DEUDOR_NOMBRE: customer.businessName,
+      DEUDOR_TIPO_DOC: customer.identificationType?.label ?? 'Documento',
+      DEUDOR_NUM_DOC: customer.identificationNumber,
+      DEUDOR_DIRECCION: customer.address ?? '—',
+      DEUDOR_TELEFONO: customer.phone ?? '—',
+      DEUDOR_EMAIL: signerEmail,
+      ACREEDOR_RAZON_SOCIAL: company.name,
+      ACREEDOR_NIT: company.nit,
+      ACREEDOR_DIRECCION: company.address,
+      ACREEDOR_CIUDAD: company.city,
+      ACREEDOR_TIPO_CUENTA: company.accountType?.label ?? '',
+      ACREEDOR_NUM_CUENTA: company.accountNumber ?? '',
+      ACREEDOR_BANCO: company.accountBank?.label ?? '',
+      MONTO_LETRAS: ctx.amountInWords,
+      MONTO_NUMERO: formatCOP(ctx.amount),
+      FORMA_PAGO: 'un solo pago',
+      PAGO_DIA: String(pago.day),
+      PAGO_MES: pago.monthName,
+      PAGO_ANIO: String(pago.year),
+      FIRMA_CIUDAD: company.city,
+      FIRMA_DIA: String(firma.day),
+      FIRMA_MES: firma.monthName,
+      FIRMA_ANIO: String(firma.year),
+    };
+  }
+
+  /**
+   * Vista previa del pagaré: corre las MISMAS validaciones que issue() y
+   * devuelve la plantilla HTML del documento ya rellenada, SIN crear nada, sin
+   * tocar el proveedor de firma y sin enviar correos. El front la muestra tal
+   * cual (iframe/dialog) para que el usuario confirme antes de emitir.
+   */
+  async preview(companyId: string, dto: CreatePromissoryNoteDto) {
+    const ctx = await this.resolveIssueContext(companyId, dto);
+
+    // Tentativo: el definitivo se reserva al emitir (una emisión concurrente
+    // podría tomarlo primero).
+    const noteNumber = await this.repository.nextNoteNumber(companyId);
+
+    const data = this.buildTemplateData(ctx, noteNumber);
+    let html = readFileSync(this.templatePath, 'utf-8');
+    for (const [key, value] of Object.entries(data)) {
+      html = html.replaceAll(`{{${key}}}`, value);
+    }
+
+    return {
+      noteNumber, // tentativo
+      requestedCreditLine: ctx.study.requestedCreditLine, // tope del monto editable
+      html,
+    };
+  }
+
+  /**
+   * Emite el pagaré de un estudio viable y lo envía a firma del consultado.
+   * Reserva el consecutivo por empresa ANTES de crear el documento (el número
+   * va impreso en el texto); si el proveedor de firma falla, la fila se elimina.
+   */
+  async issue(companyId: string, userId: string, dto: CreatePromissoryNoteDto) {
+    if (!this.templateId) {
+      throw new BadRequestException(
+        'ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID no configurado',
+      );
+    }
+
+    const {
+      study,
+      customer,
+      company,
+      signerEmail,
+      issuedAt,
+      dueDate,
+      amount,
+      amountInWords,
+    } = await this.resolveIssueContext(companyId, dto);
 
     const pendingStatusId = await this.noteStatusId('pendingSignature');
 
@@ -223,45 +354,28 @@ export class PromissoryNotesService {
 
     // 2. Crear el documento en el proveedor de firma (envía el email al deudor).
     //    Si falla, se libera el consecutivo eliminando la fila.
-    const firma = bogotaDateParts(issuedAt);
-    const pago = bogotaDateParts(dueDate);
     let note: Awaited<ReturnType<PromissoryNotesRepository['update']>>;
     try {
       const doc = await this.zapsign.createDocFromTemplate({
         templateId: this.templateId,
         signerName: customer.businessName,
-        signerEmail: customer.email,
-        data: {
-          LOGO_URL: this.logoUrl,
-          NOTE_NUMBER: String(created.noteNumber),
-          DEUDOR_NOMBRE: customer.businessName,
-          DEUDOR_TIPO_DOC: customer.identificationType?.label ?? 'Documento',
-          DEUDOR_NUM_DOC: customer.identificationNumber,
-          DEUDOR_DIRECCION: customer.address ?? '—',
-          DEUDOR_TELEFONO: customer.phone ?? '—',
-          DEUDOR_EMAIL: customer.email,
-          ACREEDOR_RAZON_SOCIAL: company.name,
-          ACREEDOR_NIT: company.nit,
-          ACREEDOR_DIRECCION: company.address,
-          ACREEDOR_CIUDAD: company.city,
-          ACREEDOR_TIPO_CUENTA: company.accountType?.label ?? '',
-          ACREEDOR_NUM_CUENTA: company.accountNumber ?? '',
-          ACREEDOR_BANCO: company.accountBank?.label ?? '',
-          MONTO_LETRAS: amountInWords,
-          MONTO_NUMERO: formatCOP(amount),
-          FORMA_PAGO: 'un solo pago',
-          PAGO_DIA: String(pago.day),
-          PAGO_MES: pago.monthName,
-          PAGO_ANIO: String(pago.year),
-          FIRMA_CIUDAD: company.city,
-          FIRMA_DIA: String(firma.day),
-          FIRMA_MES: firma.monthName,
-          FIRMA_ANIO: String(firma.year),
-        },
+        signerEmail,
+        data: this.buildTemplateData(
+          {
+            customer,
+            company,
+            signerEmail,
+            issuedAt,
+            dueDate,
+            amount,
+            amountInWords,
+          },
+          created.noteNumber,
+        ),
       });
       const signer =
         doc.signers.find(
-          (s) => s.email?.toLowerCase() === customer.email?.toLowerCase(),
+          (s) => s.email?.toLowerCase() === signerEmail.toLowerCase(),
         ) ?? doc.signers[0];
 
       note = await this.repository.update(created.id, {
@@ -282,7 +396,7 @@ export class PromissoryNotesService {
       userId,
       companyId,
       'Pagaré enviado a firma',
-      `El pagaré #${created.noteNumber} fue enviado a ${customer.email} para firma.`,
+      `El pagaré #${created.noteNumber} fue enviado a ${signerEmail} para firma.`,
       `/app/credit-study/detail/${study.id}`,
     );
     this.logger.log(
