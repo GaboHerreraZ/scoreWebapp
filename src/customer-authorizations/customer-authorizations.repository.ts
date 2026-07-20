@@ -30,9 +30,9 @@ export class CustomerAuthorizationsRepository {
     });
   }
 
-  findByDocToken(zapsignDocToken: string) {
+  findByDocToken(providerDocToken: string) {
     return this.prisma.customerAuthorization.findUnique({
-      where: { zapsignDocToken },
+      where: { providerDocToken },
       include: { company: true },
     });
   }

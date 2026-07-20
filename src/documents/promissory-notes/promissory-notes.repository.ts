@@ -69,6 +69,55 @@ export class PromissoryNotesRepository {
     });
   }
 
+  /** Localiza un pagaré por el token del documento del proveedor de firma. */
+  findByDocToken(providerDocToken: string) {
+    return this.prisma.promissoryNote.findUnique({
+      where: { providerDocToken },
+    });
+  }
+
+  /**
+   * Siguiente consecutivo de pagaré para una empresa. La unicidad real la
+   * garantiza el unique (companyId, noteNumber): ante una emisión concurrente
+   * el create falla con P2002 y el service reintenta con el número recalculado.
+   */
+  async nextNoteNumber(companyId: string): Promise<number> {
+    const agg = await this.prisma.promissoryNote.aggregate({
+      where: { companyId },
+      _max: { noteNumber: true },
+    });
+    return (agg._max.noteNumber ?? 0) + 1;
+  }
+
+  /** Elimina la fila (rollback cuando el proveedor de firma falla al emitir). */
+  delete(id: number) {
+    return this.prisma.promissoryNote.delete({ where: { id } });
+  }
+
+  /**
+   * Marca el pagaré como firmado de forma atómica (claim por transición): solo
+   * si aún NO estaba firmado. Devuelve true si esta llamada fue la que lo firmó
+   * (evita reprocesar webhooks duplicados de doc_signed).
+   */
+  async markSigned(params: {
+    id: number;
+    signedStatusId: number;
+    signedFileStoragePath: string | null;
+    signedDocumentUrl: string | null;
+    signedAt: Date;
+  }): Promise<boolean> {
+    const claimed = await this.prisma.promissoryNote.updateMany({
+      where: { id: params.id, signedAt: null },
+      data: {
+        statusId: params.signedStatusId,
+        signedAt: params.signedAt,
+        signedFileStoragePath: params.signedFileStoragePath,
+        signedDocumentUrl: params.signedDocumentUrl,
+      },
+    });
+    return claimed.count > 0;
+  }
+
   async countActiveByCreditStudy(creditStudyId: string): Promise<number> {
     const pendingStatus = await this.prisma.parameter.findUnique({
       where: {

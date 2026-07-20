@@ -1,0 +1,206 @@
+<!--
+  PAGARÉ + AUTORIZACIÓN PARA LLENAR ESPACIOS EN BLANCO — CREDITIA
+  ===============================================================
+
+  Documento ÚNICO que firma el DEUDOR (el consultado del estudio de crédito)
+  cuando el estudio resulta viable o viable con condiciones. Reúne, en un solo
+  acto y una sola firma:
+
+    SECCIÓN 1 — Pagaré No. {{NOTE_NUMBER}} (título valor, art. 621 y ss. C.Co.)
+    SECCIÓN 2 — Autorización para llenar espacios en blanco (art. 622 C.Co.)
+
+  El ACREEDOR es la EMPRESA cliente de Creditia (no Creditia): sus datos van en
+  variables ACREEDOR_*. El consecutivo {{NOTE_NUMBER}} es único por empresa y lo
+  asigna el backend. Monto y plazo son editables al emitir (monto ≤ cupo
+  solicitado del estudio); la fecha de pago es emisión + plazo en días.
+
+  Se sube a Zapsign como plantilla DOCX. Las variables {{DOBLES LLAVES}} las
+  rellena el backend al crear el documento (createDocFromTemplate). Un solo
+  firmante: el deudor ({{DEUDOR_EMAIL}}). Ver variable-map.md.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Pagaré No. {{NOTE_NUMBER}}</title>
+<style>
+  :root {
+    --brand: #2563eb; --brand-dark: #1e3a8a; --accent: #f5a623;
+    --ink: #1a1a1a; --muted: #6b7c8f; --line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Calibri", "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.55; color: var(--ink); max-width: 820px; margin: 0 auto; padding: 0 44px 40px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 14px; border-bottom: 3px solid var(--brand); margin-bottom: 6px; }
+  .header img { height: 54px; width: auto; }
+  .header .meta { text-align: right; font-size: 8pt; color: var(--muted); line-height: 1.4; }
+  .header .meta strong { color: var(--ink); }
+  .doc-title { text-align: center; margin: 26px 0 4px; }
+  .doc-title h1 { font-size: 15pt; color: var(--brand-dark); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; }
+  .doc-title .subtitle { font-size: 9.5pt; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .doc-title .rule { width: 60px; height: 3px; background: var(--accent); margin: 12px auto 0; border-radius: 2px; }
+  .part-title { margin: 30px 0 4px; padding: 10px 14px; background: var(--brand-dark); color: #fff; border-radius: 6px; }
+  .part-title .kicker { display: block; font-size: 8pt; letter-spacing: 2px; text-transform: uppercase; opacity: 0.8; }
+  .part-title .name { display: block; font-size: 12pt; font-weight: bold; margin-top: 2px; }
+  .part-title .legal { display: block; font-size: 8pt; opacity: 0.85; margin-top: 2px; }
+  p { text-align: justify; margin: 7px 0; }
+  .titular { background: #f8fafc; border-left: 3px solid var(--brand); padding: 12px 16px; border-radius: 0 6px 6px 0; }
+  .clause-title { font-weight: bold; color: var(--brand-dark); }
+  .fill { font-weight: bold; color: var(--ink); }
+  ol { margin: 6px 0 6px 4px; padding-left: 18px; }
+  li { margin: 4px 0; text-align: justify; }
+  .page-break { page-break-before: always; }
+  .signatures { margin-top: 50px; }
+  .sign-box { width: 55%; }
+  .sign-line { border-top: 1.5px solid var(--ink); margin-top: 46px; padding-top: 8px; font-size: 9pt; line-height: 1.5; }
+  .sign-box strong { color: var(--brand-dark); font-size: 9.5pt; }
+  .footer { margin-top: 42px; padding-top: 14px; border-top: 2px solid var(--line); font-size: 8pt; color: var(--muted); text-align: center; line-height: 1.6; }
+  .footer .brand { font-weight: bold; color: var(--brand); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="{{LOGO_URL}}" alt="Creditia" />
+  <div class="meta">
+    <strong>{{ACREEDOR_RAZON_SOCIAL}}</strong><br />
+    NIT {{ACREEDOR_NIT}}<br />
+    {{ACREEDOR_CIUDAD}}, Colombia
+  </div>
+</div>
+
+<!-- ══════════════════ SECCIÓN 1 — PAGARÉ ══════════════════ -->
+
+<div class="doc-title">
+  <h1>Pagaré No. {{NOTE_NUMBER}}</h1>
+  <div class="subtitle">Título Valor · Código de Comercio Colombiano</div>
+  <div class="rule"></div>
+</div>
+
+<div class="titular">
+<p>Yo, <span class="fill">{{DEUDOR_NOMBRE}}</span>, mayor de edad, identificado(a)
+como aparece al pie de mi firma y actuando en nombre propio, por medio del
+presente escrito manifiesto lo siguiente:</p>
+</div>
+
+<p><span class="clause-title">Primero:</span> que debo y pagaré, incondicionalmente
+a la orden de <span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span>, identificado(a)
+con NIT <span class="fill">{{ACREEDOR_NIT}}</span>, la suma cierta de
+<span class="fill">{{MONTO_LETRAS}}</span> pesos
+(<span class="fill">{{MONTO_NUMERO}}</span>) moneda legal colombiana.</p>
+
+<p><span class="clause-title">Segundo:</span> que el pago total de la mencionada
+obligación se efectuará en <span class="fill">{{FORMA_PAGO}}</span>, el
+<span class="fill">{{PAGO_DIA}}</span> de <span class="fill">{{PAGO_MES}}</span> de
+<span class="fill">{{PAGO_ANIO}}</span> en las dependencias de
+<span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span>, ubicado(a) en
+<span class="fill">{{ACREEDOR_DIRECCION}}</span> en la ciudad de
+<span class="fill">{{ACREEDOR_CIUDAD}}</span>, o en su cuenta
+<span class="fill">{{ACREEDOR_TIPO_CUENTA}}</span> No.
+<span class="fill">{{ACREEDOR_NUM_CUENTA}}</span> del
+<span class="fill">{{ACREEDOR_BANCO}}</span>.</p>
+
+<p><span class="clause-title">Tercero:</span> que en caso de mora pagaré a
+<span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span> intereses de mora a la más alta
+tasa permitida por la ley, desde el día siguiente a la fecha de exigibilidad del
+presente pagaré, y hasta cuando su pago total se efectúe.</p>
+
+<p><span class="clause-title">Cuarto:</span> expresamente declaro excusado el
+protesto del presente pagaré y los requerimientos judiciales o extrajudiciales
+para la constitución en mora.</p>
+
+<p><span class="clause-title">Quinto:</span> en caso de que haya lugar al recaudo
+judicial o extrajudicial de la obligación contenida en el presente título valor,
+estarán a mi cargo las costas judiciales y/o los honorarios que se causen por tal
+razón.</p>
+
+<p>En constancia de lo anterior, se suscribe este pagaré No.
+<span class="fill">{{NOTE_NUMBER}}</span> en la ciudad de
+<span class="fill">{{FIRMA_CIUDAD}}</span> a los
+<span class="fill">{{FIRMA_DIA}}</span> días del mes de
+<span class="fill">{{FIRMA_MES}}</span> del año
+<span class="fill">{{FIRMA_ANIO}}</span>, mediante firma electrónica, la cual
+reconozco como válida y vinculante conforme a la Ley 527 de 1999 y el Decreto
+2364 de 2012.</p>
+
+<!-- FIRMA: en Zapsign, coloca el campo de FIRMA del deudor sobre esta línea. -->
+<div class="signatures">
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL DEUDOR</strong><br />
+      {{DEUDOR_NOMBRE}}<br />
+      {{DEUDOR_TIPO_DOC}} No. {{DEUDOR_NUM_DOC}}<br />
+      Dirección: {{DEUDOR_DIRECCION}} · Tel: {{DEUDOR_TELEFONO}}<br />
+      Correo: {{DEUDOR_EMAIL}}
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ SECCIÓN 2 — AUTORIZACIÓN ESPACIOS EN BLANCO ══════════ -->
+<div class="page-break"></div>
+
+<div class="part-title">
+  <span class="kicker">Sección Segunda</span>
+  <span class="name">Autorización para Llenar Espacios en Blanco del Pagaré No. {{NOTE_NUMBER}}</span>
+  <span class="legal">Artículo 622 del Código de Comercio Colombiano</span>
+</div>
+
+<p><strong>Señores:</strong><br />
+<span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span><br />
+NIT <span class="fill">{{ACREEDOR_NIT}}</span></p>
+
+<div class="titular">
+<p>Yo, <span class="fill">{{DEUDOR_NOMBRE}}</span>, mayor de edad, identificado(a)
+como aparece al pie de mi firma, actuando en nombre propio, por medio del presente
+escrito manifiesto que le faculto a usted, de manera permanente e irrevocable para
+que, en caso de incumplimiento en el pago oportuno de alguna de las obligaciones
+que hemos adquirido, derivadas de los negocios comerciales y contractuales bien
+sean verbales o escritos, sin previo aviso, proceda a llenar los espacios en
+blanco del pagaré No. <span class="fill">{{NOTE_NUMBER}}</span>, que he suscrito en
+la fecha a su favor y que se anexa, con el fin de convertir el pagaré en un
+documento que presta mérito ejecutivo y que está sujeto a los parámetros legales
+del artículo 622 del Código de Comercio Colombiano.</p>
+</div>
+
+<ol>
+  <li>El espacio correspondiente a <strong>"la suma cierta de"</strong> se llenará
+  por una suma igual a la que resulte pendiente de pago de todas las obligaciones
+  contraídas con el acreedor, por concepto de capital, intereses, seguros,
+  cobranza extrajudicial, según la contabilidad del acreedor a la fecha en que sea
+  llenado el pagaré.</li>
+  <li>El espacio correspondiente a la <strong>"fecha en que se debe hacer el
+  pago"</strong> se diligenciará con la fecha correspondiente al día en que sea
+  llenado el pagaré, que se entiende es la de su vencimiento.</li>
+</ol>
+
+<p>En constancia de lo anterior, se firma la presente autorización para llenar
+espacios en blanco del pagaré No. <span class="fill">{{NOTE_NUMBER}}</span> en la
+ciudad de <span class="fill">{{FIRMA_CIUDAD}}</span> a los
+<span class="fill">{{FIRMA_DIA}}</span> días del mes de
+<span class="fill">{{FIRMA_MES}}</span> del año
+<span class="fill">{{FIRMA_ANIO}}</span>, mediante firma electrónica, la cual
+reconozco como válida y vinculante conforme a la Ley 527 de 1999 y el Decreto
+2364 de 2012.</p>
+
+<!-- FIRMA: en Zapsign, coloca un segundo campo de FIRMA del deudor sobre esta línea. -->
+<div class="signatures">
+  <div class="sign-box">
+    <div class="sign-line">
+      <strong>EL DEUDOR</strong><br />
+      {{DEUDOR_NOMBRE}}<br />
+      {{DEUDOR_TIPO_DOC}} No. {{DEUDOR_NUM_DOC}}<br />
+      Dirección: {{DEUDOR_DIRECCION}} · Tel: {{DEUDOR_TELEFONO}}<br />
+      Correo: {{DEUDOR_EMAIL}}
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Documento generado y gestionado electrónicamente a través de
+  <span class="brand">Creditia</span> · creditia.co<br />
+  La firma electrónica de este documento comprende y valida sus dos secciones.<br />
+  La fecha, hora, identidad del firmante y evidencias de la firma constan en el
+  certificado de finalización adjunto a este documento.
+</div>
+
+</body>
+</html>

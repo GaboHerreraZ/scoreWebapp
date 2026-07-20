@@ -61,7 +61,7 @@ export class MacroContractService {
     if (existing && !existing.refusedAt) {
       // Pendiente o firmado → no reenviar.
       this.logger.log(
-        `La empresa ${companyId} ya tiene contrato macro activo (${existing.zapsignDocToken}); no se reenvía`,
+        `La empresa ${companyId} ya tiene contrato macro activo (${existing.providerDocToken}); no se reenvía`,
       );
       return;
     }
@@ -147,7 +147,7 @@ export class MacroContractService {
     const commonData = {
       templateId: this.templateId,
       statusId: pendingStatus.id,
-      zapsignDocToken: doc.docToken,
+      providerDocToken: doc.docToken,
       clientSignerToken: clientSigner?.token ?? null,
       signUrl: clientSigner?.sign_url ?? null,
       signerName,
@@ -424,7 +424,7 @@ export class MacroContractService {
     this.logger.warn(
       `Contrato ${contract.id} sin respaldo en Storage; se sirve desde Zapsign`,
     );
-    const state = await this.zapsign.getDocState(contract.zapsignDocToken);
+    const state = await this.zapsign.getDocState(contract.providerDocToken);
     return state.signedFileUrl;
   }
 }

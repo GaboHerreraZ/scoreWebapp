@@ -1,13 +1,17 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -15,6 +19,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PromissoryNotesService } from './promissory-notes.service.js';
+import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import { CompanyScoped } from '../../common/decorators/company-scoped.decorator.js';
 
 // ── Spanish-message pipes reused across this controller ──
@@ -28,8 +33,6 @@ const promissoryIdPipe = new ParseIntPipe({
     new BadRequestException('El parámetro id debe ser un número entero.'),
 });
 
-// La creación/envío a firma del pagaré fue retirada junto con DocuSeal; se
-// reconectará con el proveedor de firma vigente cuando se retome el flujo.
 @ApiTags('Promissory Notes')
 @ApiBearerAuth()
 @CompanyScoped()
@@ -38,6 +41,47 @@ export class PromissoryNotesController {
   constructor(
     private readonly promissoryNotesService: PromissoryNotesService,
   ) {}
+
+  @Post('companies/:companyId/documents/promissory-notes')
+  @ApiOperation({
+    summary:
+      'Emite el pagaré de un estudio viable y lo envía a firma del consultado',
+  })
+  @ApiResponse({ status: 201, description: 'Pagaré emitido y enviado a firma' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Estudio no viable, monto mayor al solicitado o datos faltantes (email del cliente / cuenta bancaria de la empresa)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'El estudio ya tiene un pagaré pendiente o firmado',
+  })
+  issue(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Body() dto: CreatePromissoryNoteDto,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user.id as string;
+    return this.promissoryNotesService.issue(companyId, userId, dto);
+  }
+
+  @Get('companies/:companyId/documents/promissory-notes/:id/document')
+  @ApiOperation({
+    summary: 'URL temporal del PDF firmado del pagaré',
+  })
+  @ApiResponse({ status: 200, description: 'URL firmada del PDF' })
+  @ApiResponse({ status: 400, description: 'El pagaré aún no está firmado' })
+  async getSignedDocument(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Param('id', promissoryIdPipe) id: number,
+  ) {
+    const url = await this.promissoryNotesService.getSignedDocumentUrl(
+      id,
+      companyId,
+    );
+    return { url };
+  }
 
   @Patch('companies/:companyId/documents/promissory-notes/:id/decline')
   @ApiOperation({
