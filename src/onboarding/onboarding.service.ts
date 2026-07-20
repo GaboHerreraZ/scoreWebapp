@@ -29,6 +29,19 @@ export class OnboardingService {
    * @param email  email del usuario (del token) → email del Profile.
    */
   async onboard(userId: string, email: string, dto: OnboardingDto) {
+    // El email es unique en profiles: si OTRO profile (id distinto) ya lo
+    // tiene, el upsert por id fallaría con un P2002 críptico. Se valida antes
+    // para devolver un error claro.
+    const emailOwner = await this.prisma.profile.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (emailOwner && emailOwner.id !== userId) {
+      throw new ConflictException(
+        `El correo ${email} ya existe en el sistema asociado a otro perfil.`,
+      );
+    }
+
     // Validaciones rápidas antes de la transacción.
     const existingNit = await this.prisma.company.findUnique({
       where: { nit: dto.company.nit },
