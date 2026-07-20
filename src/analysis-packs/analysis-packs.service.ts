@@ -245,7 +245,7 @@ export class AnalysisPacksService {
     });
 
     // 3. Guardar el sessionId en la bolsa (trazabilidad del intento de pago).
-    await this.repository.setEpaycoSessionId(pack.id, sessionId);
+    await this.repository.setProviderSessionId(pack.id, sessionId);
 
     this.logger.log(
       `Empresa ${companyId} inició compra de pack ${pack.id} (oferta ${offering.id}, total ${pricing.total} ${activePrice.currencyCode}, session ${sessionId})`,
@@ -391,7 +391,7 @@ export class AnalysisPacksService {
 
     const toPaymentEvent = (e: (typeof paymentEvents)[number]) => ({
       date: e.createdAt,
-      epaycoRef: e.epaycoRef,
+      providerReference: e.providerReference,
       codResponse: e.codResponse,
       statusLabel: this.paymentEventLabel(e.codResponse),
       responseText: e.responseText,
@@ -492,8 +492,8 @@ export class AnalysisPacksService {
         discountAmount, // descuento aplicado (>= 0)
         total: pack.totalPaid, // lo que efectivamente se pagó
         currency: pack.currencyCode,
-        epaycoRef: pack.epaycoRef,
-        epaycoTransactionId: pack.epaycoTransactionId,
+        providerReference: pack.providerReference,
+        providerTransactionId: pack.providerTransactionId,
       },
 
       // Vigencia de la bolsa.
@@ -571,7 +571,40 @@ export class AnalysisPacksService {
       `Webhook pack recibido: ref=${dto.x_ref_payco}, cod_response=${dto.x_cod_response}, extra1=${dto.x_extra1}`,
     );
 
-    // 1. Validar firma
+    // 1. Intentar identificar la bolsa por x_extra1 (SIN lanzar todavía: el
+    //    evento se registra aunque no se identifique — para eso analysisPackId
+    //    es nullable en payment_events).
+    const packId = dto.x_extra1;
+    const pack = packId ? await this.repository.findById(packId) : null;
+
+    // Log crudo del evento (best-effort, append-only). Se registra TODA
+    // confirmación recibida — incluso con firma inválida, sin extra1 o con una
+    // bolsa inexistente — para trazabilidad completa y soporte de disputas.
+    // Se guarda el payload ORIGINAL (raw) de ePayco.
+    try {
+      await this.repository.createPaymentEvent({
+        analysisPackId: pack?.id ?? null,
+        companyId: pack?.companyId ?? null,
+        providerReference: dto.x_ref_payco,
+        providerTransactionId: dto.x_transaction_id,
+        codResponse: dto.x_cod_response
+          ? parseInt(dto.x_cod_response, 10)
+          : null,
+        responseText: dto.x_response_reason_text ?? dto.x_response ?? null,
+        amount: dto.x_amount ? parseFloat(dto.x_amount) : null,
+        currencyCode: dto.x_currency_code ?? null,
+        isTest: dto.x_test_request?.toUpperCase() === 'TRUE',
+        payload: raw as unknown as Prisma.InputJsonValue,
+      });
+    } catch (e) {
+      this.logger.error(
+        `No se pudo registrar el PaymentEvent (ref=${dto.x_ref_payco}): ${
+          (e as Error).message
+        }`,
+      );
+    }
+
+    // 2. Validar firma
     const isValid = this.epaycoService.validateConfirmationSignature({
       refPayco: dto.x_ref_payco,
       transactionId: dto.x_transaction_id,
@@ -584,44 +617,16 @@ export class AnalysisPacksService {
       throw new BadRequestException('Firma inválida');
     }
 
-    // 2. Identificar la bolsa por x_extra1
-    const packId = dto.x_extra1;
+    // 3. Exigir la bolsa para continuar con los efectos del pago.
     if (!packId) {
       throw new BadRequestException('Falta la referencia de la bolsa (extra1)');
     }
-    const pack = await this.repository.findById(packId);
     if (!pack) {
       this.logger.warn(`Bolsa no encontrada para extra1=${packId}`);
       throw new NotFoundException(`Bolsa no encontrada (${packId})`);
     }
 
-    // Log crudo del evento (best-effort, append-only). Se guarda el payload
-    // ORIGINAL (raw) de ePayco, incluso si luego es un webhook duplicado, para
-    // tener trazabilidad completa de todas las confirmaciones recibidas.
-    try {
-      await this.repository.createPaymentEvent({
-        analysisPackId: pack.id,
-        companyId: pack.companyId,
-        epaycoRef: dto.x_ref_payco,
-        epaycoTransactionId: dto.x_transaction_id,
-        codResponse: dto.x_cod_response
-          ? parseInt(dto.x_cod_response, 10)
-          : null,
-        responseText: dto.x_response_reason_text ?? dto.x_response ?? null,
-        amount: dto.x_amount ? parseFloat(dto.x_amount) : null,
-        currencyCode: dto.x_currency_code ?? null,
-        isTest: dto.x_test_request?.toUpperCase() === 'TRUE',
-        payload: raw as unknown as Prisma.InputJsonValue,
-      });
-    } catch (e) {
-      this.logger.error(
-        `No se pudo registrar el PaymentEvent para la bolsa ${pack.id}: ${
-          (e as Error).message
-        }`,
-      );
-    }
-
-    // 3. Idempotencia por transacción, ACOTADA A ESTA BOLSA (clave: bolsa + txn).
+    // 4. Idempotencia por transacción, ACOTADA A ESTA BOLSA (clave: bolsa + txn).
     //    NO se llavea global por x_transaction_id: en modo test de ePayco ese id
     //    se REPITE entre checkouts distintos (x_ref_payco === x_transaction_id),
     //    así que un check global marcaría como "duplicado" el pago legítimo de
@@ -633,7 +638,7 @@ export class AnalysisPacksService {
     //    una confirmación previa de esta misma bolsa.
     if (
       dto.x_transaction_id &&
-      pack.epaycoTransactionId === dto.x_transaction_id
+      pack.providerTransactionId === dto.x_transaction_id
     ) {
       this.logger.log(
         `Webhook duplicado ignorado para la bolsa ${pack.id}: transacción=${dto.x_transaction_id}`,
@@ -663,10 +668,10 @@ export class AnalysisPacksService {
       ? new Date(dto.x_transaction_date.replace(' ', 'T'))
       : null;
     const receipt = {
-      epaycoFranchise: dto.x_franchise ?? null,
-      epaycoCardLast4: dto.x_cardnumber ?? null,
-      epaycoApprovalCode: dto.x_approval_code ?? null,
-      epaycoResponseReason: dto.x_response_reason_text ?? null,
+      providerFranchise: dto.x_franchise ?? null,
+      providerCardLast4: dto.x_cardnumber ?? null,
+      providerApprovalCode: dto.x_approval_code ?? null,
+      providerResponseReason: dto.x_response_reason_text ?? null,
       paidAt:
         parsedPaidAt && !isNaN(parsedPaidAt.getTime()) ? parsedPaidAt : null,
       isTest: dto.x_test_request?.toUpperCase() === 'TRUE',
@@ -678,8 +683,8 @@ export class AnalysisPacksService {
         packId: pack.id,
         pendingStatusId: pendingStatus.id,
         activeStatusId: activeStatus.id,
-        epaycoRef: dto.x_ref_payco,
-        epaycoTransactionId: dto.x_transaction_id,
+        providerReference: dto.x_ref_payco,
+        providerTransactionId: dto.x_transaction_id,
         receipt,
       });
       this.logger.log(
@@ -761,7 +766,7 @@ export class AnalysisPacksService {
                 reason: result.reason,
                 discountPercent: Number(pack.promoDiscountPercent ?? 0),
                 discountAmount: pack.promoDiscountAmount ?? 0,
-                epaycoRef: dto.x_ref_payco ?? null,
+                providerReference: dto.x_ref_payco ?? null,
               },
             });
           }
@@ -777,8 +782,8 @@ export class AnalysisPacksService {
       // Rechazada (2) / Fallida (4) → NO se cancela: un rechazo de tarjeta no es
       // definitivo, el usuario puede reintentar en el MISMO checkout. La bolsa se
       // queda en pending_payment para que un reintento aprobado la active; solo
-      // se registra el motivo (sin pisar epaycoRef/epaycoTransactionId, que son
-      // del pago exitoso). La cancelación por abandono se maneja aparte.
+      // se registra el motivo (sin pisar providerReference/providerTransactionId,
+      // que son del pago exitoso). La cancelación por abandono se maneja aparte.
       await this.repository.recordFailedAttempt(
         pack.id,
         pendingStatus.id,
@@ -804,8 +809,8 @@ export class AnalysisPacksService {
           }. La bolsa sigue pendiente de pago para que el cliente reintente.`,
           metadata: {
             codResponse: responseCode,
-            epaycoRef: dto.x_ref_payco ?? null,
-            epaycoTransactionId: dto.x_transaction_id ?? null,
+            providerReference: dto.x_ref_payco ?? null,
+            providerTransactionId: dto.x_transaction_id ?? null,
             responseReason: dto.x_response_reason_text ?? null,
             totalPaid: pack.totalPaid,
             currency: pack.currencyCode,
@@ -853,8 +858,8 @@ export class AnalysisPacksService {
             : `El pago de la bolsa fue reversado. La bolsa quedó pendiente de pago ` +
               `para que el cliente reintente.`,
           metadata: {
-            epaycoRef: dto.x_ref_payco ?? null,
-            epaycoTransactionId: dto.x_transaction_id ?? null,
+            providerReference: dto.x_ref_payco ?? null,
+            providerTransactionId: dto.x_transaction_id ?? null,
             responseReason: dto.x_response_reason_text ?? null,
             totalPaid: pack.totalPaid,
             currency: pack.currencyCode,
@@ -974,7 +979,7 @@ export class AnalysisPacksService {
             currency: pack.currencyCode,
             consumed: String(pack.quantityConsumed),
             quantity,
-            epaycoRef: pack.epaycoRef ?? '—',
+            providerReference: pack.providerReference ?? '—',
             actionNote,
           }),
         ),

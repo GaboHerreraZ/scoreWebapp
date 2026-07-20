@@ -11,12 +11,12 @@ export class NoCreditsAvailableError extends ConflictException {
   }
 }
 
-/** Datos del comprobante de pago extraídos de la confirmación de ePayco. */
-export interface EpaycoReceipt {
-  epaycoFranchise?: string | null;
-  epaycoCardLast4?: string | null;
-  epaycoApprovalCode?: string | null;
-  epaycoResponseReason?: string | null;
+/** Datos del comprobante de pago extraídos de la confirmación del proveedor. */
+export interface PaymentReceipt {
+  providerFranchise?: string | null;
+  providerCardLast4?: string | null;
+  providerApprovalCode?: string | null;
+  providerResponseReason?: string | null;
   paidAt?: Date | null;
   isTest?: boolean;
 }
@@ -54,10 +54,10 @@ export class AnalysisPacksRepository {
   }
 
   /** Guarda el sessionId del checkout v2 en la bolsa. */
-  async setEpaycoSessionId(packId: string, sessionId: string) {
+  async setProviderSessionId(packId: string, sessionId: string) {
     return this.prisma.analysisPack.update({
       where: { id: packId },
-      data: { epaycoSessionId: sessionId },
+      data: { providerSessionId: sessionId },
     });
   }
 
@@ -123,14 +123,15 @@ export class AnalysisPacksRepository {
   }
 
   /**
-   * Bolsa por la referencia de ePayco (x_ref_payco, guardada en epaycoRef por el
-   * webhook). Para la pantalla de resultado: el front llega con ?ref_payco=... en
-   * la URL y consulta por ahí. Más reciente primero por si una referencia se
-   * reusara (no debería). Incluye la empresa para validar acceso y pintar.
+   * Bolsa por la referencia del proveedor (x_ref_payco, guardada en
+   * providerReference por el webhook). Para la pantalla de resultado: el front
+   * llega con ?ref_payco=... en la URL y consulta por ahí. Más reciente primero
+   * por si una referencia se reusara (no debería). Incluye la empresa para
+   * validar acceso y pintar.
    */
-  async findByEpaycoRef(epaycoRef: string) {
+  async findByProviderReference(providerReference: string) {
     return this.prisma.analysisPack.findFirst({
-      where: { epaycoRef },
+      where: { providerReference },
       orderBy: { createdAt: 'desc' },
       include: {
         ...this.defaultInclude,
@@ -164,7 +165,7 @@ export class AnalysisPacksRepository {
     }
     // Fallback: por x_ref_payco (compatibilidad con el flujo anterior).
     return this.prisma.analysisPack.findFirst({
-      where: { epaycoRef: ref },
+      where: { providerReference: ref },
       orderBy: { createdAt: 'desc' },
       include,
     });
@@ -227,7 +228,7 @@ export class AnalysisPacksRepository {
       orderBy: { createdAt: 'desc' },
       select: {
         analysisPackId: true,
-        epaycoRef: true,
+        providerReference: true,
         codResponse: true,
         responseText: true,
         amount: true,
@@ -334,16 +335,16 @@ export class AnalysisPacksRepository {
     packId: string;
     pendingStatusId: number;
     activeStatusId: number;
-    epaycoRef?: string;
-    epaycoTransactionId?: string;
-    receipt?: EpaycoReceipt;
+    providerReference?: string;
+    providerTransactionId?: string;
+    receipt?: PaymentReceipt;
   }): Promise<boolean> {
     const result = await this.prisma.analysisPack.updateMany({
       where: { id: params.packId, statusId: params.pendingStatusId },
       data: {
         statusId: params.activeStatusId,
-        epaycoRef: params.epaycoRef,
-        epaycoTransactionId: params.epaycoTransactionId,
+        providerReference: params.providerReference,
+        providerTransactionId: params.providerTransactionId,
         paymentToken: null,
         ...params.receipt,
       },
@@ -402,16 +403,16 @@ export class AnalysisPacksRepository {
     packId: string,
     pendingStatusId: number,
     cancelledStatusId: number,
-    epaycoRef?: string,
-    epaycoTransactionId?: string,
-    receipt?: EpaycoReceipt,
+    providerReference?: string,
+    providerTransactionId?: string,
+    receipt?: PaymentReceipt,
   ): Promise<boolean> {
     const result = await this.prisma.analysisPack.updateMany({
       where: { id: packId, statusId: pendingStatusId },
       data: {
         statusId: cancelledStatusId,
-        epaycoRef,
-        epaycoTransactionId,
+        providerReference,
+        providerTransactionId,
         ...receipt,
       },
     });
@@ -422,8 +423,9 @@ export class AnalysisPacksRepository {
    * Registra un intento de pago RECHAZADO sin cancelar la bolsa: deja el motivo
    * del último intento y MANTIENE la bolsa en pending_payment, para que un
    * reintento aprobado en el mismo checkout pueda activarla. No toca
-   * epaycoRef/epaycoTransactionId (esos son del pago exitoso). Solo actúa si la
-   * bolsa sigue pendiente (no pisa una ya activada por una confirmación previa).
+   * providerReference/providerTransactionId (esos son del pago exitoso). Solo
+   * actúa si la bolsa sigue pendiente (no pisa una ya activada por una
+   * confirmación previa).
    */
   async recordFailedAttempt(
     packId: string,
@@ -432,7 +434,7 @@ export class AnalysisPacksRepository {
   ): Promise<boolean> {
     const result = await this.prisma.analysisPack.updateMany({
       where: { id: packId, statusId: pendingStatusId },
-      data: { epaycoResponseReason: responseReason },
+      data: { providerResponseReason: responseReason },
     });
     return result.count > 0;
   }
@@ -453,10 +455,10 @@ export class AnalysisPacksRepository {
       where: { id: packId },
       data: {
         statusId: pendingStatusId,
-        epaycoResponseReason: responseReason,
-        epaycoRef: null,
-        epaycoTransactionId: null,
-        epaycoSessionId: null,
+        providerResponseReason: responseReason,
+        providerReference: null,
+        providerTransactionId: null,
+        providerSessionId: null,
       },
     });
     return !!result;

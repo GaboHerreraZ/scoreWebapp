@@ -495,7 +495,7 @@ export class AdminService {
           state: company.billingState,
           city: company.billingCity,
         },
-        epaycoCustomerId: company.epaycoCustomerId,
+        providerCustomerId: company.providerCustomerId,
       },
       // Contrato macro (Zapsign): estado, firmante y seguimiento de visualización
       // ("lo abrió pero no firma" es señal comercial). null = nunca se envió.
@@ -552,7 +552,7 @@ export class AdminService {
         status: p.status?.code,
         startDate: p.startDate,
         endDate: p.endDate,
-        epaycoRef: p.epaycoRef,
+        providerReference: p.providerReference,
         createdAt: p.createdAt,
       })),
       users: company.userCompanies.map((uc) => ({
