@@ -132,7 +132,15 @@
       "PowerShell(npx dotenv -e .env.inexistente -- node -e \"console.log\\('env pasa: DATABASE_URL=' + \\(process.env.DATABASE_URL ? 'inyectada' : 'ausente'\\)\\)\")",
       "PowerShell(npm run test)",
       "PowerShell(git add prisma/schema.prisma prisma/migrations/20260719120000_promissory_note_signing_and_provider_agnostic src/customer-authorizations src/documents src/zapsign-webhooks src/common/utils/bogota-date.ts src/common/utils/number-to-words.ts docs/promissory-note)",
-      "PowerShell(git add .claude/settings.json .claude/settings.local.json)"
+      "PowerShell(git add .claude/settings.json .claude/settings.local.json)",
+      "PowerShell(node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\inspect-payment-events.mjs\")",
+      "PowerShell(npx dotenv -e .env.staging -- node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\inspect-payment-events.mjs\")",
+      "PowerShell(npx dotenv -e .env -- node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\inspect-payment-events.mjs\")",
+      "PowerShell(npx dotenv -e .env -- node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\inspect-payment-events2.mjs\")",
+      "PowerShell(npx dotenv -e .env.staging -- node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\inspect3.mjs\")",
+      "PowerShell(npx dotenv -e .env.staging -- node \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\fc376c24-7eaa-4ee7-9511-7d2a4148d6ac\\\\scratchpad\\\\verify-cols.mjs\")",
+      "PowerShell(git -C \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webApp\" status --porcelain)",
+      "PowerShell(git -C \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webApp\" branch --show-current)"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
