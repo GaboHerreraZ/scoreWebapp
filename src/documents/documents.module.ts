@@ -11,6 +11,6 @@ import { MacroContractModule } from './macro-contract/macro-contract.module.js';
  */
 @Module({
   imports: [PromissoryNotesModule, MacroContractModule],
-  exports: [MacroContractModule],
+  exports: [MacroContractModule, PromissoryNotesModule],
 })
 export class DocumentsModule {}

@@ -910,19 +910,42 @@ model PromissoryNote {
   createdBy     String @map("created_by") @db.Uuid
   statusId      Int    @map("status_id")
 
-  // ── Datos económicos del pagaré (snapshot) ──────────
-  amount        Float
-  amountInWords String @map("amount_in_words") @db.VarChar(500)
+  // Consecutivo por empresa: es el "PAGARÉ No. ___" impreso en el documento
+  // (el id global sigue siendo el PK técnico de las rutas).
+  noteNumber Int @map("note_number")
 
-  // ── Datos de firma (agnósticos del proveedor; DocuSeal fue retirado) ──
+  // ── Datos económicos del pagaré (snapshot EDITABLE al emitir) ──────────
+  // El usuario puede ajustar monto y plazo respecto a la solicitud del estudio:
+  // amount ≤ requestedCreditLine (valida el service); termDays es libre.
+  amount        Float
+  amountInWords String    @map("amount_in_words") @db.VarChar(500)
+  termDays      Int?      @map("term_days") // plazo en días acordado al emitir
+  dueDate       DateTime? @map("due_date") @db.Date // vencimiento = emisión + termDays
+
+  // ── Snapshot del acreedor al emitir (si la empresa edita sus datos después,
+  //    el pagaré ya emitido no cambia) ──
+  signCity              String? @map("sign_city") @db.VarChar(150) // ciudad de suscripción (= ciudad de la empresa)
+  creditorAddress       String? @map("creditor_address") @db.VarChar(255)
+  creditorAccountType   String? @map("creditor_account_type") @db.VarChar(100)
+  creditorAccountNumber String? @map("creditor_account_number") @db.VarChar(50)
+  creditorBank          String? @map("creditor_bank") @db.VarChar(150)
+
+  // ── Datos del proveedor de firma (agnósticos; provider = quién emitió) ──
+  // Nullables porque los pagarés históricos (era DocuSeal) no los tienen.
+  provider         String  @default("zapsign") @db.VarChar(50)
+  providerDocToken String? @unique @map("provider_doc_token") @db.VarChar(100)
+  signerToken      String? @map("signer_token") @db.VarChar(100)
+  templateId       String? @map("template_id") @db.VarChar(100)
+
   signingUrl            String? @map("signing_url") @db.VarChar(500)
   signedDocumentUrl     String? @map("signed_document_url") @db.VarChar(500)
   signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500)
 
   // ── Auditoría de firma ─────────────────────────────
-  sentAt     DateTime? @map("sent_at")
-  signedAt   DateTime? @map("signed_at")
-  declinedAt DateTime? @map("declined_at")
+  sentAt        DateTime? @map("sent_at")
+  signedAt      DateTime? @map("signed_at")
+  declinedAt    DateTime? @map("declined_at")
+  refusedReason String?   @map("refused_reason") @db.VarChar(1000) // motivo del deudor al rechazar en el proveedor
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -933,6 +956,7 @@ model PromissoryNote {
   status        Parameter   @relation("PromissoryNoteStatus", fields: [statusId], references: [id])
   createdByUser Profile     @relation("PromissoryNoteCreatedBy", fields: [createdBy], references: [id])
 
+  @@unique([companyId, noteNumber]) // consecutivo único por empresa
   @@index([companyId])
   @@index([creditStudyId])
   @@index([customerId])
@@ -955,8 +979,9 @@ model ContractSignature {
   templateId String @map("template_id") @db.VarChar(100) // modelo de Zapsign usado
   statusId   Int    @map("status_id")
 
-  // ── Datos Zapsign ──────────────────────────────────
-  zapsignDocToken    String  @unique @map("zapsign_doc_token") @db.VarChar(100)
+  // ── Datos del proveedor de firma (agnósticos; provider = quién emitió) ──
+  provider           String  @default("zapsign") @db.VarChar(50)
+  providerDocToken   String  @unique @map("provider_doc_token") @db.VarChar(100)
   clientSignerToken  String? @map("client_signer_token") @db.VarChar(100)
   signUrl            String? @map("sign_url") @db.VarChar(500)
   signedDocumentUrl  String? @map("signed_document_url") @db.VarChar(500) // último signed_file de Zapsign
@@ -1026,9 +1051,10 @@ model CustomerAuthorization {
   // ── Estado ──
   statusId Int @map("status_id") // Parameter 'customer_authorization_status'
 
-  // ── Datos Zapsign (mismo patrón que ContractSignature) ──
+  // ── Datos del proveedor de firma (mismo patrón que ContractSignature) ──
   templateId            String  @map("template_id") @db.VarChar(100)
-  zapsignDocToken       String  @unique @map("zapsign_doc_token") @db.VarChar(100)
+  provider              String  @default("zapsign") @db.VarChar(50)
+  providerDocToken      String  @unique @map("provider_doc_token") @db.VarChar(100)
   signerToken           String? @map("signer_token") @db.VarChar(100)
   signUrl               String? @map("sign_url") @db.VarChar(500)
   signedDocumentUrl     String? @map("signed_document_url") @db.VarChar(500)

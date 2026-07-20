@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator.js';
 import { MacroContractService } from '../documents/macro-contract/macro-contract.service.js';
 import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
+import { PromissoryNotesService } from '../documents/promissory-notes/promissory-notes.service.js';
 import {
   ZapsignWebhookPayload,
   extractDocToken,
@@ -18,11 +19,12 @@ import {
 
 /**
  * Despachador ÚNICO de webhooks de Zapsign. Zapsign es account-wide: manda TODOS
- * los eventos de la cuenta (contrato macro Y autorización del titular) a una sola
- * URL. Este controller recibe el evento y lo enruta al handler correcto según el
- * `token` del documento, que es único por tabla:
+ * los eventos de la cuenta (contrato macro, autorización del titular Y pagaré) a
+ * una sola URL. Este controller recibe el evento y lo enruta al handler correcto
+ * según el `token` del documento, que es único por tabla:
  *   - está en contract_signatures        → contrato macro
  *   - está en customer_authorizations     → autorización del titular
+ *   - está en promissory_notes            → pagaré
  *   - en ninguna                          → se ignora (evento ajeno)
  *
  * Reutiliza las MISMAS rutas que ya estaban configuradas en Zapsign
@@ -38,16 +40,18 @@ export class ZapsignWebhooksController {
   constructor(
     private readonly macroContract: MacroContractService,
     private readonly authorizations: CustomerAuthorizationsService,
+    private readonly promissoryNotes: PromissoryNotesService,
   ) {}
 
   /** Determina de qué feature es el documento del evento (o null si es ajeno). */
   private async resolveOwner(
     payload: ZapsignWebhookPayload,
-  ): Promise<'macro' | 'authorization' | null> {
+  ): Promise<'macro' | 'authorization' | 'promissoryNote' | null> {
     const token = extractDocToken(payload);
     if (!token) return null;
     if (await this.macroContract.ownsDocument(token)) return 'macro';
     if (await this.authorizations.ownsDocument(token)) return 'authorization';
+    if (await this.promissoryNotes.ownsDocument(token)) return 'promissoryNote';
     return null;
   }
 
@@ -63,6 +67,8 @@ export class ZapsignWebhooksController {
       await this.macroContract.handleDocSigned(payload);
     } else if (owner === 'authorization') {
       await this.authorizations.handleDocSigned(payload);
+    } else if (owner === 'promissoryNote') {
+      await this.promissoryNotes.handleDocSigned(payload);
     } else {
       this.logger.warn(
         `doc_signed de token desconocido (${extractDocToken(payload)}); ignorado`,
@@ -83,6 +89,8 @@ export class ZapsignWebhooksController {
       await this.macroContract.handleDocRefused(payload);
     } else if (owner === 'authorization') {
       await this.authorizations.handleDocRefused(payload);
+    } else if (owner === 'promissoryNote') {
+      await this.promissoryNotes.handleDocRefused(payload);
     } else {
       this.logger.warn(
         `doc_refused de token desconocido (${extractDocToken(payload)}); ignorado`,

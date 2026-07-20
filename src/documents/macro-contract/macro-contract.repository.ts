@@ -12,9 +12,9 @@ export class MacroContractRepository {
     });
   }
 
-  findByDocToken(zapsignDocToken: string) {
+  findByDocToken(providerDocToken: string) {
     return this.prisma.contractSignature.findUnique({
-      where: { zapsignDocToken },
+      where: { providerDocToken },
       include: { company: true },
     });
   }

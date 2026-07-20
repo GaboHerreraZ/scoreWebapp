@@ -173,7 +173,7 @@ export class CustomerAuthorizationsService {
       titularName: dto.titularName,
       titularEmail: dto.titularEmail,
       templateId: this.templateId,
-      zapsignDocToken: doc.docToken,
+      providerDocToken: doc.docToken,
       signerToken: signer?.token ?? null,
       signUrl: signer?.sign_url ?? null,
       sentAt: new Date(),
