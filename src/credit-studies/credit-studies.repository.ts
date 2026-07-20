@@ -38,6 +38,12 @@ export class CreditStudiesRepository {
           requestedTerm: true,
           studyDate: true,
           requestedCreditLine: true,
+          // Resultado del análisis (null hasta que se realice el estudio): el
+          // service lo condensa en el bloque `result` del listado.
+          viabilityScore: true,
+          viabilityStatus: true,
+          recommendedTerm: true,
+          recommendedCreditLine: true,
           customer: {
             select: {
               id: true,
@@ -47,6 +53,7 @@ export class CreditStudiesRepository {
           status: {
             select: {
               id: true,
+              code: true,
               label: true,
             },
           },
@@ -208,6 +215,30 @@ export class CreditStudiesRepository {
             label: true,
             parentId: true,
             isActive: true,
+          },
+        },
+        // Último pagaré del estudio (cualquier estado). El front lo usa para
+        // mostrar el estado de la firma y mantener el estudio cerrado cuando ya
+        // fue firmado. El más reciente manda: un declinado anterior no tapa al
+        // vigente.
+        promissoryNotes: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            noteNumber: true,
+            amount: true,
+            amountInWords: true,
+            termDays: true,
+            dueDate: true,
+            signCity: true,
+            signingUrl: true,
+            signedFileStoragePath: true,
+            sentAt: true,
+            signedAt: true,
+            declinedAt: true,
+            refusedReason: true,
+            status: { select: { code: true, label: true } },
           },
         },
         // Informe IA (creditReview) exitoso más reciente del estudio, si existe.

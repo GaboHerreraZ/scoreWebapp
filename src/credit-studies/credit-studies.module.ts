@@ -7,6 +7,7 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
 import { AnalysisPacksModule } from '../analysis-packs/analysis-packs.module.js';
 import { CreditBureauModule } from '../credit-bureau/credit-bureau.module.js';
 import { CustomerAuthorizationsModule } from '../customer-authorizations/customer-authorizations.module.js';
+import { PromissoryNotesModule } from '../documents/promissory-notes/promissory-notes.module.js';
 
 @Module({
   imports: [
@@ -15,6 +16,8 @@ import { CustomerAuthorizationsModule } from '../customer-authorizations/custome
     AnalysisPacksModule,
     CreditBureauModule,
     CustomerAuthorizationsModule,
+    // Para adjuntar la URL del PDF firmado del pagaré en GET /:id/steps.
+    PromissoryNotesModule,
   ],
   controllers: [CreditStudiesController],
   providers: [CreditStudiesService, CreditStudiesRepository],

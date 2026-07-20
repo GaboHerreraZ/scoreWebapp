@@ -19,6 +19,10 @@ export interface PersistConsultationParams {
   risk: MappedRiskSnapshot | null;
   rawResponse: unknown; // respuesta cruda COMPLETA del proveedor
   httpStatus: number;
+  // Email de contacto a persistir en Customer.email: el del bureau (PJ) o, si
+  // la central no trae, el titularEmail que viajó en la petición (el mismo al
+  // que se envió la autorización). NUNCA pisa un email ya guardado.
+  contactEmail: string | null;
 }
 
 @Injectable()
@@ -101,12 +105,28 @@ export class CreditBureauRepository {
     });
   }
 
-  private upsertCustomer(
+  private async upsertCustomer(
     tx: Prisma.TransactionClient,
     params: PersistConsultationParams,
     data: MappedCustomer,
   ) {
     const { companyId, userId, personTypeId, identificationTypeId } = params;
+
+    // Email: solo se escribe si el Customer no tiene uno (no pisamos un email
+    // editado/confirmado). Se necesita para firmas posteriores (p.ej. pagaré).
+    const existing = await tx.customer.findUnique({
+      where: {
+        companyId_identificationNumber: {
+          companyId,
+          identificationNumber: data.identificationNumber,
+        },
+      },
+      select: { email: true },
+    });
+    const emailPatch =
+      !existing?.email && params.contactEmail
+        ? { email: params.contactEmail }
+        : {};
 
     // Campos que refrescamos con lo que trae la central (el último estado
     // conocido). No pisamos la identidad ni el createdBy en el update.
@@ -141,13 +161,31 @@ export class CreditBureauRepository {
         bureauCreated: true,
         createdBy: userId,
         updatedBy: userId,
+        email: params.contactEmail,
         ...refreshable,
       },
       update: {
         updatedBy: userId,
         ...refreshable,
+        ...emailPatch,
       },
     });
+  }
+
+  /**
+   * Backfill del email de contacto para un Customer que quedó sin él (p.ej.
+   * creado antes de este campo o servido desde caché). Solo escribe si está
+   * null; devuelve true si esta llamada lo escribió.
+   */
+  async setCustomerEmailIfMissing(
+    customerId: string,
+    email: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.customer.updateMany({
+      where: { id: customerId, email: null },
+      data: { email },
+    });
+    return result.count > 0;
   }
 
   /**
