@@ -17,7 +17,6 @@ import {
 import { scoreToBand } from '../scoring/scoring.constants.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { NotificationsService } from '../notifications/notifications.service.js';
 
 /** Red flag de fiabilidad que la IA detecta al analizar el PDF. */
 export interface ReliabilityFlag {
@@ -103,7 +102,6 @@ export class AiAnalysesService {
     private readonly repository: AiAnalysesRepository,
     private readonly aiService: AiService,
     private readonly parametersRepository: ParametersRepository,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async getTypeId(code: string): Promise<number> {
@@ -259,16 +257,8 @@ export class AiAnalysesService {
         status: 'success',
       });
 
-      // 8. Emit notification
-      this.emitNotification(
-        userId,
-        companyId,
-        'Análisis IA completado',
-        `El análisis IA del estudio de crédito de ${customer.businessName} fue completado exitosamente.`,
-        `/app/credit-study/detail/${creditStudyId}`,
-        'ai_analysis',
-      );
-
+      // Sin notificación: el análisis corre dentro del wizard con el usuario
+      // esperando el resultado en pantalla; notificar era ruido.
       return analysis;
     } catch (error) {
       const errorMessage =
@@ -377,16 +367,8 @@ export class AiAnalysesService {
         status: 'success',
       });
 
-      // 5. Emit notification
-      this.emitNotification(
-        userId,
-        companyId,
-        'Extracción PDF completada',
-        'Se extrajeron los datos financieros del PDF exitosamente.',
-        `/app/credit-study`,
-        'ai_analysis',
-      );
-
+      // Sin notificación: la extracción es un paso síncrono del wizard (el
+      // usuario está mirando el resultado); notificar era ruido.
       return { financialData, reliabilityFlags, extractionId: extraction.id };
     } catch (error) {
       const errorMessage =
@@ -439,29 +421,6 @@ export class AiAnalysesService {
       const code = (typeof raw === 'string' ? raw : '').trim().toUpperCase();
       return code !== '' && code !== 'N' && code !== '-';
     });
-  }
-
-  private emitNotification(
-    userId: string,
-    companyId: string,
-    title: string,
-    message: string,
-    route: string,
-    notificationTypeCode: string,
-  ): void {
-    this.parametersRepository
-      .findByTypeAndCode('notification_type', notificationTypeCode)
-      .then((type) => {
-        if (!type) return;
-        return this.notificationsService.create(userId, {
-          companyId,
-          typeId: type.id,
-          title,
-          message,
-          route,
-        });
-      })
-      .catch(() => {});
   }
 
   async findAll(companyId: string, filters: FilterAiAnalysisDto) {
