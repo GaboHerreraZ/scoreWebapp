@@ -42,6 +42,32 @@ export class PromissoryNotesController {
     private readonly promissoryNotesService: PromissoryNotesService,
   ) {}
 
+  @Post('companies/:companyId/documents/promissory-notes/preview')
+  @ApiOperation({
+    summary:
+      'Vista previa del pagaré: valida y resuelve las variables del documento sin emitir nada',
+  })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Variables resueltas (consecutivo tentativo, monto en letras, vencimiento, deudor, acreedor)',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Estudio no viable, monto mayor al solicitado o datos faltantes (email del cliente / cuenta bancaria de la empresa)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'El estudio ya tiene un pagaré pendiente o firmado',
+  })
+  preview(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Body() dto: CreatePromissoryNoteDto,
+  ) {
+    return this.promissoryNotesService.preview(companyId, dto);
+  }
+
   @Post('companies/:companyId/documents/promissory-notes')
   @ApiOperation({
     summary:

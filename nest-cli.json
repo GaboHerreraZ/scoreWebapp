@@ -14,6 +14,11 @@
         "include": "credit-studies/pdf/templates/**/*.html",
         "outDir": "dist/src",
         "watchAssets": true
+      },
+      {
+        "include": "documents/promissory-notes/templates/**/*.html",
+        "outDir": "dist/src",
+        "watchAssets": true
       }
     ]
   }

@@ -14,9 +14,14 @@
   asigna el backend. Monto y plazo son editables al emitir (monto ≤ cupo
   solicitado del estudio); la fecha de pago es emisión + plazo en días.
 
-  Se sube a Zapsign como plantilla DOCX. Las variables {{DOBLES LLAVES}} las
-  rellena el backend al crear el documento (createDocFromTemplate). Un solo
-  firmante: el deudor ({{DEUDOR_EMAIL}}). Ver variable-map.md.
+  FUENTE ÚNICA con doble uso (por eso vive en src/ y se copia al build como
+  asset, no en docs/):
+    1. Modelo DOCX que se sube a Zapsign. Las variables {{DOBLES LLAVES}} las
+       rellena el backend al crear el documento (createDocFromTemplate). Un
+       solo firmante: el deudor ({{DEUDOR_EMAIL}}).
+    2. PREVIEW en runtime: POST .../promissory-notes/preview la devuelve
+       rellenada (sin emitir nada) para que el front la muestre tal cual.
+  Mapa de variables: docs/promissory-note/variable-map.md.
 -->
 <!DOCTYPE html>
 <html lang="es">
