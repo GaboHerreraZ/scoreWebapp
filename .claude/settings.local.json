@@ -23,7 +23,9 @@
       "Bash(npx prisma db pull:*)",
       "Bash(npm run prisma:migrate:reset:*)",
       "Bash(npx prisma migrate:*)",
-      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Sí\" npx prisma migrate reset:*)"
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Sí\" npx prisma migrate reset:*)",
+      "Bash(cd \"c:/Users/User/Documents/Documentos Gabo/new project/webAppApi\" && grep -o 'alertas[^,}]\\\\{0,120\\\\}' \"C:/Users/User/.claude/projects/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/1cd6a060-8583-4b4a-be99-e503a5a09ea6.jsonl\" 2>/dev/null | head -10)",
+      "Read(//c/Users/User/.claude/projects/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/**)"
     ]
   }
 }

@@ -97,10 +97,46 @@
       "PowerShell(if \\($?\\) { \"=== BUILD OK ===\" } else { \"=== BUILD FAILED ===\" })",
       "PowerShell(git add src/analysis-packs/analysis-packs-webhook.controller.ts src/analysis-packs/analysis-packs.service.ts src/analysis-packs/dto/pack-confirmation.dto.ts)",
       "PowerShell(git add src/onboarding/onboarding.service.ts)",
-      "PowerShell(git add src/pack-offerings/pack-offerings.controller.ts)"
+      "PowerShell(git add src/pack-offerings/pack-offerings.controller.ts)",
+      "Bash(psql --version)",
+      "Bash(node -e \"try{require.resolve\\('pg'\\);console.log\\('HAS_PG'\\)}catch{console.log\\('NO_PG'\\)}\")",
+      "Bash(node -e \"try{require.resolve\\('tsx'\\);console.log\\('HAS_TSX'\\)}catch{console.log\\('NO_TSX'\\)}\")",
+      "Bash(node \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/1cd6a060-8583-4b4a-be99-e503a5a09ea6/scratchpad/diag.cjs\")",
+      "Bash(cp \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/1cd6a060-8583-4b4a-be99-e503a5a09ea6/scratchpad/diag.cjs\" \"c:/Users/User/Documents/Documentos Gabo/new project/webAppApi/_diag_tmp.cjs\")",
+      "Bash(node _diag_tmp.cjs)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\('puppeteer', require\\('puppeteer/package.json'\\).version\\); console.log\\('handlebars', require\\('handlebars/package.json'\\).version\\)\")",
+      "Bash(grep -n \"replace\\(/\\\\[\" src/credit-studies/credit-studies.service.ts)",
+      "Bash(grep -nP \"u0300|\\\\\\\\x{0300}\" src/credit-studies/credit-studies.service.ts)",
+      "Bash(node \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/b091c68b-fb60-45dd-afe7-d7da2860090b/scratchpad/verify-pdf.mjs\")",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(echo \"EXIT $?\")",
+      "Bash(npx -y marked --gfm -i docs/credit-study-scoring-v2.md -o C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/body.html)",
+      "Bash(node C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/wrap-html.mjs)",
+      "Bash('/c/Program Files/Google/Chrome/Application/chrome.exe' --headless=new --disable-gpu --no-sandbox --user-data-dir=C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/chrome-profile --no-pdf-header-footer --print-to-pdf=C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/scoring-v2.pdf file:///C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/full.html)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(cp C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/bf8c071a-edeb-4a72-8857-8917f2304aa8/scratchpad/scoring-v2.pdf docs/credit-study-scoring-v2.pdf)",
+      "Bash(xargs wc -l)",
+      "PowerShell(npm install jose)",
+      "PowerShell(npm run build)",
+      "PowerShell(npm run lint)",
+      "PowerShell(npm run prisma:migrate:deploy)",
+      "PowerShell($env:PORT=\"3100\"; npx dotenv -e .env.staging -- node dist/src/main.js)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' http://localhost:3100/api/companies/00000000-0000-0000-0000-000000000000/dashboard/summary)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' http://localhost:3100/api/companies/00000000-0000-0000-0000-000000000000/dashboard/basic)",
+      "Bash(curl -s \"https://bjawxcnsjjobweucxfpf.supabase.co/auth/v1/.well-known/jwks.json\")",
+      "Bash(curl -s \"https://rggavdujvohqxfgjzuyd.supabase.co/auth/v1/.well-known/jwks.json\")",
+      "PowerShell(npm run migrate:check)",
+      "PowerShell(npm run prisma:migrate:pro)",
+      "PowerShell(Remove-Item -Recurse -Force -Confirm:$false \"src\\\\common\\\\debug\")",
+      "PowerShell(npx dotenv -e .env.inexistente -- node -e \"console.log\\('env pasa: DATABASE_URL=' + \\(process.env.DATABASE_URL ? 'inyectada' : 'ausente'\\)\\)\")",
+      "PowerShell(npm run test)",
+      "PowerShell(git add prisma/schema.prisma prisma/migrations/20260719120000_promissory_note_signing_and_provider_agnostic src/customer-authorizations src/documents src/zapsign-webhooks src/common/utils/bogota-date.ts src/common/utils/number-to-words.ts docs/promissory-note)",
+      "PowerShell(git add .claude/settings.json .claude/settings.local.json)"
     ],
     "additionalDirectories": [
-      "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi"
+      "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
+      "C:\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi"
     ]
   }
 }
