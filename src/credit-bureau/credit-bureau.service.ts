@@ -28,6 +28,10 @@ export class CreditBureauService {
     companyId: string,
     userId: string,
     dto: ConsultCreditBureauDto,
+    // Email de respaldo para Customer.email cuando la central no trae contacto
+    // (PN nunca trae; PJ a veces): el titularEmail que viajó en el from-bureau.
+    // Sin él, el Customer queda sin correo y flujos posteriores (pagaré) fallan.
+    fallbackEmail?: string,
   ) {
     // GATE: el titular debe haber firmado la autorización (documento único) para
     // esta empresa. Sin firma vigente → 403 CUSTOMER_AUTHORIZATION_REQUIRED, sin
@@ -53,6 +57,15 @@ export class CreditBureauService {
         dto.numeroIdentificacion,
         cached.customer.id,
       );
+      // La caché se salta el persist: si el Customer quedó sin email (creado
+      // antes de este backfill), se completa aquí con el de la petición.
+      if (!cached.customer.email && fallbackEmail) {
+        const written = await this.repository.setCustomerEmailIfMissing(
+          cached.customer.id,
+          fallbackEmail,
+        );
+        if (written) cached.customer.email = fallbackEmail;
+      }
       return cached;
     }
 
@@ -95,7 +108,10 @@ export class CreditBureauService {
       result.customer.identificationTypeCode ?? dto.identificationTypeCode,
     );
 
-    // 5. Persistir (snapshot + upsert customer + risk) en transacción
+    // 5. Persistir (snapshot + upsert customer + risk) en transacción.
+    //    Email de contacto: el del bureau (solo PJ lo trae, en el bloque de
+    //    contacto del perfil) o, en su defecto, el que viajó en la petición.
+    const bureauEmail = result.customer.bureauProfile?.contact?.email ?? null;
     const { consultation, customer } =
       await this.repository.persistConsultation({
         companyId,
@@ -108,6 +124,7 @@ export class CreditBureauService {
         risk: result.risk,
         rawResponse: result.raw,
         httpStatus: result.httpStatus,
+        contactEmail: bureauEmail ?? fallbackEmail ?? null,
       });
 
     // Backfill: enlaza la autorización firmada con el Customer recién creado.

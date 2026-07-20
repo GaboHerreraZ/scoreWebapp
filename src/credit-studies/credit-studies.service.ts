@@ -18,6 +18,7 @@ import { renderReportHtml } from './pdf/credit-study-report.renderer.js';
 import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
 import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
 import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
+import { PromissoryNotesService } from '../documents/promissory-notes/promissory-notes.service.js';
 import { runScoring } from '../scoring/scoring.engine.js';
 import {
   defaultWeightsFor,
@@ -173,6 +174,7 @@ export class CreditStudiesService {
     private readonly creditBureauService: CreditBureauService,
     private readonly authorizationsService: CustomerAuthorizationsService,
     private readonly pdfService: PdfService,
+    private readonly promissoryNotesService: PromissoryNotesService,
   ) {}
 
   /**
@@ -216,11 +218,14 @@ export class CreditStudiesService {
     }
 
     // 1. Consultar la central (crea/actualiza el Customer). Si no hay info, el
-    //    servicio de bureau lanza 404 "cliente no existe".
+    //    servicio de bureau lanza 404 "cliente no existe". titularEmail va como
+    //    respaldo de Customer.email cuando la central no trae contacto (lo
+    //    necesitan las firmas posteriores, p.ej. el pagaré).
     const { customer } = await this.creditBureauService.consult(
       companyId,
       userId,
       dto,
+      dto.titularEmail,
     );
 
     // 2. Estado inicial: TODO estudio (PN y PJ) exige estados financieros antes
@@ -269,7 +274,9 @@ export class CreditStudiesService {
    *    consulta a la central). Siempre presente (el estudio nace de una consulta).
    *  - step2: estados financieros. null hasta que se carguen/extraigan.
    *  - step3: estudio de viabilidad. null hasta que se realice.
-   * El `status` del estudio va al nivel raíz (no dentro de un step).
+   * El `status` del estudio va al nivel raíz (no dentro de un step), junto con
+   * `promissoryNote`: el último pagaré del estudio (null si nunca se emitió),
+   * para que el front muestre la firma y mantenga el estudio cerrado al firmarse.
    */
   async getSteps(id: string, companyId: string) {
     const study = await this.repository.findStepsData(id, companyId);
@@ -318,6 +325,41 @@ export class CreditStudiesService {
         }
       : null;
 
+    // Último pagaré del estudio (cualquier estado; null si nunca se emitió).
+    // Con status=signed el front mantiene el estudio CERRADO y muestra la firma.
+    // documentUrl: URL temporal (~1 h) del PDF firmado, lista para descargar.
+    // Best-effort: si Storage/proveedor fallan, va null y el front puede caer a
+    // GET documents/promissory-notes/:id/document.
+    const noteRow = study.promissoryNotes?.[0] ?? null;
+    let documentUrl: string | null = null;
+    if (noteRow?.signedAt) {
+      documentUrl = await this.promissoryNotesService
+        .getSignedDocumentUrl(noteRow.id, companyId)
+        .catch(() => null);
+    }
+    const promissoryNote = noteRow
+      ? {
+          id: noteRow.id,
+          noteNumber: noteRow.noteNumber,
+          status: noteRow.status?.code ?? null,
+          statusLabel: noteRow.status?.label ?? null,
+          isSigned: !!noteRow.signedAt,
+          amount: noteRow.amount,
+          amountInWords: noteRow.amountInWords,
+          termDays: noteRow.termDays,
+          dueDate: noteRow.dueDate,
+          signCity: noteRow.signCity,
+          // Solo tiene sentido mientras está pendiente (para reabrir la firma).
+          signingUrl: noteRow.signedAt ? null : noteRow.signingUrl,
+          hasSignedDocument: !!noteRow.signedAt,
+          documentUrl,
+          sentAt: noteRow.sentAt,
+          signedAt: noteRow.signedAt,
+          declinedAt: noteRow.declinedAt,
+          refusedReason: noteRow.refusedReason,
+        }
+      : null;
+
     return {
       creditStudyId: study.id,
       status: study.status,
@@ -329,6 +371,7 @@ export class CreditStudiesService {
         requestedTerm: study.requestedTerm,
         requestedCreditLine: study.requestedCreditLine,
       },
+      promissoryNote,
       step1: { isLegalEntity, customer, centralRisk },
       step2,
       step3,
@@ -772,8 +815,40 @@ export class CreditStudiesService {
       orderBy: { studyDate: 'desc' },
     });
 
+    // Resultado del análisis condensado para el listado (null si el estudio aún
+    // no se ha realizado): score de Creditia + veredicto de viabilidad + la
+    // recomendación de cupo/plazo. Los escalares viability* no se exponen
+    // sueltos: solo dentro de `result`.
+    const viabilityLabels: Record<string, string> = {
+      approved: 'Viable',
+      conditional: 'Viable con condiciones',
+      rejected: 'No viable',
+    };
+    const rows = data.map((s) => {
+      const {
+        viabilityScore,
+        viabilityStatus,
+        recommendedTerm,
+        recommendedCreditLine,
+        ...rest
+      } = s;
+      return {
+        ...rest,
+        result: viabilityStatus
+          ? {
+              score: viabilityScore, // 0-100
+              status: viabilityStatus, // 'approved' | 'conditional' | 'rejected'
+              statusLabel: viabilityLabels[viabilityStatus] ?? viabilityStatus,
+              isViable: viabilityStatus !== 'rejected',
+              recommendedTerm,
+              recommendedCreditLine,
+            }
+          : null,
+      };
+    });
+
     return {
-      data,
+      data: rows,
       meta: {
         total,
         page,
