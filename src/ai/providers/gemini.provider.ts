@@ -25,14 +25,22 @@ export class GeminiProvider implements AiProvider {
   ): Promise<AiCompletionResult> {
     const startTime = Date.now();
 
+    // gemini-2.5-pro solo funciona en "thinking mode": no acepta thinkingBudget
+    // 0 (mismo guard que extractFromPdf). Para esos modelos no se envía
+    // thinkingConfig; ojo: sus tokens de razonamiento cuentan dentro de
+    // maxOutputTokens (subir AI_MAX_TOKENS al usar un modelo pro).
+    const supportsDisablingThinking = !this.model.includes('pro');
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: maxTokens,
+    };
+    if (supportsDisablingThinking) {
+      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
     const model = this.client.getGenerativeModel({
       model: this.model,
       systemInstruction: systemPrompt,
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        // @ts-expect-error -- thinkingConfig not yet in SDK types
-        thinkingConfig: { thinkingBudget: 0 },
-      },
+      generationConfig,
     });
 
     const result = await model.generateContent(userMessage);
