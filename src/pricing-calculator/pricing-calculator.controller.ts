@@ -19,12 +19,16 @@ export class PricingCalculatorController {
   @Post('volume-discounts')
   @ApiOperation({
     summary:
-      'Genera tramos de descuento por volumen a partir de precio, costo variable, margen mínimo y costos fijos',
+      'Genera el menú de bolsas de consultas con precio unitario decreciente. El precio base es el precio de consulta activo; la curva se elige con "technique" (exponential | power | linear).',
   })
-  @ApiResponse({ status: 201, description: 'Simulación calculada' })
+  @ApiResponse({ status: 201, description: 'Menú de bolsas calculado' })
   @ApiResponse({
     status: 400,
-    description: 'El costo variable iguala o supera el precio (sin margen)',
+    description: 'El piso es mayor o igual al precio activo',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'No hay precio de consulta activo en el sistema',
   })
   simulate(@Body() dto: SimulatePricingDto) {
     return this.service.simulate(dto);
