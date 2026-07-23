@@ -50,7 +50,11 @@ export class PdfService implements OnModuleInit, OnModuleDestroy {
 
     this.launching = puppeteer
       .launch({
-        headless: true,
+        // 'shell' usa chrome-headless-shell: el binario recortado de Chrome
+        // pensado para page.pdf()/screenshots (~200 MB menos que Chrome
+        // completo en la imagen Docker). Puppeteer lo descarga por defecto
+        // junto a Chrome, así que en dev local funciona sin pasos extra.
+        headless: 'shell',
         // Flags estándar para correr Chromium en servidores (VPS/contenedores)
         // sin sandbox de usuario ni /dev/shm amplio.
         args: [

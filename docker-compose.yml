@@ -1,0 +1,16 @@
+# Solo para correr la imagen LOCALMENTE (contra staging). En AWS las variables
+# las inyecta la task definition / Secrets Manager, no este archivo.
+#
+#   docker compose up --build     # reconstruye si hay cambios y levanta
+#   docker compose down           # detiene y elimina el contenedor
+#
+# A diferencia de `docker run --env-file`, Compose parsea el .env con semántica
+# dotenv real (interpreta comillas), así que puede leer .env.staging tal cual.
+services:
+  api:
+    build: .
+    image: webappapi:latest
+    env_file:
+      - .env.staging
+    ports:
+      - '3000:3000'
