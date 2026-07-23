@@ -1,0 +1,24 @@
+# Secretos — NUNCA deben entrar al contexto de build
+.env
+.env.*
+
+# Artefactos que se regeneran dentro de la imagen
+node_modules
+dist
+generated
+coverage
+
+# Control de versiones y tooling local
+.git
+.gitignore
+.claude
+.vscode
+.idea
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Docs y misceláneo
+*.md
+test
