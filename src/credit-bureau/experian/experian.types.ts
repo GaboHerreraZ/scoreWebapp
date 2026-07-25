@@ -240,6 +240,26 @@ export interface ExperianEndeudamiento {
   porcentajeCuotaVsIngreso?: string; // % del ingreso ya comprometido ('3.8')
 }
 
+// Sugerencias de verificación de la central: checklist de documentación que
+// Experian recomienda pedirle al cliente según su perfil (p. ej. certificado
+// laboral si es empleado, certificado de ingresos de contador si es
+// independiente). Puro texto guía para el analista.
+export interface ExperianSugerencia {
+  icono?: string | null;
+  descripcion?: string | null;
+}
+
+export interface ExperianVectorSugerencia {
+  titulo?: string | null;
+  sugerencia?: ExperianSugerencia[] | null;
+}
+
+export interface ExperianSugerencias {
+  conInformacion?: boolean;
+  msjExcepcion?: string | null;
+  vectorSugerencias?: ExperianVectorSugerencia[] | null;
+}
+
 export interface ExperianRespuesta {
   validacion?: ExperianValidacion;
   comportamientoCrediticio?: ExperianComportamientoCrediticio;
@@ -247,6 +267,7 @@ export interface ExperianRespuesta {
   endeudamiento?: ExperianEndeudamiento; // ingreso reportado (PN)
   estadosFinancieros?: ExperianEstadosFinancieros; // EEFF (PJ)
   mallaVinculos?: ExperianMallaVinculos; // Tabla 15 (PJ)
+  sugerencias?: ExperianSugerencias; // checklist de verificación para el analista
 }
 
 export interface ExperianContent {

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { ArgumentsHost } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import { SentryExceptionCaptured } from '@sentry/nestjs';
 import type { Request } from 'express';
 
@@ -53,6 +54,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const who = user?.id ? ` user=${user.id}` : '';
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      // @SentryExceptionCaptured() ignora TODA HttpException (las considera
+      // "esperadas", sin importar el status), así que las 5xx lanzadas como
+      // HttpException hay que capturarlas a mano. Las no-HTTP ya las captura
+      // el decorador — no duplicar.
+      if (isHttp) {
+        Sentry.captureException(exception);
+      }
       // 5xx: error real → log completo con stack para diagnosticar.
       this.logger.error(
         `${status} ${where}${who} :: ${

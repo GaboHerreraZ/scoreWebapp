@@ -96,6 +96,7 @@ export class CreditBureauRepository {
             paymentBehavior: toJson(risk.paymentBehavior),
             creditSectors: toJson(risk.creditSectors),
             linkNetwork: toJson(risk.linkNetwork),
+            suggestions: toJson(risk.suggestions),
             alerts: toJson(risk.alerts),
           },
         });

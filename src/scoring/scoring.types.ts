@@ -39,8 +39,15 @@ export interface PaymentBehaviorMonth {
 
 /** Datos de riesgo de Experian para la Dim 7. null si no hay consulta. */
 export interface CentralRiskInput {
-  nivelRiesgo: string | null; // 'BAJO' | 'MEDIO' | 'ALTO'
-  ratingSectorial: string | null; // '0'..'5' o 'ALTO'/'BAJO'...
+  nivelRiesgo: string | null; // 'BAJO' | 'MEDIO' | 'ALTO' (solo PJ)
+  ratingSectorial: string | null; // '0'..'5' o 'ALTO'/'BAJO'... (solo PJ)
+  /** Viabilidad de pago de la central (solo PN): 'ALTA' | 'MEDIA' | 'BAJA'.
+   *  Es el equivalente PN del nivelRiesgo → respaldo de banda cuando el PN no
+   *  trae score. null en PJ. */
+  viabilidad: string | null;
+  /** Rating de recaudos de la central (solo PN): 'A'..'D' (facilidad de cobro).
+   *  Referencia para el resultado; no puntúa. null en PJ. */
+  ratingRecaudos: string | null;
   hasArrears: boolean; // ¿el vector de comportamiento muestra mora? (derivado)
   /** Vector de comportamiento de pago (mora por mes). Para graduar por severidad
    *  y recencia. Ordenado del mes más antiguo al más reciente (como lo da la
@@ -132,7 +139,11 @@ export interface ScoringResult {
   reference: {
     experianScore: number | null;
     experianSuggestedAmount: number | null;
-    experianRiskLevel: string | null;
+    experianRiskLevel: string | null; // nivel de riesgo (solo PJ)
+    /** Viabilidad de pago de la central (solo PN): 'ALTA' | 'MEDIA' | 'BAJA'. */
+    experianViability: string | null;
+    /** Rating de recaudos de la central (solo PN): 'A'..'D'. */
+    experianCollectionRating: string | null;
   };
   /**
    * Monto que Creditia avala. Lo mandan los EEFF (sean de DataCrédito o del

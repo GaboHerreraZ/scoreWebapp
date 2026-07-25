@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as Sentry from '@sentry/nestjs';
 import { createRequire } from 'module';
 import { createHash } from 'crypto';
 
@@ -87,6 +88,9 @@ export class EpaycoService {
 
       return response.data.customerId as string;
     } catch (error: any) {
+      // Captura explícita: al relanzar como HttpException, Sentry la trataría
+      // como "esperada" y el error real de la integración se perdería.
+      Sentry.captureException(error);
       this.logger.error(`Error creando cliente en ePayco: ${error.message}`);
       throw new BadRequestException(
         'Error realizando la suscripción. Por favor intenta de nuevo más tarde.',
@@ -189,6 +193,7 @@ export class EpaycoService {
 
       return (createdId as string) ?? params.idPlan;
     } catch (error: any) {
+      Sentry.captureException(error);
       this.logger.error(`Error creando plan en ePayco: ${error.message}`);
       throw new BadRequestException(
         'Error configurando el plan de pago. Por favor intenta de nuevo más tarde.',
@@ -227,6 +232,7 @@ export class EpaycoService {
 
       return response.id as string;
     } catch (error: any) {
+      Sentry.captureException(error);
       this.logger.error(
         `Error creando suscripción en ePayco: ${error.message}`,
       );
@@ -281,6 +287,7 @@ export class EpaycoService {
       }
       return json.token as string;
     } catch (error: any) {
+      Sentry.captureException(error);
       this.logger.error(`Error autenticando con ePayco: ${error.message}`);
       throw new BadRequestException(
         'Error iniciando el pago. Por favor intenta de nuevo más tarde.',
@@ -361,6 +368,7 @@ export class EpaycoService {
       }
       return sessionId as string;
     } catch (error: any) {
+      Sentry.captureException(error);
       this.logger.error(
         `Error creando sesión de pago ePayco: ${error.message}`,
       );

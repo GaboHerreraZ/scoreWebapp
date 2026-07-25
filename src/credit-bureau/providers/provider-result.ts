@@ -125,8 +125,10 @@ export interface MappedCreditSector {
   sectorLabel: string | null; // Tabla 10
   creditosVigentes: string | null;
   creditosCerrados: string | null;
-  saldoActual: string | null;
-  saldoMora: string | null;
+  // Saldos en PESOS COMPLETOS (la central los reporta en MILES; el mapper
+  // normaliza ×1000 — ver thousandsToPesos en experian.mapper).
+  saldoActual: number | null;
+  saldoMora: number | null;
   porcentajeDeuda: string | null;
 }
 
@@ -151,6 +153,13 @@ export interface MappedLinkNode {
   linkType: string | null; // type crudo (a veces null)
   linkTypeLabel: string | null; // Tabla 15
   children: MappedLinkNode[];
+}
+
+// Sugerencia de verificación de la central: checklist de documentación que
+// Experian recomienda pedir al cliente según su perfil (empleado/independiente).
+export interface MappedBureauSuggestion {
+  title: string | null;
+  items: string[];
 }
 
 export interface MappedRiskSnapshot {
@@ -182,6 +191,8 @@ export interface MappedRiskSnapshot {
   paymentBehavior: MappedPaymentBehaviorItem[] | null; // Tabla 9 (PN+PJ)
   creditSectors: MappedCreditSector[] | null; // Tabla 10 (PN+PJ)
   linkNetwork: MappedLinkNode | null; // Tabla 15 (PJ)
+  // Checklist de verificación sugerido por la central (vectorSugerencias).
+  suggestions: MappedBureauSuggestion[] | null;
 }
 
 export interface ProviderConsultResult {
