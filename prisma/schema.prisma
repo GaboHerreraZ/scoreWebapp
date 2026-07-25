@@ -831,6 +831,7 @@ model CustomerRiskSnapshot {
   creditSectors   Json? @map("credit_sectors") // Tabla 10 (PN+PJ): sectores
   linkNetwork     Json? @map("link_network") // Tabla 15 (PJ): malla de vínculos
   alerts          Json? @map("alerts") // detalle de alertas (PN: textos; PJ: nodos alertados)
+  suggestions     Json? @map("suggestions") // checklist de verificación de la central ([{title, items[]}])
 
   createdAt DateTime @default(now()) @map("created_at")
 

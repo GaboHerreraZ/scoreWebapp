@@ -95,6 +95,30 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   const reportedIncome = input.centralRisk?.reportedIncome ?? null;
   const quotaToIncomePct = input.centralRisk?.quotaToIncomePct ?? null;
 
+  // ── Capacidad de pago EFECTIVA (regla PN: el ingreso manda) ──
+  // Para PERSONA NATURAL la central certifica el ingreso mensual y el % ya
+  // comprometido en cuotas. Ese ingreso DISPONIBLE acota la capacidad que
+  // implican los EEFF del PDF (auto-reportados; un asalariado ni siquiera tiene
+  // EEFF reales): capacidad efectiva = min(EEFF, ingreso disponible), y gobierna
+  // TODO — Dim 2, monto avalado, eliminatoria y keyFigures. En PJ (o PN sin
+  // ingreso reportado) mandan los EEFF, como siempre.
+  const incomeCapacity =
+    input.personType === 'naturalPerson' &&
+    reportedIncome !== null &&
+    reportedIncome > 0
+      ? reportedIncome * (1 - clamp(quotaToIncomePct ?? 0, 0, 100) / 100)
+      : null;
+  const cappedByIncome =
+    incomeCapacity !== null &&
+    incomeCapacity < indicators.monthlyPaymentCapacity;
+  const ind: ScoringIndicators = cappedByIncome
+    ? {
+        ...indicators,
+        monthlyPaymentCapacity: Math.round(incomeCapacity),
+        annualPaymentCapacity: Math.round(incomeCapacity * 12),
+      }
+    : indicators;
+
   // Dimensiones HABILITADAS por la config (las que traen peso), en orden
   // canónico. Solo estas se evalúan; las demás no participan del estudio.
   const enabled = SCORING_DIMENSIONS.filter(
@@ -103,14 +127,16 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
 
   // Evaluadores por dimensión (perezosos: solo corre el de las habilitadas).
   const evaluators: Record<ScoringDimension, () => RawDimension> = {
-    financialHealth: () => evalFinancialHealth(indicators),
+    financialHealth: () => evalFinancialHealth(ind),
     paymentCapacity: () =>
-      evalPaymentCapacity(indicators, request, suggestedByBureau, {
+      evalPaymentCapacity(ind, request, suggestedByBureau, {
         reportedIncome,
-        quotaToIncomePct,
+        // La capacidad SEGÚN EEFF (sin acotar por ingreso): el contraste
+        // "los EEFF implican más de lo que gana" necesita la cifra original.
+        pdfCapacity: indicators.monthlyPaymentCapacity,
       }),
-    termCoherence: () => evalTermCoherence(indicators, request),
-    capitalExposure: () => evalCapitalExposure(indicators, request),
+    termCoherence: () => evalTermCoherence(ind, request),
+    capitalExposure: () => evalCapitalExposure(ind, request),
     veracity: () =>
       evalVeracity(input.truthFigures, input.pdfFigures, input.personType),
     centralRisk: () => evalCentralRisk(input.centralRisk),
@@ -154,6 +180,15 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // a entero, p. ej. 7.5 → 8, y descuadraba con el desglose).
   totalScore = round2(totalScore);
 
+  // Declarar cuando el ingreso acotó la capacidad (transparencia del cálculo).
+  if (cappedByIncome) {
+    alerts.unshift({
+      type: 'info',
+      dimension: 'paymentCapacity',
+      message: `Persona natural: la capacidad de pago se limitó al ingreso mensual disponible según la central (${money(ind.monthlyPaymentCapacity)} = ingreso de ${money(reportedIncome ?? 0)} menos el ${quotaToIncomePct ?? 0}% ya comprometido en cuotas). Los estados financieros implicaban ${money(indicators.monthlyPaymentCapacity)}.`,
+    });
+  }
+
   // ── Salvedad de la fuente de cálculo (para que el cliente decida) ──
   // El análisis debe declarar EXPLÍCITAMENTE con qué cifras se calculó, porque no
   // todas son igual de confiables: DataCrédito es oficial; el PDF es auto-
@@ -183,7 +218,7 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // máximo. El montoSugerido de la central NO recorta (es referencia/alerta).
   const approvedCreditLine = resolveApprovedCredit(
     requestedCredit,
-    indicators,
+    ind,
     request,
     suggestedByBureau,
   );
@@ -191,7 +226,7 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     alerts.unshift({
       type: 'warning',
       dimension: 'paymentCapacity',
-      message: `El cupo solicitado (${money(approvedCreditLine.requested ?? 0)}) supera el máximo pagable según los estados financieros para el plazo pedido. Creditia avala hasta ${money(approvedCreditLine.amount ?? 0)}.`,
+      message: `El cupo solicitado (${money(approvedCreditLine.requested ?? 0)}) supera el máximo pagable según la capacidad de pago del cliente para el plazo pedido. Creditia avala hasta ${money(approvedCreditLine.amount ?? 0)}.`,
     });
   }
 
@@ -233,10 +268,15 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       dimension: 'general',
       message: legalReason,
     });
-  } else if (indicators.monthlyPaymentCapacity <= 0) {
+  } else if (ind.monthlyPaymentCapacity <= 0) {
     status = 'rejected';
+    // El motivo depende de qué agotó la capacidad: para PN puede ser el ingreso
+    // totalmente comprometido (aunque los EEFF digan otra cosa); para el resto,
+    // el servicio de deuda contra el EBITDA.
     eliminatoryReason =
-      'El cliente no cuenta con capacidad de pago: el servicio de deuda supera el EBITDA ajustado.';
+      incomeCapacity !== null && incomeCapacity <= 0
+        ? 'El cliente no cuenta con capacidad de pago: su ingreso mensual reportado en la central ya está totalmente comprometido en cuotas vigentes.'
+        : 'El cliente no cuenta con capacidad de pago: el servicio de deuda supera el EBITDA ajustado.';
   } else if (totalScore >= APPROVED_THRESHOLD) {
     status = 'approved';
   } else if (totalScore >= CONDITIONAL_THRESHOLD) {
@@ -273,24 +313,26 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // ── Cifras clave (para mostrar en el front, no solo en el texto) ──
   const estimatedMonthlyQuota = monthlyQuota(request);
   const cashConversionCycle =
-    indicators.accountsReceivableTurnover +
-    indicators.inventoryTurnover -
-    Math.max(indicators.paymentTimeSuppliers, 0);
+    ind.accountsReceivableTurnover +
+    ind.inventoryTurnover -
+    Math.max(ind.paymentTimeSuppliers, 0);
+  // Capacidades EFECTIVAS (en PN pueden estar acotadas por el ingreso): el front
+  // muestra las mismas cifras con las que se puntuó y se avaló el monto.
   const keyFigures = {
-    monthlyPaymentCapacity: indicators.monthlyPaymentCapacity,
-    annualPaymentCapacity: indicators.annualPaymentCapacity,
+    monthlyPaymentCapacity: ind.monthlyPaymentCapacity,
+    annualPaymentCapacity: ind.annualPaymentCapacity,
     estimatedMonthlyQuota: Math.round(estimatedMonthlyQuota),
     paymentCoverageRatio:
       estimatedMonthlyQuota > 0
-        ? round2(indicators.monthlyPaymentCapacity / estimatedMonthlyQuota)
+        ? round2(ind.monthlyPaymentCapacity / estimatedMonthlyQuota)
         : null,
-    currentDebtService: indicators.currentDebtService,
-    ebitda: indicators.ebitda,
-    accountsReceivableTurnover: indicators.accountsReceivableTurnover,
-    inventoryTurnover: indicators.inventoryTurnover,
-    paymentTimeSuppliers: indicators.paymentTimeSuppliers,
+    currentDebtService: ind.currentDebtService,
+    ebitda: ind.ebitda,
+    accountsReceivableTurnover: ind.accountsReceivableTurnover,
+    inventoryTurnover: ind.inventoryTurnover,
+    paymentTimeSuppliers: ind.paymentTimeSuppliers,
     cashConversionCycle: Math.round(cashConversionCycle),
-    stabilityFactor: indicators.stabilityFactor,
+    stabilityFactor: ind.stabilityFactor,
   };
 
   return {
@@ -299,7 +341,9 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     reference: {
       experianScore: input.centralRisk?.score ?? null,
       experianSuggestedAmount: input.centralRisk?.montoSugerido ?? null,
-      experianRiskLevel: input.centralRisk?.nivelRiesgo ?? null,
+      experianRiskLevel: input.centralRisk?.nivelRiesgo ?? null, // solo PJ
+      experianViability: input.centralRisk?.viabilidad ?? null, // solo PN
+      experianCollectionRating: input.centralRisk?.ratingRecaudos ?? null, // solo PN
     },
     approvedCreditLine,
     keyFigures,
@@ -374,13 +418,13 @@ function evalFinancialHealth(ind: ScoringIndicators): RawDimension {
 // El montoSugerido del mercado suele ser conservador frente a los EEFF reales
 // del cliente; el analista pondera la señal, la central no veta.
 function evalPaymentCapacity(
-  ind: ScoringIndicators,
+  ind: ScoringIndicators, // capacidad EFECTIVA (en PN puede venir acotada por el ingreso)
   req: StudyRequest,
   suggestedByBureau: number | null,
-  // Ingreso reportado por la central (solo PN). Genera alertas de REFERENCIA
-  // (no tocan el ratio ni el veredicto), contrastando la capacidad que implican
-  // los EEFF del PDF contra el ingreso real que conoce la central.
-  income: { reportedIncome: number | null; quotaToIncomePct: number | null },
+  // Contraste del ingreso reportado por la central (solo PN): pdfCapacity es la
+  // capacidad SEGÚN EEFF sin acotar, para detectar "el PDF implica más de lo que
+  // gana" (señal de veracidad). Solo alertas; el ratio usa `ind`.
+  income: { reportedIncome: number | null; pdfCapacity: number },
 ): RawDimension {
   if (ind.monthlyPaymentCapacity <= 0) {
     return {
@@ -424,14 +468,11 @@ function evalPaymentCapacity(
     }
   }
 
-  // Referencia del ingreso reportado por la central (solo PN, donde la central no
-  // tiene EEFF): contrasta la capacidad que implica el PDF y la cuota pedida
-  // contra el ingreso real. Solo alertas (no tocan el ratio ni el veredicto).
+  // Contraste del ingreso reportado por la central (solo PN): señala cuando los
+  // EEFF del PDF implican más capacidad de la que el ingreso real permite.
   const incomeAlerts = incomeReferenceAlerts(
-    ind,
-    monthlyObligation,
+    income.pdfCapacity,
     income.reportedIncome,
-    income.quotaToIncomePct,
   );
 
   if (ratio >= 1.2) {
@@ -479,39 +520,25 @@ function evalPaymentCapacity(
   };
 }
 
-// Alertas de REFERENCIA del ingreso reportado por la central (solo PN). No tocan
-// el ratio ni el veredicto: contrastan la realidad de la central contra el PDF.
-//  1. La capacidad de pago que implican los EEFF no puede superar el ingreso que
-//     reporta la central (una persona no paga con más de lo que gana).
-//  2. La cuota pedida debe caber en el ingreso disponible (tras lo ya comprometido).
+// Alerta de REFERENCIA del ingreso reportado por la central (solo PN): los EEFF
+// del PDF no pueden implicar más capacidad que el ingreso certificado (una
+// persona no paga con más de lo que gana → señal de veracidad del PDF).
+// El contraste cuota-vs-ingreso ya NO alerta aparte: el ingreso disponible ES la
+// capacidad efectiva (ver runScoring), así que ese exceso lo expresan las
+// alertas principales de la dimensión y el recorte del monto avalado.
 function incomeReferenceAlerts(
-  ind: ScoringIndicators,
-  monthlyObligation: number,
+  pdfCapacity: number,
   reportedIncome: number | null,
-  quotaToIncomePct: number | null,
 ): ScoringAlert[] {
   if (reportedIncome === null || reportedIncome <= 0) return [];
-  const alerts: ScoringAlert[] = [];
-
-  if (ind.monthlyPaymentCapacity > reportedIncome) {
-    alerts.push({
+  if (pdfCapacity <= reportedIncome) return [];
+  return [
+    {
       type: 'danger',
       dimension: 'paymentCapacity',
-      message: `Los estados financieros implican una capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) mayor al ingreso que reporta la central (${money(reportedIncome)}). Una persona no puede destinar a pagar más de lo que gana: revise la veracidad del PDF.`,
-    });
-  }
-
-  const committedPct = quotaToIncomePct ?? 0;
-  const availableIncome = reportedIncome * (1 - committedPct / 100);
-  if (monthlyObligation > availableIncome) {
-    alerts.push({
-      type: 'warning',
-      dimension: 'paymentCapacity',
-      message: `La cuota estimada del cupo pedido (${money(monthlyObligation)}) supera el ingreso mensual disponible según la central (${money(availableIncome)}: ingreso de ${money(reportedIncome)} menos el ${committedPct}% ya comprometido en cuotas). Señal informativa: el monto avalado se basa en los estados financieros.`,
-    });
-  }
-
-  return alerts;
+      message: `Los estados financieros implican una capacidad de pago mensual (${money(pdfCapacity)}) mayor al ingreso que reporta la central (${money(reportedIncome)}). Una persona no puede destinar a pagar más de lo que gana: revise la veracidad del PDF.`,
+    },
+  ];
 }
 
 // Dim 3: Coherencia de plazos. Compara el plazo que el cliente pide para pagarle
@@ -748,21 +775,30 @@ function evalVeracity(
 // (BAJO/MEDIO/ALTO) NO es la base: es solo contexto para el mensaje. Si no hay
 // score, cae al nivel como respaldo; si tampoco hay nivel, no es evaluable.
 function evalCentralRisk(central: CentralRiskInput | null): RawDimension {
-  if (!central || (central.score === null && !central.nivelRiesgo)) {
+  if (
+    !central ||
+    (central.score === null && !central.nivelRiesgo && !central.viabilidad)
+  ) {
     return { ratio: null, status: 'not_evaluable', alerts: [] };
   }
 
-  // Base por banda de score. Sin score, se deriva del nivel (respaldo).
+  // Base por banda de score. Sin score, el respaldo depende del tipo de campo
+  // que la central sí entrega: nivelRiesgo (PJ) o viabilidad de pago (PN, su
+  // equivalente cualitativo: ALTA/MEDIA/BAJA).
   let base: number;
   let bandLabel: string;
   if (central.score !== null) {
     const band = scoreToBand(central.score);
     base = band.ratio;
     bandLabel = `${band.label} (${central.score})`;
-  } else {
-    const nivel = (central.nivelRiesgo ?? '').trim().toUpperCase();
+  } else if (central.nivelRiesgo) {
+    const nivel = central.nivelRiesgo.trim().toUpperCase();
     base = nivel === 'BAJO' ? 0.9 : nivel === 'ALTO' ? 0.1 : 0.5;
     bandLabel = `nivel ${nivel || 'desconocido'}`;
+  } else {
+    const viab = (central.viabilidad ?? '').trim().toUpperCase();
+    base = viab === 'ALTA' ? 0.9 : viab === 'BAJA' ? 0.1 : 0.5;
+    bandLabel = `viabilidad de pago ${viab || 'desconocida'}`;
   }
 
   // Penalización por sector riesgoso (ratingSectorial alto: 4, 5 o 'ALTO').

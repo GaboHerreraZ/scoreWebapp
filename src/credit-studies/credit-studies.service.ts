@@ -41,6 +41,7 @@ import type {
   MappedCreditSector,
   MappedLinkNode,
   MappedRiskAlert,
+  MappedBureauSuggestion,
 } from '../credit-bureau/providers/provider-result.js';
 
 interface ViabilityDimension {
@@ -77,6 +78,7 @@ interface RiskSnapshotRow {
   creditSectors: Prisma.JsonValue;
   linkNetwork: Prisma.JsonValue;
   alerts: Prisma.JsonValue;
+  suggestions: Prisma.JsonValue;
 }
 
 /** Empareja un código escalar con su label del manual; null si ambos faltan. */
@@ -130,6 +132,11 @@ function buildCentralRisk(s: RiskSnapshotRow | null) {
       null,
     creditSectors:
       (s.creditSectors as unknown as MappedCreditSector[] | null) ?? null,
+    // Checklist de verificación sugerido por la central: qué documentación
+    // pedirle al cliente según su perfil (empleado/independiente). Guía para el
+    // analista; no participa del scoring.
+    suggestions:
+      (s.suggestions as unknown as MappedBureauSuggestion[] | null) ?? null,
   };
 }
 
@@ -697,6 +704,8 @@ export class CreditStudiesService {
     snapshot: {
       nivelRiesgo: string | null;
       ratingSectorial: string | null;
+      viabilidad: string | null;
+      ratingRecaudos: string | null;
       score: number | null;
       montoSugerido: number | null;
       porcentajeDeuda: number | null;
@@ -710,6 +719,8 @@ export class CreditStudiesService {
     return {
       nivelRiesgo: snapshot.nivelRiesgo,
       ratingSectorial: snapshot.ratingSectorial,
+      viabilidad: snapshot.viabilidad,
+      ratingRecaudos: snapshot.ratingRecaudos,
       score: snapshot.score,
       montoSugerido: snapshot.montoSugerido,
       porcentajeDeuda: snapshot.porcentajeDeuda,

@@ -19,6 +19,7 @@ import type {
   MappedCreditSector,
   MappedLinkNode,
   MappedRiskAlert,
+  MappedBureauSuggestion,
 } from '../providers/provider-result.js';
 import {
   translate,
@@ -338,9 +339,9 @@ function mapRisk(
     ratingSectorial,
     ratingSectorialLabel: translate(SECTORAL_RISK, ratingSectorial), // Tabla 14
     montoSugerido: toNumber(riesgo.montoSugerido),
-    saldoActual: toNumber(indicadores.saldoActual),
+    saldoActual: thousandsToPesos(indicadores.saldoActual),
     porcentajeDeuda: toNumber(indicadores.porcentajeDeuda),
-    saldoMora: toNumber(indicadores.saldoMora),
+    saldoMora: thousandsToPesos(indicadores.saldoMora),
     hasAlertas: (alerts?.length ?? 0) > 0,
     alerts,
     // Endeudamiento reportado (PN): ingreso mensual + % ya comprometido.
@@ -355,7 +356,29 @@ function mapRisk(
       personType === 'PJ'
         ? mapLinkNode(respuesta.mallaVinculos?.vinculados)
         : null, // Tabla 15
+    suggestions: mapSuggestions(respuesta), // checklist de verificación (PN+PJ)
   };
+}
+
+// Sugerencias de verificación de la central (vectorSugerencias): checklist de
+// documentación para el analista según el perfil del cliente. Se aplanan a
+// {title, items} descartando entradas vacías.
+function mapSuggestions(
+  respuesta: ExperianRespuesta,
+): MappedBureauSuggestion[] | null {
+  const vector = respuesta.sugerencias?.vectorSugerencias;
+  if (!Array.isArray(vector) || vector.length === 0) return null;
+
+  const mapped = vector
+    .map((v) => ({
+      title: v.titulo?.trim() || null,
+      items: (Array.isArray(v.sugerencia) ? v.sugerencia : [])
+        .map((s) => s.descripcion?.trim() ?? '')
+        .filter((d) => d.length > 0),
+    }))
+    .filter((v) => v.title !== null || v.items.length > 0);
+
+  return mapped.length > 0 ? mapped : null;
 }
 
 // Tabla 8 — tipos de crédito por cartera (PJ).
@@ -400,10 +423,23 @@ function mapCreditSectors(
     sectorLabel: translate(SECTOR, s.sector),
     creditosVigentes: s.creditosVigentes ?? null,
     creditosCerrados: s.creditosCerrados ?? null,
-    saldoActual: s.saldoActual ?? null,
-    saldoMora: s.saldoMora ?? null,
+    saldoActual: thousandsToPesos(s.saldoActual),
+    saldoMora: thousandsToPesos(s.saldoMora),
     porcentajeDeuda: s.porcentajeDeuda ?? null,
   }));
+}
+
+// La central reporta los saldos/cuotas de `indicadoresValores` y sus sectores en
+// MILES de pesos, mientras `ingreso` y `montoSugerido` vienen en pesos completos
+// (verificado con caso real: cuota "2053" / ingreso 6.964.000 = 29,5% = el
+// porcentajeCuotaVsIngreso que la propia central reporta — solo cuadra si la
+// cuota está en miles). Se normaliza AQUÍ, en el único punto de entrada, para
+// que todo el dominio hable en pesos completos.
+function thousandsToPesos(
+  value: string | number | null | undefined,
+): number | null {
+  const n = toNumber(value);
+  return n === null ? null : n * 1000;
 }
 
 // Tabla 15 — malla de vínculos (PJ), recursiva. El `type` puede venir null.

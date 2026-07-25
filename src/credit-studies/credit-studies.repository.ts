@@ -203,6 +203,7 @@ export class CreditStudiesRepository {
                 creditSectors: true,
                 linkNetwork: true,
                 alerts: true,
+                suggestions: true,
               },
             },
           },

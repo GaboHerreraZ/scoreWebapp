@@ -152,7 +152,13 @@
       "PowerShell(docker rm -f webappapi-smoke)",
       "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.cache\\\\puppeteer\" -ErrorAction SilentlyContinue | Select-Object Name)",
       "PowerShell(docker run --rm --entrypoint node webappapi:test --input-type=module -e \"const {default: puppeteer} = await import\\('puppeteer'\\); const b = await puppeteer.launch\\({headless: 'shell', args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']}\\); const page = await b.newPage\\(\\); await page.setContent\\('<h1 style=\\\\\"color:navy\\\\\">pagar� test</h1>'\\); const pdf = await page.pdf\\({format: 'A4'}\\); console.log\\('Puppeteer OK -', await b.version\\(\\), '- PDF bytes:', pdf.length\\); await b.close\\(\\);\")",
-      "PowerShell(docker run --rm --entrypoint node webappapi:test --input-type=module -e \"const {default: puppeteer} = await import\\('puppeteer'\\); const b = await puppeteer.launch\\({headless: 'shell', args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']}\\); const page = await b.newPage\\(\\); await page.setContent\\('<h1>pagare test</h1>'\\); const pdf = await page.pdf\\({format: 'A4'}\\); console.log\\('Puppeteer OK -', await b.version\\(\\), '- PDF bytes:', pdf.length\\); await b.close\\(\\);\")"
+      "PowerShell(docker run --rm --entrypoint node webappapi:test --input-type=module -e \"const {default: puppeteer} = await import\\('puppeteer'\\); const b = await puppeteer.launch\\({headless: 'shell', args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']}\\); const page = await b.newPage\\(\\); await page.setContent\\('<h1>pagare test</h1>'\\); const pdf = await page.pdf\\({format: 'A4'}\\); console.log\\('Puppeteer OK -', await b.version\\(\\), '- PDF bytes:', pdf.length\\); await b.close\\(\\);\")",
+      "Bash(curl -s https://api.ipify.org)",
+      "Bash(curl -s https://ifconfig.me)",
+      "PowerShell(node -v; if \\(Test-Path \"$env:ProgramFiles\\\\nodejs\\\\node.exe\"\\) { & \"$env:ProgramFiles\\\\nodejs\\\\node.exe\" -v }; if \\(Get-Command nvm -ErrorAction SilentlyContinue\\) { nvm list })",
+      "Bash(node -v 2>/dev/null; ls \"/c/Program Files/nodejs\" 2>/dev/null | head; ls ~/AppData/Roaming/nvm 2>/dev/null | head -20; ls \"/c/Program Files \\(x86\\)/nodejs\" 2>/dev/null)",
+      "Read(//c/Program Files/nodejs/**)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/**)"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
