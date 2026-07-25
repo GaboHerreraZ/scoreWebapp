@@ -245,6 +245,18 @@
 
     <div class="card">
 
+      <!-- Score de la central (150-950) con su banda (misma tabla de la Dim 7) -->
+      <!-- score: { value, bandLabel, pillClass: 'green'|'amber'|'red' } -->
+      {{#if centralRisk.score}}
+      <div class="cell row between items-center" style="margin-bottom:12px">
+        <div>
+          <div class="k">Score de la central (escala 150–950)</div>
+          <div class="v" style="font-size:18px">{{centralRisk.score.value}}</div>
+        </div>
+        <span class="pill {{centralRisk.score.pillClass}}">{{centralRisk.score.bandLabel}}</span>
+      </div>
+      {{/if}}
+
       <!-- Alertas: self (cliente) / linked (vínculos) -->
       <!-- alerts: [ { source: 'self'|'linked', subject, count, message, identification } ] -->
       {{#if centralRisk.selfAlerts.length}}
@@ -375,6 +387,20 @@
         </div>
         {{/each}}
       </div>
+      {{/if}}
+
+      <!-- Sugerencias de verificación de la central (checklist para el analista) -->
+      <!-- suggestions: [ { title, items: [] } ] -->
+      {{#if centralRisk.suggestions.length}}
+      <div class="block-label mt-4">Sugerencias de verificación de la central</div>
+      {{#each centralRisk.suggestions}}
+      {{#if this.title}}<div class="sm semibold" style="margin-top:6px">{{this.title}}</div>{{/if}}
+      {{#if this.items.length}}
+      <ul style="margin:2px 0 6px; padding-left:16px">
+        {{#each this.items}}<li class="sm">{{this}}</li>{{/each}}
+      </ul>
+      {{/if}}
+      {{/each}}
       {{/if}}
 
     </div>

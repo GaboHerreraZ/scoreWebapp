@@ -1,3 +1,5 @@
+import { scoreToBand } from '../../scoring/scoring.constants.js';
+
 /**
  * Mapper: respuesta de `getSteps` → view-model plano y PRE-FORMATEADO que
  * consume la plantilla Handlebars del PDF (credit-study-report.template.html).
@@ -41,6 +43,7 @@ interface LinkNode {
 
 interface CentralRiskInput {
   consultedAt: Date | string | null;
+  score: number | null;
   hasAlertas: boolean;
   alerts: RiskAlert[] | null;
   viabilidad: CodeLabel | null;
@@ -80,6 +83,8 @@ interface CentralRiskInput {
       }[]
     | null;
   linkNetwork: LinkNode | null;
+  // Checklist de verificación sugerido por la central ([{title, items[]}]).
+  suggestions: { title: string | null; items: string[] | null }[] | null;
 }
 
 interface ScoringDimension {
@@ -291,6 +296,20 @@ const ALERT_GROUP_META: Record<string, string> = {
 function buildCentralRisk(cr: CentralRiskInput | null) {
   if (!cr) return null;
 
+  // Score de la central (150-950) con su banda — la MISMA tabla que usa la
+  // Dim 7 del motor (scoreToBand), para que PDF y análisis nunca diverjan.
+  let score: { value: string; bandLabel: string; pillClass: string } | null =
+    null;
+  if (cr.score != null) {
+    const band = scoreToBand(cr.score);
+    score = {
+      value: cr.score.toLocaleString('es-CO'),
+      bandLabel: band.label,
+      pillClass:
+        band.ratio >= 0.8 ? 'green' : band.ratio >= 0.4 ? 'amber' : 'red',
+    };
+  }
+
   const alerts = cr.alerts ?? [];
   const selfAlerts = alerts
     .filter((a) => a.source === 'self')
@@ -380,8 +399,17 @@ function buildCentralRisk(cr: CentralRiskInput | null) {
   };
   if (cr.linkNetwork) walk(cr.linkNetwork, 0);
 
+  // Checklist de verificación sugerido por la central (guía para el analista).
+  const suggestions = (cr.suggestions ?? [])
+    .map((s) => ({
+      title: s.title,
+      items: (s.items ?? []).filter((i) => !!i),
+    }))
+    .filter((s) => s.title || s.items.length > 0);
+
   return {
     consultedAt: cr.consultedAt ? formatDate(cr.consultedAt) : null,
+    score,
     hasAlertas: cr.hasAlertas,
     selfAlerts,
     linkedAlerts,
@@ -392,6 +420,7 @@ function buildCentralRisk(cr: CentralRiskInput | null) {
     paymentBehavior,
     creditSectors,
     linkNetwork,
+    suggestions,
   };
 }
 
@@ -408,8 +437,13 @@ const KEY_FIGURE_ROWS: {
     format: 'currency',
   },
   {
-    key: 'estimatedMonthlyQuota',
-    label: 'Cuota mensual estimada',
+    key: 'paymentAtMaturity',
+    label: 'Pago único al vencimiento',
+    format: 'currency',
+  },
+  {
+    key: 'capacityInTerm',
+    label: 'Capacidad acumulada en el plazo',
     format: 'currency',
   },
   {

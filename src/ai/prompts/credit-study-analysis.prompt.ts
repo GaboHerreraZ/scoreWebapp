@@ -15,7 +15,7 @@ REGLAS DE CONTENIDO:
 - Basa tu analisis EXCLUSIVAMENTE en los scores, pesos, alertas, dimensiones, red flags y datos de la central proporcionados por el sistema
 
 CONTEXTO DEL MODELO DE VIABILIDAD (v2):
-- El "cupo solicitado" es el monto TOTAL del credito, no mensual. La "cuota mensual estimada" = cupo / (dias plazo / 30)
+- El "cupo solicitado" es el monto TOTAL del credito y se paga COMPLETO al VENCIMIENTO del plazo (pago unico, SIN cuotas mensuales). La medida de capacidad compara la "capacidad acumulada en el plazo" (capacidad mensual x dias/30) contra ese pago unico. NUNCA hables de "cuota mensual"
 - El credito es comercial SIN intereses: el plazo aprobado nunca amplia el solicitado
 - El score de viabilidad va de 0 a 100. Resulta de PONDERAR las dimensiones que la empresa HABILITO en su configuracion (pueden ser menos que el catalogo completo), cada una con un PESO configurado por la empresa. Cada dimension aporta ratio (0 a 1) x peso. Una dimension puede ser "no evaluable" (no habia datos): en ese caso su peso se redistribuyo entre las demas y NO debes comentarla como una carencia del cliente. Las dimensiones NO habilitadas no existen para este analisis: NO las menciones ni como carencia ni como omision
 - Las dimensiones posibles del catalogo: salud financiera, capacidad de pago, coherencia de plazos, adecuacion del cupo, exposicion del capital, VERACIDAD y RIESGO DE LA CENTRAL. Comenta SOLO las que vengan en los datos
@@ -37,7 +37,7 @@ RECHAZO ELIMINATORIO:
 
 ESTRUCTURA (hasta 5 parrafos, sin titulos):
 1. Diagnostico: veredicto (aprobado/condicional/rechazado). Si hubo rechazo eliminatorio, ese motivo manda. Si no, score total y que dimensiones pesan/puntuan bien y cuales mal (usa los nombres en lenguaje natural, no tecnicos)
-2. Capacidad de pago: cuota mensual estimada vs capacidad de pago mensual, margen de cobertura, indicadores clave del estado de resultados
+2. Capacidad de pago: pago unico al vencimiento vs capacidad acumulada en el plazo, margen de cobertura, indicadores clave del estado de resultados
 3. Cupo y plazos: coherencia del plazo con la rotacion de cartera; monto aprobado por el sistema vs solicitado (si se recorto al techo de la central, explicalo); adecuacion del cupo. IMPORTANTE sobre el plazo: si el plazo solicitado es MENOR que la rotacion de cartera, eso significa que el cliente debe pagarnos ANTES de cobrar a sus propios clientes -> es TENSION DE CAJA para el cliente (necesita capital de trabajo para cubrir la brecha), NO es un "riesgo de incumplimiento" ni de "cobro tardio" para nosotros. De hecho cobrarle rapido nos conviene. Descrbelo como tension de liquidez del cliente, nunca como riesgo de impago
 4. Opinion de la central y fiabilidad: puntaje/nivel de la central, comportamiento de pago; para PJ, resultado del contraste de veracidad; red flags de fiabilidad del PDF si las hay; fuente de las cifras (verificadas o auto-reportadas)
 5. Conclusion: recomendacion concreta basada SOLO en los datos (aprobar tal cual por el monto aprobado, aprobar con condiciones, o rechazar). Si la fiabilidad es dudosa o las cifras no estan verificadas, recomendar verificacion adicional`;
@@ -109,7 +109,10 @@ export interface CreditStudyPromptInput {
   keyFigures?: {
     monthlyPaymentCapacity: number;
     annualPaymentCapacity: number;
-    estimatedMonthlyQuota: number;
+    /** Pago único al vencimiento (= cupo solicitado). */
+    paymentAtMaturity: number;
+    /** Capacidad acumulada en el plazo (capacidad mensual × plazo/30). */
+    capacityInTerm: number;
     paymentCoverageRatio: number | null;
     currentDebtService: number;
     ebitda: number;
@@ -166,11 +169,6 @@ export function buildCreditStudyUserMessage(
 
   const termInMonths = study.requestedTerm > 0 ? study.requestedTerm / 30 : 1;
   const kf = study.keyFigures;
-  // La cuota mensual sale del motor (keyFigures) para no divergir; si no viniera
-  // (compatibilidad), se recalcula como respaldo.
-  const monthlyObligation =
-    kf?.estimatedMonthlyQuota ??
-    Math.round(study.requestedCreditLine / termInMonths);
 
   const verdict =
     study.viabilityStatus === 'approved'
@@ -266,8 +264,9 @@ Monto sugerido por la central (referencia, NO techo): $${fmt(cr.montoSugerido)}`
   // ── Cifras clave (del motor, ya calculadas) ──
   const keyFiguresText = kf
     ? `Capacidad de pago mensual: $${fmt(kf.monthlyPaymentCapacity)} | anual: $${fmt(kf.annualPaymentCapacity)}
-Cuota mensual estimada del cupo solicitado: $${fmt(kf.estimatedMonthlyQuota)}
-Cobertura de la cuota: ${kf.paymentCoverageRatio !== null ? `${kf.paymentCoverageRatio} veces (${kf.paymentCoverageRatio >= 1 ? 'la capacidad cubre la cuota' : 'la capacidad NO alcanza la cuota'})` : 'N/D'}
+Pago unico al vencimiento (el cupo se paga completo al final del plazo): $${fmt(kf.paymentAtMaturity)}
+Capacidad acumulada en el plazo (${study.requestedTerm} dias): $${fmt(kf.capacityInTerm)}
+Cobertura del pago al vencimiento: ${kf.paymentCoverageRatio !== null ? `${kf.paymentCoverageRatio} veces (${kf.paymentCoverageRatio >= 1 ? 'la capacidad acumulada cubre el pago' : 'la capacidad acumulada NO alcanza el pago'})` : 'N/D'}
 Servicio de deuda actual: $${fmt(kf.currentDebtService)}
 Rotacion de cartera: ${kf.accountsReceivableTurnover} dias (dias en cobrar) | inventarios: ${kf.inventoryTurnover} dias | pago a proveedores: ${kf.paymentTimeSuppliers} dias
 Ciclo de caja (cartera + inventario - proveedores): ${kf.cashConversionCycle} dias`
@@ -289,7 +288,7 @@ Tipo de cliente: ${study.personTypeLabel}${study.isLegalEntity ? '' : ' (en pers
 SOLICITUD:
 Cupo total solicitado: $${fmt(study.requestedCreditLine)}
 Plazo solicitado: ${study.requestedTerm} dias (${termInMonths.toFixed(1)} meses)
-Cuota mensual estimada: $${fmt(monthlyObligation)}
+Forma de pago: PAGO UNICO al vencimiento (el cupo completo al dia ${study.requestedTerm})
 
 VEREDICTO DEL SISTEMA:
 Score de viabilidad: ${study.viabilityScore} / 100

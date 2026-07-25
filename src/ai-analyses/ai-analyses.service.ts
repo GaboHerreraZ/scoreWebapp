@@ -65,7 +65,12 @@ interface ScoringResultShape {
   keyFigures?: {
     monthlyPaymentCapacity: number;
     annualPaymentCapacity: number;
-    estimatedMonthlyQuota: number;
+    /** Nuevas (pago único). Opcionales: resultados congelados ANTES del cambio
+     *  no las traen — normalizeKeyFigures las deriva. */
+    paymentAtMaturity?: number;
+    capacityInTerm?: number;
+    /** Legado (resultados congelados con el modelo de cuota mensual). */
+    estimatedMonthlyQuota?: number;
     paymentCoverageRatio: number | null;
     currentDebtService: number;
     ebitda: number;
@@ -201,7 +206,7 @@ export class AiAnalysesService {
       },
       calculationSource: result.summary?.calculationSource ?? 'none',
       financialsVerified: result.summary?.financialsVerified ?? false,
-      keyFigures: result.keyFigures,
+      keyFigures: this.normalizeKeyFigures(result.keyFigures, study),
       financialSources,
       centralRisk: riskSnapshot
         ? {
@@ -406,6 +411,28 @@ export class AiAnalysesService {
       );
     }
     return analysis.pdfFile;
+  }
+
+  /**
+   * Compatibilidad de keyFigures: los resultados congelados ANTES del cambio a
+   * "pago único al vencimiento" traen estimatedMonthlyQuota y no las cifras
+   * nuevas — se derivan aquí (pago = cupo solicitado; capacidad acumulada =
+   * capacidad mensual × meses del plazo) para que el prompt siempre las tenga.
+   */
+  private normalizeKeyFigures(
+    kf: ScoringResultShape['keyFigures'],
+    study: { requestedTerm: number | null; requestedCreditLine: number | null },
+  ): CreditStudyPromptInput['keyFigures'] {
+    if (!kf) return undefined;
+    const term = study.requestedTerm ?? 0;
+    const months = term > 0 ? term / 30 : 1;
+    return {
+      ...kf,
+      paymentAtMaturity:
+        kf.paymentAtMaturity ?? Math.round(study.requestedCreditLine ?? 0),
+      capacityInTerm:
+        kf.capacityInTerm ?? Math.round(kf.monthlyPaymentCapacity * months),
+    };
   }
 
   /**
