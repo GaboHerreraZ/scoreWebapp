@@ -165,11 +165,17 @@ export interface ScoringResult {
    * usada por el motor. Ayudan al cliente a entender el "porqué" del veredicto.
    */
   keyFigures: {
-    // ── Capacidad de pago vs cuota ──
+    // ── Capacidad de pago vs pago al vencimiento ──
     monthlyPaymentCapacity: number; // $/mes que el cliente puede destinar a pagar
     annualPaymentCapacity: number; // $/año
-    estimatedMonthlyQuota: number; // $/mes de la cuota del cupo solicitado
-    /** Veces que la capacidad cubre la cuota (>1 = holgura). null si cuota 0. */
+    /** Pago único al vencimiento = el cupo solicitado (el crédito comercial se
+     *  paga COMPLETO al final del plazo; no hay cuotas mensuales). */
+    paymentAtMaturity: number;
+    /** Capacidad acumulada en el plazo = capacidad mensual × (plazo/30). Es el
+     *  máximo pagable (y avalable) en los días pedidos. */
+    capacityInTerm: number;
+    /** Veces que la capacidad acumulada en el plazo cubre el pago al
+     *  vencimiento (>1 = holgura). null si no hay cupo solicitado. */
     paymentCoverageRatio: number | null;
     currentDebtService: number; // servicio de deuda actual ($/año)
     ebitda: number;

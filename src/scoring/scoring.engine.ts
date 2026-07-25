@@ -199,7 +199,7 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       dimension: 'general',
       message: fiscalYearMismatch
         ? `Análisis calculado con estados financieros auto-reportados (PDF). El año más reciente del PDF (${input.pdfFigures?.fiscalYear ?? 'desconocido'}) aún no aparece reportado en la central (su año más reciente es ${input.truthFigures?.fiscalYear ?? 'desconocido'}), por lo que las cifras del cálculo NO pudieron verificarse contra DataCrédito. Decida con cautela.`
-        : 'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera de esta empresa, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
+        : 'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera del cliente, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
     });
   } else if (source === 'datacredito' && !input.pdfFigures) {
     // Corrió sobre la fuente de verdad, pero sin PDF no hubo contraste de
@@ -311,7 +311,10 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   }
 
   // ── Cifras clave (para mostrar en el front, no solo en el texto) ──
-  const estimatedMonthlyQuota = monthlyQuota(request);
+  // Pago único al vencimiento vs capacidad acumulada en el plazo (misma medida
+  // que puntúa la Dim 2 y que acota el monto avalado — nunca "cuota mensual").
+  const paymentAtMaturity = request.requestedCreditLine ?? 0;
+  const capacityInTerm = maxPayableForTerm(ind, request);
   const cashConversionCycle =
     ind.accountsReceivableTurnover +
     ind.inventoryTurnover -
@@ -321,10 +324,11 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   const keyFigures = {
     monthlyPaymentCapacity: ind.monthlyPaymentCapacity,
     annualPaymentCapacity: ind.annualPaymentCapacity,
-    estimatedMonthlyQuota: Math.round(estimatedMonthlyQuota),
+    paymentAtMaturity: Math.round(paymentAtMaturity),
+    capacityInTerm: Math.round(capacityInTerm),
     paymentCoverageRatio:
-      estimatedMonthlyQuota > 0
-        ? round2(ind.monthlyPaymentCapacity / estimatedMonthlyQuota)
+      paymentAtMaturity > 0
+        ? round2(capacityInTerm / paymentAtMaturity)
         : null,
     currentDebtService: ind.currentDebtService,
     ebitda: ind.ebitda,
@@ -376,7 +380,7 @@ function evalFinancialHealth(ind: ScoringIndicators): RawDimension {
           type: 'success',
           dimension: 'financialHealth',
           message:
-            'La empresa presenta indicadores financieros sólidos con baja probabilidad de riesgo.',
+            'El cliente presenta indicadores financieros sólidos con baja probabilidad de riesgo.',
         },
       ],
     };
@@ -390,7 +394,7 @@ function evalFinancialHealth(ind: ScoringIndicators): RawDimension {
           type: 'warning',
           dimension: 'financialHealth',
           message:
-            'La empresa se encuentra en zona de observación. Se recomienda monitoreo periódico.',
+            'El cliente se encuentra en zona de observación. Se recomienda monitoreo periódico.',
         },
       ],
     };
@@ -403,7 +407,7 @@ function evalFinancialHealth(ind: ScoringIndicators): RawDimension {
         type: 'danger',
         dimension: 'financialHealth',
         message:
-          'La empresa presenta indicadores financieros críticos con alta probabilidad de incumplimiento.',
+          'El cliente presenta indicadores financieros críticos con alta probabilidad de incumplimiento.',
       },
     ],
   };
@@ -441,11 +445,13 @@ function evalPaymentCapacity(
   }
   const requestedCredit = req.requestedCreditLine ?? 0;
   const requestedTerm = req.requestedTerm ?? 0;
-  const monthlyObligation = monthlyQuota(req);
-  const ratio =
-    monthlyObligation > 0 ? ind.monthlyPaymentCapacity / monthlyObligation : 0;
-  // Máximo pagable en el plazo pedido: la vista "cupo" de la misma medida.
-  const maxCreditForTerm = maxPayableForTerm(ind, req);
+  // PAGO ÚNICO AL VENCIMIENTO: el crédito comercial se paga COMPLETO al final
+  // del plazo (no hay cuotas mensuales). La medida compara lo que la capacidad
+  // de pago ACUMULA en los días del plazo contra ese pago único. (Nunca se
+  // extrapola una "cuota mensual": en plazos < 30 días inflaba la cifra por
+  // encima del propio cupo y confundía la lectura.)
+  const capacityInTerm = maxPayableForTerm(ind, req);
+  const ratio = requestedCredit > 0 ? capacityInTerm / requestedCredit : 0;
 
   // Señal de la central: pedir MUY por encima del montoSugerido genera alerta
   // informativa (no puntúa). null o 0 no alertan aquí: 0 tiene su red flag y su
@@ -483,7 +489,7 @@ function evalPaymentCapacity(
         {
           type: 'success',
           dimension: 'paymentCapacity',
-          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) supera la cuota estimada (${money(monthlyObligation)}) con holgura. El cupo solicitado (${money(requestedCredit)}) cabe en el máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
+          message: `La capacidad de pago del cliente acumula ${money(capacityInTerm)} en los ${requestedTerm} días del plazo y cubre con holgura el pago único al vencimiento (${money(requestedCredit)}).`,
         },
         ...bureauAlerts,
         ...incomeAlerts,
@@ -498,7 +504,7 @@ function evalPaymentCapacity(
         {
           type: 'warning',
           dimension: 'paymentCapacity',
-          message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) cubre la cuota (${money(monthlyObligation)}) con margen ajustado: el cupo solicitado (${money(requestedCredit)}) está al límite del máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
+          message: `La capacidad de pago del cliente acumula ${money(capacityInTerm)} en los ${requestedTerm} días del plazo y cubre el pago al vencimiento (${money(requestedCredit)}) con margen ajustado: el cupo está al límite del máximo pagable.`,
         },
         ...bureauAlerts,
         ...incomeAlerts,
@@ -512,7 +518,7 @@ function evalPaymentCapacity(
       {
         type: 'danger',
         dimension: 'paymentCapacity',
-        message: `La capacidad de pago mensual (${money(ind.monthlyPaymentCapacity)}) es insuficiente para la cuota estimada (${money(monthlyObligation)}): el cupo solicitado (${money(requestedCredit)}) excede el máximo pagable a ${requestedTerm} días (${money(maxCreditForTerm)}).`,
+        message: `La capacidad de pago del cliente acumula ${money(capacityInTerm)} en los ${requestedTerm} días del plazo, insuficiente para el pago único al vencimiento (${money(requestedCredit)}): el cupo solicitado excede el máximo pagable en ese plazo.`,
       },
       ...bureauAlerts,
       ...incomeAlerts,
@@ -1095,10 +1101,11 @@ function resolveApprovedCredit(
 }
 
 /**
- * Máximo pagable según los EEFF para el plazo pedido: capacidad de pago mensual
- * × meses del plazo. Sin plazo (0/null) se asume 1 mes (misma convención que
- * monthlyQuota). Capacidad negativa → 0 (no hay monto avalable; la regla
- * eliminatoria de capacidad <= 0 rechaza el estudio aguas arriba).
+ * Capacidad ACUMULADA en el plazo pedido (= máximo pagable/avalable): capacidad
+ * de pago mensual × meses del plazo. Es la medida contra la que se compara el
+ * pago único al vencimiento. Sin plazo (0/null) se asume 1 mes. Capacidad
+ * negativa → 0 (no hay monto avalable; la regla eliminatoria de capacidad <= 0
+ * rechaza el estudio aguas arriba).
  */
 function maxPayableForTerm(ind: ScoringIndicators, req: StudyRequest): number {
   const term = req.requestedTerm ?? 0;
@@ -1107,12 +1114,6 @@ function maxPayableForTerm(ind: ScoringIndicators, req: StudyRequest): number {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-function monthlyQuota(req: StudyRequest): number {
-  const credit = req.requestedCreditLine ?? 0;
-  const term = req.requestedTerm ?? 0;
-  const months = term > 0 ? term / 30 : 1;
-  return credit / months;
-}
 function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
 }

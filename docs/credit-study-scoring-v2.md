@@ -97,7 +97,7 @@ resultado y no suma ni resta.
 | # | Dimensión (`code`) | La pregunta que responde | Obligatoria |
 |---|--------------------|--------------------------|:-----------:|
 | 1 | Salud financiera (`financialHealth`) | ¿El negocio es sólido o muestra señales de quiebra? | No |
-| 2 | Capacidad de pago (`paymentCapacity`) | ¿Le alcanza la caja para pagar la cuota, y el cupo pedido cabe en lo pagable? | **Sí** |
+| 2 | Capacidad de pago (`paymentCapacity`) | ¿Su capacidad acumula en el plazo lo suficiente para el pago único al vencimiento? | **Sí** |
 | 3 | Coherencia de plazos (`termCoherence`) | ¿El plazo pedido calza con la velocidad a la que él cobra? | No |
 | ~~4~~ | ~~Adecuación del cupo (`creditLineAdequacy`)~~ | **FUSIONADA en la Dim 2** (ver 4.4): medía lo mismo desde el otro lado; el techo del `montoSugerido` dejó de ser techo | — |
 | 5 | Exposición del capital (`capitalExposure`) | ¿El crédito inmoviliza más capital del razonable para su operación? | No |
@@ -174,11 +174,22 @@ deuda" actual), y el cupo + plazo solicitados.
    (obligaciones financieras de corto plazo + gastos financieros). Es lo que de
    verdad le queda al año para asumir deuda NUEVA.
 4. **Capacidad mensual** = capacidad anual ÷ 12.
-5. **Cuota mensual estimada** del crédito = cupo ÷ (plazo en días ÷ 30).
-   Ejemplo: $30M a 60 días → cuota de $15M/mes. (El crédito comercial es sin
-   intereses, por eso la cuota es el simple prorrateo del cupo en el plazo.)
-6. **Cobertura** = capacidad mensual ÷ cuota mensual: cuántas veces la caja
-   disponible cubre la cuota.
+5. **Pago único al vencimiento** — el crédito comercial se paga **COMPLETO al
+   final del plazo** (no hay cuotas mensuales ni intereses). Lo que debe
+   pagarse es el cupo, el día del vencimiento.
+6. **Capacidad acumulada en el plazo** = capacidad mensual × (plazo en días ÷
+   30). Ejemplo: capacidad de $5M/mes a 60 días → acumula $10M para ese pago.
+7. **Cobertura** = capacidad acumulada en el plazo ÷ pago al vencimiento:
+   cuántas veces lo que el cliente junta en esos días cubre lo que debe pagar.
+
+> ⚠️ **Cambio 2026-07-25 (pago único, no cuotas):** antes esta medida se
+> expresaba como "cuota mensual estimada" (cupo ÷ plazo/30) vs capacidad
+> mensual. La división es LA MISMA (el score no cambió un decimal), pero en
+> plazos < 30 días la "cuota" extrapolada superaba el propio cupo (pedir $20M a
+> 20 días producía una "cuota de $30M/mes") y confundía la lectura: el cliente
+> nunca paga cuotas, paga UNA vez al vencimiento. Alertas, `keyFigures`
+> (`paymentAtMaturity` + `capacityInTerm` reemplazan a `estimatedMonthlyQuota`)
+> y el prompt del informe IA hablan ahora de pago único.
 
 **Cómo puntúa:**
 
@@ -271,9 +282,9 @@ Capacidad de pago (4.2). Dos razones:
 
 1. **Medían lo mismo desde lados opuestos.** El techo por capacidad de esta
    dimensión (cupo ÷ máximo pagable) es el **inverso matemático** de la
-   cobertura de la Dim 2 (capacidad ÷ cuota): tener ambas con peso era contar
-   dos veces la misma señal, y de cara al cliente eran dos análisis a medias
-   que confundían.
+   cobertura de la Dim 2 (capacidad acumulada en el plazo ÷ pago al
+   vencimiento): tener ambas con peso era contar dos veces la misma señal, y de
+   cara al cliente eran dos análisis a medias que confundían.
 2. **El otro techo (el `montoSugerido` de la central) dejó de ser techo.** En
    el mercado real ese monto es muy conservador: clientes con EEFF que soportan
    holgadamente el cupo pedido recibían montos sugeridos bajísimos, y el techo
@@ -570,9 +581,15 @@ pendiente de diseño en documento aparte.
 perfil: certificado laboral si es empleado, certificado de ingresos de contador
 si es independiente). Se archiva por snapshot (columna `suggestions`, migración
 `20260725130000`) y el `GET /:id/steps` lo devuelve en
-`step1.centralRisk.suggestions` como `[{ title, items[] }]`. Es guía para el
-analista — el complemento operativo de la regla del ingreso: la propia central
-dice CÓMO verificar el ingreso del titular. No participa del scoring.
+`step1.centralRisk.suggestions` como `[{ title, items[] }]`; el PDF del reporte
+las imprime al cierre del bloque de la central. Es guía para el analista — el
+complemento operativo de la regla del ingreso: la propia central dice CÓMO
+verificar el ingreso del titular. No participa del scoring.
+
+> Los snapshots consultados ANTES de la columna se **rellenaron por backfill**
+> (2026-07-25, staging y prod) extrayendo el bloque desde el `rawResponse`
+> archivado de su consulta — no hay ventana de `null` para consultas con
+> sugerencias en el crudo.
 
 ### 4.11 Escala de los saldos de la central (miles → pesos completos)
 
@@ -992,6 +1009,12 @@ El resultado declara con qué se calculó:
 | [`credit-studies.service.ts`](../src/credit-studies/credit-studies.service.ts) | `performStudy()` arma la entrada y corre el motor; `getSteps()` sirve el stepper. |
 | [`ai-analyses.service.ts`](../src/ai-analyses/ai-analyses.service.ts) | `analyze()` — informe ejecutivo IA sobre el resultado. |
 | [`credit-study-analysis.prompt.ts`](../src/ai/prompts/credit-study-analysis.prompt.ts) | Prompt v2 del informe IA (consciente de PN/PJ, 3 capas de flags, keyFigures). |
+| [`credit-study-report.mapper.ts`](../src/credit-studies/pdf/credit-study-report.mapper.ts) + [plantilla](../src/credit-studies/pdf/templates/credit-study-report.template.html) | PDF descargable "Concepto de Viabilidad": espejo del front (veredicto, keyFigures, dimensiones, alertas, central de riesgo — incluye **score de la central con su banda** y las **sugerencias de verificación** — e informe IA). |
+
+> **Nota de redacción:** los mensajes del motor hablan de "el cliente" (nunca
+> "la empresa") cuando se refieren al sujeto analizado, porque aplica igual a PN
+> y PJ. "Empresa" se reserva para la empresa usuaria de Creditia y para señales
+> exclusivas de PJ (matrícula, liquidación, obligación de reportar EEFF).
 
 ---
 
@@ -1067,7 +1090,7 @@ objeto**, construido por un único builder (`buildStep3`):
 | `dimensions` | las dimensiones habilitadas: ratio 0-1, peso efectivo, contribución, status, `evaluable` (si no lo es, su peso se redistribuyó) |
 | `alerts` | mensajes por dimensión + salvedades de fuente + eliminatorios |
 | `approvedCreditLine` | solicitado vs avalado, `suggestedByBureau` (referencia), `cappedByCapacity` (recortado al máximo pagable — en PN acotado por el ingreso, 4.2/4.8) |
-| `keyFigures` | cifras clave YA calculadas para mostrar (no re-derivar en el front): capacidad de pago mensual/anual, cuota estimada, **cobertura de la cuota** (veces), servicio de deuda, EBITDA, rotaciones (cartera/inventarios/proveedores), **ciclo de caja**, factor de estabilidad |
+| `keyFigures` | cifras clave YA calculadas para mostrar (no re-derivar en el front): capacidad de pago mensual/anual, **pago único al vencimiento** (`paymentAtMaturity`), **capacidad acumulada en el plazo** (`capacityInTerm`), **cobertura del pago** (veces), servicio de deuda, EBITDA, rotaciones (cartera/inventarios/proveedores), **ciclo de caja**, factor de estabilidad |
 | `centralRiskFlags` | red flags de la central con `category` + `categoryLabel` (§4.9) |
 | `pdfReliabilityFlags` | red flags de fiabilidad del PDF con `category` + `categoryLabel` (§4.9) |
 | `reference` | opinión de Experian tal cual: score, montoSugerido, `experianRiskLevel` (PJ), `experianViability` y `experianCollectionRating` (PN) |
@@ -1126,22 +1149,30 @@ repartidos entre las habilitadas.*
 
 Todas las cifras van en **millones de pesos (M)**.
 
+> ⚠️ **Vigencia de los escenarios:** A, B y C (13.2–13.4) se escribieron con el
+> modelo previo a dos cambios: la fusión de "Adecuación del cupo" en la Dim 2
+> (4.4) y el `montoSugerido` como señal en vez de techo (4.8). Los principios y
+> la aritmética de cada dimensión ilustran igual, pero los pesos y la lista
+> exacta de dimensiones difieren del motor actual. El escenario D (María, 13.6)
+> sí está al día con el modelo vigente (ingreso PN + pago único).
+
 ### 13.1 Glosario mínimo
 
 | Término | En palabras simples |
 |---------|---------------------|
 | **EBITDA** | La utilidad que deja la operación del negocio: ingresos menos costos y gastos operativos. La "caja gruesa" antes de deudas e impuestos. |
 | **Servicio de deuda** | Lo que el cliente ya paga al año por deudas existentes: obligaciones financieras de corto plazo + gastos financieros (intereses). |
-| **Capacidad de pago mensual** | Lo que le queda libre al mes para deuda NUEVA: (EBITDA ajustado − servicio de deuda) ÷ 12. |
+| **Capacidad de pago mensual** | Lo que le queda libre al mes para deuda NUEVA: (EBITDA ajustado − servicio de deuda) ÷ 12. En PN queda acotada por el ingreso disponible de la central (4.2). |
+| **Pago único al vencimiento** | El cupo completo, que se paga UNA vez al final del plazo (el crédito comercial no tiene cuotas mensuales). |
+| **Capacidad acumulada en el plazo** | Capacidad mensual × (plazo ÷ 30): lo que el cliente junta en los días del plazo para ese pago único. Es también el máximo que Creditia avala. |
 | **Rotación de cartera** | Días que tarda en cobrarle a sus propios clientes. |
 | **Ciclo de caja** | Días que su dinero está "atrapado" en la operación: días en cobrar + días en bodega − días que le fían sus proveedores. |
 | **Score de la central** | Puntaje de DataCrédito Experian (150–950). Más alto = mejor historial crediticio. |
-| **Monto sugerido** | El máximo que la central avala prestarle. Creditia nunca aprueba por encima de él. |
+| **Monto sugerido** | El monto que la central avalaría. Es **referencia/señal** (alertas si el pedido lo supera mucho), NO techo del monto (4.8). |
 
 ### 13.2 Escenario A — Cliente EXCELENTE: "Alimentos La Sabana S.A.S." ✅
 
-**Pide:** cupo de **$30M a 60 días** → cuota estimada = 30 ÷ (60/30) =
-**$15M/mes**.
+**Pide:** cupo de **$30M a 60 días** → pago único de **$30M al día 60**.
 
 **Sus cifras** (año corriente, según DataCrédito):
 
@@ -1166,8 +1197,9 @@ Todas las cifras van en **millones de pesos (M)**.
    `= 0.36 + 0.28 + 0.79 + 0.69 + 1.60 =` **Z ≈ 3.72 > 3** → zona segura →
    cumplimiento **1.0**.
 2. **Capacidad de pago** — EBITDA ajustado = 360 × 1 (zona segura) = 360;
-   capacidad anual = 360 − 90 = 270 → **$22.5M/mes**. Cobertura = 22.5 ÷ 15 =
-   **1.5 ≥ 1.2** → holgada → **1.0**.
+   capacidad anual = 360 − 90 = 270 → **$22.5M/mes** → acumulada en 60 días =
+   22.5 × 2 = **$45M**. Cobertura del pago = 45 ÷ 30 = **1.5 ≥ 1.2** → holgada
+   → **1.0**.
 3. **Coherencia de plazos** — pide 60 días y cobra a 45: cobra ANTES de tener
    que pagarnos → cómodo → **1.0**.
 4. **Adecuación del cupo** — techo por capacidad = 22.5 × (60/30) = $45M;
@@ -1197,8 +1229,7 @@ techo de la central ($80M).
 
 ### 13.3 Escenario B — Cliente ACEPTABLE: "Ferretería El Tornillo Ltda." ⚠️
 
-**Pide:** cupo de **$4.5M a 75 días** → cuota estimada = 4.5 ÷ (75/30) =
-**$1.8M/mes**.
+**Pide:** cupo de **$4.5M a 75 días** → pago único de **$4.5M al día 75**.
 
 **Sus cifras:** ingresos 900; costo de ventas 630; gastos 120 + 60 →
 **EBITDA = 90**. Activo 800 (corriente 420); pasivo 540 (corriente 320);
@@ -1211,9 +1242,9 @@ score **668**, monto sugerido **$12M**, una mora de 60 días **hace 8 meses**
 1. **Salud financiera** — Z ≈ 0.15 + 0.07 + 0.37 + 0.29 + 1.13 = **2.0** →
    zona gris → **0.5**. (Además, su EBITDA solo se creerá al 66%.)
 2. **Capacidad de pago** — EBITDA ajustado = 90 × 0.66 = 59.4; capacidad
-   anual = 59.4 − 36 = 23.4 → **$1.95M/mes**. Cobertura = 1.95 ÷ 1.8 =
-   **1.08**: cubre la cuota pero sin holgura (entre 1.0 y 1.2) → ajustada →
-   **0.6**.
+   anual = 59.4 − 36 = 23.4 → **$1.95M/mes** → acumulada en 75 días = 1.95 ×
+   2.5 = **$4.87M**. Cobertura del pago = 4.87 ÷ 4.5 = **1.08**: cubre pero sin
+   holgura (entre 1.0 y 1.2) → ajustada → **0.6**.
 3. **Coherencia de plazos** — pide 75 días y cobra a 90: paga antes de cobrar,
    pero la brecha es manejable (75 ≥ 63, el 70% de 90) → ajustado → **0.5**.
 4. **Adecuación del cupo** — techo por capacidad = 1.95 × 2.5 = $4.87M; techo
@@ -1280,8 +1311,9 @@ explícito en el resultado: *"El cliente no cuenta con capacidad de pago: el
 servicio de deuda supera el EBITDA ajustado."* Aunque la eliminatoria no
 existiera, el score (0 < 40) lo rechazaría igual, y el **cap de la central**
 (score < 500 → nunca `approved`) le cerraría la puerta a cualquier aprobación.
-El bloque `approvedCreditLine` refleja el recorte al techo de la central
-($10M, `cappedByBureau: true`), pero es irrelevante frente al rechazo.
+El bloque `approvedCreditLine` queda en **$0 con `cappedByCapacity: true`**
+(capacidad negativa → nada avalable; el montoSugerido de $10M queda solo como
+referencia), aunque es irrelevante frente al rechazo.
 
 ### 13.5 Los tres casos lado a lado
 
@@ -1289,7 +1321,7 @@ El bloque `approvedCreditLine` refleja el recorte al techo de la central
 |---|---:|---:|---:|
 | **Score** | 97 | 64 | 0 (eliminatorio) |
 | **Veredicto** | Aprobado | Con condiciones | Rechazado |
-| Cobertura de la cuota | 1.5× | 1.08× | Negativa |
+| Cobertura del pago al vencimiento | 1.5× | 1.08× | Negativa |
 | Z-Altman (zona) | 3.7 (segura) | 2.0 (gris) | 1.2 (crítica) |
 | Diferencia PDF vs central | 3% | 14% | 38% (maquillado) |
 | Score de la central | 745 | 668 | 470 |
@@ -1325,7 +1357,7 @@ de EEFF. La empresa tiene los **pesos default PN** (§5.2): Capacidad 38, Riesgo
 central 25, Salud 19, Exposición 10, Coherencia 8, Veracidad **0**. Cifras en
 millones (M).
 
-**Pide:** cupo de **$4M a 60 días** → cuota estimada = 4 ÷ (60/30) = **$2M/mes**.
+**Pide:** cupo de **$4M a 60 días** → pago único de **$4M al día 60**.
 
 **Sus cifras** (del PDF, única fuente para PN):
 
@@ -1349,8 +1381,9 @@ millones (M).
 2. **Capacidad de pago** — según el PDF: EBITDA ajustado = 36 × 1 = 36;
    capacidad anual = 36 − 8 = 28 → **$2.33M/mes**. Pero María es PN y **el
    ingreso de la central manda** (4.2): ingreso disponible = 2 × (1 − 0.40) =
-   **$1.2M/mes** → capacidad **efectiva** = min(2.33, 1.2) = **$1.2M/mes**.
-   Cobertura = 1.2 ÷ 2 = **0.6** (< 1.0) → insuficiente → **0.0** (danger).
+   **$1.2M/mes** → capacidad **efectiva** = min(2.33, 1.2) = **$1.2M/mes** →
+   acumulada en 60 días = 1.2 × 2 = **$2.4M**. Cobertura del pago = 2.4 ÷ 4 =
+   **0.6** (< 1.0) → insuficiente → **0.0** (danger).
    Alertas que acompañan:
    - `info`: la capacidad se limitó al ingreso disponible según la central
      ($1.2M = $2M menos el 40% ya comprometido); el PDF implicaba $2.33M.
@@ -1383,9 +1416,9 @@ millones (M).
 `cappedByCapacity: true` — pidió $4M). `calculationSource: 'pdf'`,
 `financialsVerified: false` → alerta `warning` de cifras auto-reportadas. La
 lectura para la empresa: el negocio de María luce sano en el papel (salud 1.0),
-pero su **ingreso verificado no soporta la cuota pedida** — Creditia solo avala
-lo que el sueldo real paga en el plazo, y deja la señal de que el PDF implica
-más capacidad de la que ella gana.
+pero su **ingreso verificado no alcanza para el pago pedido en ese plazo** —
+Creditia solo avala lo que el sueldo real acumula en los días del plazo, y deja
+la señal de que el PDF implica más capacidad de la que ella gana.
 
 > **Moraleja PN:** el modelo no inventa una lógica nueva para persona natural —
 > corre las mismas dimensiones sobre el PDF, apaga la Veracidad y pone el
