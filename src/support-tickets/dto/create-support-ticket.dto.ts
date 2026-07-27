@@ -3,10 +3,9 @@ import {
   IsString,
   IsOptional,
   IsObject,
+  IsUUID,
   MaxLength,
   MinLength,
-  ValidateIf,
-  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -19,11 +18,6 @@ export const SUPPORT_AREAS = [
 ] as const;
 export const SUPPORT_TYPES = ['bug', 'question', 'request'] as const;
 export const SUPPORT_PRIORITIES = ['low', 'medium', 'high'] as const;
-export const SUPPORT_RELATED_ENTITIES = [
-  'credit_study',
-  'customer',
-  'payment',
-] as const;
 
 export class CreateSupportTicketDto {
   @ApiProperty({ enum: SUPPORT_AREAS, example: 'credit_study' })
@@ -54,20 +48,25 @@ export class CreateSupportTicketDto {
   @MaxLength(5000)
   description!: string;
 
-  // Registro relacionado: ambos null o ambos presentes. Si se manda uno, el otro
-  // es obligatorio (espejo del CHECK de BD).
-  @ApiPropertyOptional({ enum: SUPPORT_RELATED_ENTITIES, nullable: true })
+  // Vínculo por FK tipada según el área (el servicio valida la regla): área
+  // credit_study exige creditStudyId (el customerId se deriva del estudio);
+  // área customer exige customerId; payment/account/other no llevan id extra.
+  @ApiPropertyOptional({
+    description:
+      'Id del estudio de crédito relacionado. Obligatorio si area=credit_study.',
+    example: '274a8666-1234-4abc-9def-567890abcdef',
+  })
   @IsOptional()
-  @ValidateIf((o) => o.relatedEntityType !== null)
-  @IsIn(SUPPORT_RELATED_ENTITIES)
-  relatedEntityType?: (typeof SUPPORT_RELATED_ENTITIES)[number] | null;
+  @IsUUID()
+  creditStudyId?: string;
 
-  @ApiPropertyOptional({ example: '123', nullable: true })
-  @ValidateIf((o) => o.relatedEntityType != null || o.relatedEntityId != null)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  relatedEntityId?: string | null;
+  @ApiPropertyOptional({
+    description: 'Id del cliente relacionado. Obligatorio si area=customer.',
+    example: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
+  })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 
   @ApiPropertyOptional({
     description:

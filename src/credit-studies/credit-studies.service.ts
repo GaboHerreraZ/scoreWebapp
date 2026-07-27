@@ -6,6 +6,8 @@ import {
 import { CreditStudiesRepository } from './credit-studies.repository.js';
 import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
 import { CreateStudyFromBureauDto } from './dto/create-study-from-bureau.dto.js';
+import type { PerformSource } from './dto/perform-study.dto.js';
+import { LOCKED_STUDY_STATUSES } from './credit-study-status.constants.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -159,16 +161,6 @@ interface ViabilityConditionsShape {
     annualPaymentCapacity?: number;
   };
 }
-
-// Estados desde los que el estudio queda BLOQUEADO para editar/eliminar: una vez
-// el usuario confirma (o rechaza) el estudio realizado, ya no se toca. Cubre el
-// resto del flujo de cierre/firma.
-const LOCKED_STUDY_STATUSES = new Set([
-  'confirmed',
-  'rejected',
-  'pendingSignature',
-  'closed',
-]);
 
 @Injectable()
 export class CreditStudiesService {
@@ -498,7 +490,12 @@ export class CreditStudiesService {
    * resultado (viabilityConditions + score + status). Devuelve el estudio con el
    * análisis realizado.
    */
-  async performStudy(id: string, companyId: string, userId: string) {
+  async performStudy(
+    id: string,
+    companyId: string,
+    userId: string,
+    requestedSource?: PerformSource,
+  ) {
     const inputs = await this.repository.findAnalysisInputs(id, companyId);
     if (!inputs) {
       throw new NotFoundException(
@@ -519,21 +516,45 @@ export class CreditStudiesService {
     const datacredito = analyses.find((a) => a.source === 'datacredito');
     const pdf = analyses.find((a) => a.source === 'pdf_upload');
 
-    // La central solo es la fuente del CÁLCULO si su año más reciente COINCIDE
-    // con el del PDF (o si no hay PDF). Si el PDF trae un año más nuevo que la
-    // central aún no tiene (p. ej. EEFF cargados en ene-mar, antes de la ventana
-    // de reporte a las entidades), el cálculo corre sobre el PDF y el motor
-    // penaliza la veracidad (no hay contraste posible del mismo período).
+    // Selección MANUAL de fuente (opcional): los EEFF que reporta la central a
+    // veces vienen incompletos (rubros en "-", totales en 0) y el análisis
+    // automático saldría no viable injustamente; el usuario puede forzar el
+    // cálculo sobre el PDF (o sobre la central). Solo se valida que la fuente
+    // forzada exista; el motor declara la selección en summary.sourceSelection
+    // y ajusta las salvedades.
+    if (requestedSource === 'datacredito' && !datacredito) {
+      throw new BadRequestException(
+        'No se puede usar la central como fuente del cálculo: este estudio no tiene estados financieros de DataCrédito.',
+      );
+    }
+    if (requestedSource === 'pdf_upload' && !pdf) {
+      throw new BadRequestException(
+        'No se puede usar el PDF como fuente del cálculo: este estudio no tiene estados financieros cargados por PDF.',
+      );
+    }
+
+    // Regla AUTOMÁTICA: la central solo es la fuente del CÁLCULO si su año más
+    // reciente COINCIDE con el del PDF (o si no hay PDF). Si el PDF trae un año
+    // más nuevo que la central aún no tiene (p. ej. EEFF cargados en ene-mar,
+    // antes de la ventana de reporte a las entidades), el cálculo corre sobre
+    // el PDF y el motor penaliza la veracidad (no hay contraste posible del
+    // mismo período).
     const pdfYear = pdf?.periods[0]?.fiscalYear ?? null;
     const bureauYear = datacredito?.periods[0]?.fiscalYear ?? null;
     const sameFiscalYear =
       pdfYear !== null && bureauYear !== null && pdfYear === bureauYear;
-    const truthAnalysis =
+    const autoTruth =
       pdf && datacredito
         ? sameFiscalYear
           ? datacredito
           : pdf
         : (datacredito ?? pdf);
+    const truthAnalysis =
+      requestedSource === 'datacredito'
+        ? datacredito
+        : requestedSource === 'pdf_upload'
+          ? pdf
+          : autoTruth;
 
     if (!truthAnalysis) {
       throw new BadRequestException(
@@ -567,6 +588,11 @@ export class CreditStudiesService {
       pdfFigures: pdf ? this.analysisToGrossFigures(pdf) : null,
       centralRisk: this.riskToCentralInput(riskSnapshot),
       legalStatus: this.toLegalStatus(study.customer.bureauProfile),
+      sourceOverride: requestedSource
+        ? requestedSource === 'pdf_upload'
+          ? 'pdf'
+          : 'datacredito'
+        : null,
     };
 
     const result = runScoring(engineInput);

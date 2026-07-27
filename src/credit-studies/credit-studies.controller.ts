@@ -20,6 +20,7 @@ import type { Request, Response } from 'express';
 import { CreditStudiesService } from './credit-studies.service.js';
 import { FilterCreditStudyDto } from './dto/filter-credit-study.dto.js';
 import { CreateStudyFromBureauDto } from './dto/create-study-from-bureau.dto.js';
+import { PerformStudyDto } from './dto/perform-study.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Credit Studies')
@@ -88,7 +89,7 @@ export class CreditStudiesController {
   @ApiOperation({
     summary: 'Realizar el análisis de viabilidad del estudio (step3)',
     description:
-      'Corre el motor de scoring de 7 dimensiones sobre DataCrédito (fallback PDF), contrasta veracidad, pondera con la config vigente de la empresa, congela esa config en el estudio y persiste el resultado.',
+      'Corre el motor de scoring de 7 dimensiones sobre DataCrédito (fallback PDF), contrasta veracidad, pondera con la config vigente de la empresa, congela esa config en el estudio y persiste el resultado. `source` (opcional) fuerza la fuente de EEFF del cálculo (p. ej. el PDF cuando la central reporta EEFF incompletos).',
   })
   @ApiResponse({
     status: 201,
@@ -96,7 +97,8 @@ export class CreditStudiesController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Sin estados financieros para analizar, o estudio bloqueado',
+    description:
+      'Sin estados financieros para analizar (o la fuente forzada no existe), o estudio bloqueado',
   })
   @ApiResponse({
     status: 404,
@@ -105,10 +107,16 @@ export class CreditStudiesController {
   perform(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: PerformStudyDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user.id as string;
-    return this.creditStudiesService.performStudy(id, companyId, userId);
+    return this.creditStudiesService.performStudy(
+      id,
+      companyId,
+      userId,
+      body?.source,
+    );
   }
 
   @Get(':id/steps')

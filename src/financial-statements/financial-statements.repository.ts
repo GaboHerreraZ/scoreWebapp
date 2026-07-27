@@ -30,6 +30,49 @@ export class FinancialStatementsRepository {
   }
 
   /**
+   * Descongela y elimina TODOS los análisis financieros de un estudio (join +
+   * períodos + indicadores) en una transacción. Se usa al RE-cargar el PDF: los
+   * análisis nuevos REEMPLAZAN a los viejos en vez de duplicarse (el step2 y el
+   * perform siempre ven UNA fuente de cada tipo). Un análisis congelado también
+   * en OTRO estudio (la join lo permite) solo se desprende de este, no se borra.
+   * Los AiAnalysis (log de extracciones, tokens, costo) NO se tocan: son la
+   * bitácora para diagnosticar qué leyó la IA.
+   */
+  async unfreezeStudyAnalyses(creditStudyId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const joins = await tx.creditStudyFinancialAnalysis.findMany({
+        where: { creditStudyId },
+        select: { financialAnalysisId: true },
+      });
+      if (joins.length === 0) return { removed: 0 };
+      const ids = joins.map((j) => j.financialAnalysisId);
+
+      await tx.creditStudyFinancialAnalysis.deleteMany({
+        where: { creditStudyId },
+      });
+
+      // Borrar solo los análisis que quedaron huérfanos (sin otra join).
+      const stillReferenced = await tx.creditStudyFinancialAnalysis.findMany({
+        where: { financialAnalysisId: { in: ids } },
+        select: { financialAnalysisId: true },
+      });
+      const referenced = new Set(
+        stillReferenced.map((r) => r.financialAnalysisId),
+      );
+      const orphanIds = ids.filter((id) => !referenced.has(id));
+      if (orphanIds.length > 0) {
+        await tx.financialStatementPeriod.deleteMany({
+          where: { analysisId: { in: orphanIds } },
+        });
+        await tx.financialAnalysis.deleteMany({
+          where: { id: { in: orphanIds } },
+        });
+      }
+      return { removed: orphanIds.length };
+    });
+  }
+
+  /**
    * Persiste, en UNA transacción, un análisis financiero completo:
    *  - el análisis con sus indicadores,
    *  - N períodos crudos (todos los años que trajo la extracción), colgados del

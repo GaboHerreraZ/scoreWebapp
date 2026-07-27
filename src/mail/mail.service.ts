@@ -264,4 +264,45 @@ export class MailService {
       html,
     });
   }
+
+  /** Aviso al admin del portal al que se le ASIGNÓ un ticket (le toca atenderlo). */
+  async sendSupportTicketAssignedEmail(params: {
+    to: string;
+    adminName: string;
+    reference: string;
+    companyName: string;
+    areaLabel: string;
+    priorityLabel: string;
+    subject: string;
+    description: string;
+  }) {
+    const {
+      to,
+      adminName,
+      reference,
+      companyName,
+      areaLabel,
+      priorityLabel,
+      subject,
+      description,
+    } = params;
+
+    const html = this.loadTemplate('support-ticket-assigned', {
+      adminName,
+      reference,
+      companyName,
+      areaLabel,
+      priorityLabel,
+      subject,
+      description,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Se te asignó el ticket ${reference} — ${companyName}`,
+      html,
+    });
+  }
 }

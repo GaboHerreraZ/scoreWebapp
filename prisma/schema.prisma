@@ -518,6 +518,7 @@ model Customer {
   financialPeriods   FinancialStatementPeriod[]
   financialAnalyses  FinancialAnalysis[]
   authorizations     CustomerAuthorization[]
+  supportTickets     SupportTicket[]             @relation("SupportTicketCustomer")
 
   // Un cliente por identificación dentro de una empresa. Soporta el upsert de la
   // consulta al bureau (refrescar si existe, crear si no) de forma race-safe.
@@ -577,11 +578,49 @@ model CreditStudy {
   promissoryNotes     PromissoryNote[]
   analysisConsumption AnalysisConsumption?
   financialAnalyses   CreditStudyFinancialAnalysis[]
+  resets              CreditStudyReset[]
+  supportTickets      SupportTicket[]                @relation("SupportTicketCreditStudy")
 
   @@index([companyId, studyDate]) // listado principal y dashboard (orden por fecha)
   @@index([companyId, statusId]) // conteos/filtros por estado (dashboard)
   @@index([customerId]) // estudios de un cliente (ficha + métricas)
   @@map("credit_studies")
+}
+
+// ─── Reset de estudio (auditoría de soporte) ────────────────────────────
+// Cuando la extracción del PDF leyó mal una cifra y el estudio ya quedó
+// realizado, soporte (portal admin) resetea el estudio al paso 2 para que el
+// usuario re-cargue los EEFF y re-analice SIN nueva consulta al bureau (el
+// snapshot de riesgo vigente se reutiliza, sin consumo de bolsa). Antes de
+// limpiar se congela aquí el estado previo COMPLETO (resultado + análisis
+// financieros congelados), atado al ticket y al motivo. Append-only.
+model CreditStudyReset {
+  id            String @id @default(uuid()) @db.Uuid
+  creditStudyId String @map("credit_study_id") @db.Uuid
+  companyId     String @map("company_id") @db.Uuid
+
+  // Ticket de soporte que originó el reset. Nullable: un reset puede nacer de
+  // detección interna sin ticket formal.
+  supportTicketId String? @map("support_ticket_id") @db.Uuid
+  // Justificación del reset (obligatoria: es el "porqué" de la auditoría).
+  reason String @db.Text
+
+  // Estado previo completo: viability* del estudio, status, solicitud y los
+  // análisis congelados que se desecharon (indicadores + ratios + períodos +
+  // red flags). Forma libre JSONB: es archivo forense, la app no opera con él.
+  snapshot Json
+
+  // Usuario del portal admin que ejecutó el reset (PlatformAdmin.userId).
+  resetBy   String   @map("reset_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  creditStudy   CreditStudy    @relation(fields: [creditStudyId], references: [id])
+  supportTicket SupportTicket? @relation("SupportTicketResets", fields: [supportTicketId], references: [id])
+
+  @@index([creditStudyId])
+  @@index([supportTicketId]) // resets originados por un ticket
+  @@index([companyId, createdAt]) // historial de resets por empresa
+  @@map("credit_study_resets")
 }
 
 // ─── Período financiero del cliente (cifras crudas de UN año) ───────────
@@ -1311,11 +1350,13 @@ model SupportTicket {
   subject           String   @db.VarChar(255)
   description       String   @db.Text
 
-  // Registro relacionado (opcional). related_entity_type es un code libre
-  // (credit_study/customer/payment); related_entity_id es el id de ese registro
-  // como texto (puede ser uuid o numérico según el módulo).
-  relatedEntityType String?  @map("related_entity_type") @db.VarChar(50)
-  relatedEntityId   String?  @map("related_entity_id") @db.VarChar(100)
+  // Registro relacionado por FK TIPADA según el área (validado en el servicio):
+  // area credit_study → creditStudyId obligatorio (customerId se deriva del
+  // estudio); area customer → customerId obligatorio; payment/account/other no
+  // llevan id extra (companyId ya ata el ticket al tenant). Reemplaza al viejo
+  // par polimórfico related_entity_type/related_entity_id (sin integridad).
+  creditStudyId String? @map("credit_study_id") @db.Uuid
+  customerId    String? @map("customer_id") @db.Uuid
 
   // Contexto técnico que envía el front (ruta, userAgent, viewport, etc.).
   context           Json?    @db.JsonB
@@ -1335,9 +1376,15 @@ model SupportTicket {
   status          Parameter      @relation("SupportTicketStatus", fields: [statusId], references: [id])
   assignedToAdmin PlatformAdmin? @relation("SupportTicketAssignedTo", fields: [assignedTo], references: [id])
   createdByUser   Profile        @relation("SupportTicketCreatedBy", fields: [createdBy], references: [id])
+  creditStudy     CreditStudy?   @relation("SupportTicketCreditStudy", fields: [creditStudyId], references: [id])
+  customer        Customer?      @relation("SupportTicketCustomer", fields: [customerId], references: [id])
+  // Resets de estudio ejecutados a raíz de este ticket (auditoría).
+  creditStudyResets CreditStudyReset[] @relation("SupportTicketResets")
 
   @@index([companyId, createdAt])
   @@index([statusId, createdAt])
+  @@index([creditStudyId]) // tickets de un estudio
+  @@index([customerId]) // tickets de un cliente
   @@map("support_tickets")
 }
 

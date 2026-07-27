@@ -15,6 +15,9 @@ import { PlatformAdminRepository } from '../common/auth/platform-admin.repositor
 import { SupabaseService } from '../auth/supabase.service.js';
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
+import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
 
 /**
  * Pantallas del panel admin habilitadas por rol (hardcode por ahora; sin tabla
@@ -40,6 +43,7 @@ const ALL_SCREENS = [
   'scoring-dimensions',
   'datacredito',
   'discount-calculator',
+  'credit-study-resets',
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.
@@ -879,5 +883,355 @@ export class AdminService {
         createdThisWindow: customersWindow.map(mapCustomer),
       },
     };
+  }
+
+  // ── Reset de estudio (soporte) ───────────────────────────
+
+  /**
+   * Resetea un estudio al paso 2 (carga de EEFF) cuando un dato mal leído por
+   * la extracción llegó por ticket de soporte. Antes de limpiar, congela un
+   * snapshot COMPLETO del estado previo en credit_study_resets (ticket + motivo
+   * + resultado + análisis congelados); luego borra los análisis del estudio
+   * (join + períodos + indicadores — sin duplicados al re-cargar), limpia el
+   * resultado de viabilidad y devuelve el estado a 'pendingFinancialStatements'.
+   * La consulta al bureau NO se toca: el re-análisis reutiliza el snapshot de
+   * riesgo vigente sin consumir bolsa. Los AiAnalysis (log de extracciones)
+   * tampoco: son la evidencia para diagnosticar el prompt.
+   */
+  async resetCreditStudy(
+    creditStudyId: string,
+    dto: ResetCreditStudyDto,
+    adminUserId: string,
+  ) {
+    const study = await this.prisma.creditStudy.findUnique({
+      where: { id: creditStudyId },
+      include: {
+        status: { select: { code: true, label: true } },
+        customer: {
+          select: { businessName: true, identificationNumber: true },
+        },
+        financialAnalyses: {
+          include: {
+            financialAnalysis: {
+              include: { periods: { orderBy: { fiscalYear: 'desc' } } },
+            },
+          },
+        },
+      },
+    });
+    if (!study) {
+      throw new NotFoundException(
+        `Estudio de crédito con id=${creditStudyId} no encontrado`,
+      );
+    }
+    if (study.status?.code && LOCKED_STUDY_STATUSES.has(study.status.code)) {
+      throw new BadRequestException(
+        'No se puede resetear un estudio confirmado, en firma o cerrado.',
+      );
+    }
+
+    const pendingStatus = await this.parametersRepository.findByCode(
+      'pendingFinancialStatements',
+    );
+    if (!pendingStatus) {
+      throw new BadRequestException(
+        'Falta el parámetro pendingFinancialStatements: no se puede regresar el estudio al paso de carga de EEFF.',
+      );
+    }
+
+    // Ticket de soporte (opcional): debe existir y ser de la MISMA empresa que
+    // el estudio. Queda como FK en la auditoría.
+    let supportTicket: { id: string; reference: string } | null = null;
+    if (dto.supportTicketId) {
+      const ticket = await this.prisma.supportTicket.findUnique({
+        where: { id: dto.supportTicketId },
+        select: {
+          id: true,
+          reference: true,
+          companyId: true,
+          creditStudyId: true,
+        },
+      });
+      if (!ticket) {
+        throw new NotFoundException(
+          `Ticket de soporte con id=${dto.supportTicketId} no encontrado`,
+        );
+      }
+      if (ticket.companyId !== study.companyId) {
+        throw new BadRequestException(
+          'El ticket de soporte pertenece a otra empresa distinta a la del estudio.',
+        );
+      }
+      // Si el ticket está vinculado a un estudio (área credit_study), debe ser
+      // EL MISMO que se resetea — evita cruzar auditorías de tickets ajenos.
+      if (ticket.creditStudyId && ticket.creditStudyId !== creditStudyId) {
+        throw new BadRequestException(
+          'El ticket de soporte está vinculado a otro estudio de crédito.',
+        );
+      }
+      supportTicket = { id: ticket.id, reference: ticket.reference };
+    }
+
+    const analyses = study.financialAnalyses.map((j) => j.financialAnalysis);
+    const analysisIds = analyses.map((a) => a.id);
+
+    // Estado previo completo (forense): lo que el estudio decía ANTES del reset.
+    const snapshot = {
+      study: {
+        statusCode: study.status?.code ?? null,
+        requestedCreditLine: study.requestedCreditLine,
+        requestedTerm: study.requestedTerm,
+        viabilityScore: study.viabilityScore,
+        viabilityStatus: study.viabilityStatus,
+        viabilityConditions: study.viabilityConditions,
+        recommendedCreditLine: study.recommendedCreditLine,
+        recommendedTerm: study.recommendedTerm,
+        resolutionDate: study.resolutionDate,
+        scoringConfigurationId: study.scoringConfigurationId,
+      },
+      frozenAnalyses: analyses,
+    };
+
+    const reset = await this.prisma.$transaction(async (tx) => {
+      const resetRow = await tx.creditStudyReset.create({
+        data: {
+          creditStudyId,
+          companyId: study.companyId,
+          supportTicketId: supportTicket?.id ?? null,
+          reason: dto.reason,
+          snapshot: snapshot as unknown as Prisma.InputJsonValue,
+          resetBy: adminUserId,
+        },
+      });
+
+      await tx.creditStudyFinancialAnalysis.deleteMany({
+        where: { creditStudyId },
+      });
+
+      if (analysisIds.length > 0) {
+        // Un análisis congelado también en OTRO estudio (la join lo permite)
+        // solo se desprende de este; se borran únicamente los huérfanos.
+        const stillReferenced = await tx.creditStudyFinancialAnalysis.findMany({
+          where: { financialAnalysisId: { in: analysisIds } },
+          select: { financialAnalysisId: true },
+        });
+        const referenced = new Set(
+          stillReferenced.map((r) => r.financialAnalysisId),
+        );
+        const orphanIds = analysisIds.filter((id) => !referenced.has(id));
+        if (orphanIds.length > 0) {
+          await tx.financialStatementPeriod.deleteMany({
+            where: { analysisId: { in: orphanIds } },
+          });
+          await tx.financialAnalysis.deleteMany({
+            where: { id: { in: orphanIds } },
+          });
+        }
+      }
+
+      await tx.creditStudy.update({
+        where: { id: creditStudyId },
+        data: {
+          viabilityScore: null,
+          viabilityStatus: null,
+          viabilityConditions: Prisma.DbNull,
+          recommendedCreditLine: null,
+          recommendedTerm: null,
+          resolutionDate: null,
+          scoringConfigurationId: null,
+          statusId: pendingStatus.id,
+        },
+      });
+
+      return resetRow;
+    });
+
+    return {
+      success: true,
+      resetId: reset.id,
+      creditStudyId,
+      customer: study.customer.businessName,
+      previousStatus: study.status?.code ?? null,
+      newStatus: 'pendingFinancialStatements',
+      removedAnalyses: analysisIds.length,
+      supportTicket,
+    };
+  }
+
+  /**
+   * Listado de resets de estudio (auditoría), del más reciente al más antiguo.
+   * Datos mínimos por fila: empresa, cliente y solicitud del estudio (con su
+   * estado ACTUAL — permite ver si ya se re-analizó), ticket (referencia,
+   * asunto, descripción), motivo y quién lo ejecutó. El snapshot pesado NO se
+   * incluye aquí: se sirve en el detalle por id.
+   */
+  async listCreditStudyResets() {
+    const resets = await this.prisma.creditStudyReset.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        createdAt: true,
+        reason: true,
+        resetBy: true,
+        supportTicket: {
+          select: {
+            id: true,
+            reference: true,
+            subject: true,
+            description: true,
+          },
+        },
+        creditStudy: {
+          select: {
+            id: true,
+            requestedCreditLine: true,
+            requestedTerm: true,
+            studyDate: true,
+            viabilityStatus: true,
+            status: { select: { code: true, label: true } },
+            customer: {
+              select: { businessName: true, identificationNumber: true },
+            },
+            company: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    const adminsById = await this.platformAdminsByUserId(
+      resets.map((r) => r.resetBy),
+    );
+
+    return resets.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      reason: r.reason,
+      resetBy: adminsById.get(r.resetBy) ?? { userId: r.resetBy, name: null },
+      company: r.creditStudy.company,
+      creditStudy: {
+        id: r.creditStudy.id,
+        customer: r.creditStudy.customer.businessName,
+        identificationNumber: r.creditStudy.customer.identificationNumber,
+        requestedCreditLine: r.creditStudy.requestedCreditLine,
+        requestedTerm: r.creditStudy.requestedTerm,
+        studyDate: r.creditStudy.studyDate,
+        // Estado HOY (no el del momento del reset): si ya volvió a
+        // studyCompleted es que el usuario re-cargó y re-analizó.
+        currentStatus: r.creditStudy.status
+          ? {
+              code: r.creditStudy.status.code,
+              label: r.creditStudy.status.label,
+            }
+          : null,
+        currentViabilityStatus: r.creditStudy.viabilityStatus,
+      },
+      supportTicket: r.supportTicket,
+    }));
+  }
+
+  /**
+   * Detalle de un reset: todo lo del listado + el SNAPSHOT completo del estado
+   * previo (resultado de viabilidad, status al momento del reset, solicitud y
+   * los análisis financieros congelados que se desecharon) y el estado actual
+   * del estudio para contrastar el antes/después.
+   */
+  async getCreditStudyReset(resetId: string) {
+    const reset = await this.prisma.creditStudyReset.findUnique({
+      where: { id: resetId },
+      include: {
+        supportTicket: {
+          select: {
+            id: true,
+            reference: true,
+            subject: true,
+            description: true,
+            createdAt: true,
+            status: { select: { code: true, label: true } },
+            priority: { select: { code: true, label: true } },
+          },
+        },
+        creditStudy: {
+          select: {
+            id: true,
+            requestedCreditLine: true,
+            requestedTerm: true,
+            studyDate: true,
+            viabilityScore: true,
+            viabilityStatus: true,
+            recommendedCreditLine: true,
+            resolutionDate: true,
+            status: { select: { code: true, label: true } },
+            customer: {
+              select: { businessName: true, identificationNumber: true },
+            },
+            company: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!reset) {
+      throw new NotFoundException(
+        `Reset de estudio con id=${resetId} no encontrado`,
+      );
+    }
+
+    const adminsById = await this.platformAdminsByUserId([reset.resetBy]);
+    const snapshot = reset.snapshot as {
+      study?: { statusCode?: string | null };
+    } | null;
+
+    return {
+      id: reset.id,
+      createdAt: reset.createdAt,
+      reason: reset.reason,
+      resetBy: adminsById.get(reset.resetBy) ?? {
+        userId: reset.resetBy,
+        name: null,
+      },
+      company: reset.creditStudy.company,
+      supportTicket: reset.supportTicket,
+      // Estado al momento del reset (sale del snapshot congelado).
+      previousStatus: snapshot?.study?.statusCode ?? null,
+      // Estado ACTUAL del estudio (para el antes/después: si viability* ya no
+      // está null es que el usuario re-cargó EEFF y re-analizó).
+      creditStudy: {
+        id: reset.creditStudy.id,
+        customer: reset.creditStudy.customer.businessName,
+        identificationNumber: reset.creditStudy.customer.identificationNumber,
+        requestedCreditLine: reset.creditStudy.requestedCreditLine,
+        requestedTerm: reset.creditStudy.requestedTerm,
+        studyDate: reset.creditStudy.studyDate,
+        currentStatus: reset.creditStudy.status
+          ? {
+              code: reset.creditStudy.status.code,
+              label: reset.creditStudy.status.label,
+            }
+          : null,
+        currentViabilityScore: reset.creditStudy.viabilityScore,
+        currentViabilityStatus: reset.creditStudy.viabilityStatus,
+        currentRecommendedCreditLine: reset.creditStudy.recommendedCreditLine,
+        currentResolutionDate: reset.creditStudy.resolutionDate,
+      },
+      // Estado previo COMPLETO congelado al resetear: study (viability*,
+      // solicitud, status) + frozenAnalyses (indicadores, ratios, red flags y
+      // períodos de cada fuente desechada).
+      snapshot: reset.snapshot,
+    };
+  }
+
+  /** Resuelve userIds de Supabase → PlatformAdmin (name/email) para display. */
+  private async platformAdminsByUserId(userIds: string[]) {
+    const unique = [...new Set(userIds)];
+    if (unique.length === 0) {
+      return new Map<
+        string,
+        { userId: string; name: string | null; email?: string }
+      >();
+    }
+    const admins = await this.prisma.platformAdmin.findMany({
+      where: { userId: { in: unique } },
+      select: { userId: true, name: true, email: true },
+    });
+    return new Map(admins.map((a) => [a.userId, a]));
   }
 }

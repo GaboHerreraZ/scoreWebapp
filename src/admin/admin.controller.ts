@@ -33,6 +33,7 @@ import { UpdateScoringDimensionDto } from '../scoring/dto/update-scoring-dimensi
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
+import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
 
 @ApiTags('Admin Portal')
@@ -245,6 +246,53 @@ export class AdminController {
     @Query() dto: CycleActivityDto,
   ) {
     return this.adminService.getCycleActivity(companyId, dto.windowDays);
+  }
+
+  @Post('credit-studies/:id/reset')
+  @ApiOperation({
+    summary:
+      'Resetear un estudio al paso 2 (re-carga de EEFF) con snapshot de auditoría',
+    description:
+      'Para tickets por datos mal leídos en la extracción: congela el estado previo (resultado + análisis financieros) en credit_study_resets con ticket y motivo, borra los análisis congelados del estudio (la re-carga no duplica fuentes), limpia el resultado y regresa el estado a pendingFinancialStatements. La consulta al bureau se reutiliza: re-analizar no consume bolsa.',
+  })
+  @ApiResponse({ status: 201, description: 'Estudio reseteado + resetId' })
+  @ApiResponse({
+    status: 400,
+    description: 'Estudio confirmado/en firma/cerrado (no reseteable)',
+  })
+  @ApiResponse({ status: 404, description: 'Estudio no encontrado' })
+  resetCreditStudy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResetCreditStudyDto,
+    @Req() req: Request,
+  ) {
+    const adminUserId = (req as any).user.id as string;
+    return this.adminService.resetCreditStudy(id, dto, adminUserId);
+  }
+
+  @Get('credit-study-resets')
+  @ApiOperation({
+    summary:
+      'Listar los resets de estudio (auditoría), del más reciente al más antiguo',
+    description:
+      'Datos mínimos por fila: empresa, cliente y solicitud del estudio (con su estado ACTUAL, para ver si ya se re-analizó), ticket (referencia, asunto, descripción), motivo y admin que lo ejecutó. El snapshot completo se sirve en el detalle por id.',
+  })
+  @ApiResponse({ status: 200, description: 'Listado de resets' })
+  listCreditStudyResets() {
+    return this.adminService.listCreditStudyResets();
+  }
+
+  @Get('credit-study-resets/:id')
+  @ApiOperation({
+    summary:
+      'Detalle de un reset: snapshot completo del estado previo + antes/después',
+    description:
+      'Incluye el snapshot congelado al resetear (viability*, status previo, solicitud y los análisis financieros desechados con períodos/indicadores/red flags), el previousStatus, el ticket asociado y el estado actual del estudio para contrastar.',
+  })
+  @ApiResponse({ status: 200, description: 'Detalle del reset con snapshot' })
+  @ApiResponse({ status: 404, description: 'Reset no encontrado' })
+  getCreditStudyReset(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getCreditStudyReset(id);
   }
 
   // ── Catálogo de dimensiones de scoring (scoring_dimensions) ────────────────

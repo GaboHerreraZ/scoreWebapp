@@ -350,7 +350,9 @@ REGLAS GENERALES:
   extrae todas sus partidas. El balance suele traer las dos columnas completas; el estado
   de resultados tambien. Solo usa null si la partida realmente no aparece para ese ano.
 - Busca las cifras en el balance general, estado de resultados y notas
-- Si hay valores negativos, representalos con signo negativo
+- Para el signo de cada cifra sigue la regla de SIGNOS (abajo): los costos y
+  gastos van SIEMPRE en positivo; el signo negativo se reserva para conceptos
+  realmente negativos (perdidas, patrimonio negativo)
 - Responde UNICAMENTE con el JSON, sin texto adicional ni markdown
 
 ESCALA / UNIDAD DE LAS CIFRAS (CRITICO — NORMALIZA A PESOS COMPLETOS):
@@ -373,6 +375,22 @@ millones", "expresado en millones de pesos", "COP miles", "$000".
 - Cuando detectes y apliques una escala distinta a pesos completos, deja constancia con
   una reliabilityFlag de severity "info", category "notas", explicando la unidad hallada
   y el factor aplicado (para trazabilidad, NO es un problema del estado financiero).
+
+SIGNO DE LAS CIFRAS (CRITICO — LOS COSTOS Y GASTOS VAN EN POSITIVO):
+En el estado de resultados los costos y gastos suelen presentarse entre parentesis
+"(44.339.000)" o con signo menos: eso es PRESENTACION de que la partida se RESTA en el
+calculo de la utilidad, NO un valor negativo. Este sistema resta los costos/gastos por
+si mismo, asi que:
+- Devuelve SIEMPRE como POSITIVOS (magnitud, sin signo): costOfSales,
+  administrativeExpenses, sellingExpenses, depreciation, amortization,
+  financialExpenses, taxes. Ejemplo: "Costo de ventas y operacion ... (44.339.000)"
+  -> "costOfSales": 44339000.
+- Conserva el signo NEGATIVO solo cuando el CONCEPTO en si es negativo:
+  netIncome (perdida del ejercicio), retainedEarnings (perdidas acumuladas),
+  equity (patrimonio negativo), grossProfit (perdida bruta). Ejemplo: "Perdidas
+  acumuladas (4.961.411)" -> "retainedEarnings": -4961411.
+- Al verificar coherencias aritmeticas (p. ej. utilidad bruta = ingresos - costo de
+  ventas) usa esta convencion: los costos/gastos positivos SE RESTAN.
 
 FORMATO DE RESPUESTA (JSON con dos secciones):
 

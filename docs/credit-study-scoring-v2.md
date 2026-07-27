@@ -32,7 +32,7 @@ dimensiones nuevas, (c) hacer los pesos configurables por empresa.
 
 | Tema | Decisión |
 |------|----------|
-| **Fuente de cálculo** | **DataCrédito** (fuente de verdad, no maquillable), pero SOLO si su año más reciente **coincide** con el del PDF. Fallback a PDF si el cliente no tiene EEFF en la central **o si el año más reciente del PDF aún no aparece reportado** (p. ej. cargado en ene-mar antes de la ventana de reporte) — en ese caso la Veracidad se penaliza (§4.6). |
+| **Fuente de cálculo** | **DataCrédito** (fuente de verdad, no maquillable), pero SOLO si su año más reciente **coincide** con el del PDF. Fallback a PDF si el cliente no tiene EEFF en la central **o si el año más reciente del PDF aún no aparece reportado** (p. ej. cargado en ene-mar antes de la ventana de reporte) — en ese caso la Veracidad se penaliza (§4.6). El usuario puede **forzar la fuente** en el perform (`source`) cuando la central reporta EEFF incompletos; el resultado lo declara (`summary.sourceSelection: 'manual'`). |
 | **Rol del PDF** | Insumo del **contraste** (detección de maquillaje), ya no del cálculo. |
 | **Dimensiones** | Las 5 actuales + **Dim 6 Veracidad** + **Dim 7 Riesgo de la central** = 7. |
 | **Dim 6 (Veracidad)** | Maquillaje penaliza la dimensión (no elimina). Umbrales: >10% warning, >25% danger. |
@@ -106,7 +106,11 @@ resultado y no suma ni resta.
 
 Las cifras financieras salen de **DataCrédito** (fuente de verdad, no
 maquillable); si la central no tiene estados financieros del cliente, se usa el
-PDF que él aportó, dejando la salvedad declarada en el resultado (§11).
+PDF que él aportó, dejando la salvedad declarada en el resultado (§11). El
+usuario también puede **elegir la fuente manualmente** en el perform (ver
+"Selección manual de la fuente"), porque los EEFF que reporta la central a
+veces vienen incompletos (rubros en "-", totales en 0) y el análisis automático
+saldría no viable injustamente.
 
 ### 4.1 Dim 1 — Salud financiera (`financialHealth`)
 
@@ -521,6 +525,30 @@ leyeron las cifras (warning si el escaneo es claro, danger si hay partes borrosa
 o ilegibles). Complementa la validación del endpoint `extract-pdf`, que rechaza
 de entrada archivos que ni siquiera son PDF (imágenes u otros documentos
 renombrados a `.pdf`, verificados por los bytes mágicos `%PDF-`).
+
+**Signo de los costos y gastos en la extracción (regla de SIGNOS, 2026-07-25).**
+El estado de resultados presenta costos y gastos **entre paréntesis** —
+"(44.339.000)" — como convención de que la partida *se resta*, no de que sea
+negativa. Un caso real (PJ con EEFF 2025) mostró que la IA los devolvía con
+signo negativo y, como las fórmulas de `financial-indicators.ts` restan esas
+partidas por sí mismas, restar un negativo **sumaba**: EBITDA $266,8M en vez de
+$21,0M y capacidad de pago mensual $22,3M en vez de $1,66M (~13× infladas, a
+favor del cliente), además de rotaciones negativas. Se corrigió en dos capas,
+igual que la regla de escala en miles:
+
+1. **Prompt de extracción**: bloque "SIGNO DE LAS CIFRAS" — los 7 campos de
+   costo/gasto (`costOfSales`, `administrativeExpenses`, `sellingExpenses`,
+   `depreciation`, `amortization`, `financialExpenses`, `taxes`) se devuelven
+   SIEMPRE como magnitud positiva; el signo negativo se reserva para conceptos
+   realmente negativos (`netIncome` en pérdida, `retainedEarnings` con pérdidas
+   acumuladas, `equity` negativo, `grossProfit` en pérdida bruta).
+2. **Cinturón determinístico** en `financial-statements.service.ts`
+   (`EXPENSE_MAGNITUDE_FIELDS`): al persistir la extracción se aplica
+   `Math.abs()` sobre esos 7 campos, sin confiar solo en el prompt. El mapper de
+   DataCrédito no lo necesita (la central entrega magnitudes positivas).
+
+Los análisis extraídos antes del fix conservan los signos invertidos congelados
+(fase de pruebas, sin backfill): re-cargar el PDF del estudio regenera todo.
 
 ### 4.10 Cómo se comporta el modelo con una Persona Natural (PN)
 
@@ -978,10 +1006,96 @@ solo lugar). Si no hay `score`, cae al `nivel` como respaldo.
 ### Salvedad de la fuente (para que el cliente decida)
 El resultado declara con qué se calculó:
 - `summary.calculationSource`: `'datacredito'` | `'pdf'` | `'none'`.
-- `summary.financialsVerified`: `true` solo si corrió sobre DataCrédito **y** hubo
-  PDF para contrastar.
+- `summary.sourceSelection`: `'auto'` | `'manual'` — cómo se eligió la fuente
+  (resultados congelados antiguos no traen el campo = `'auto'`).
+- `summary.financialsVerified`: `true` solo si corrió sobre DataCrédito, hubo
+  PDF para contrastar **y ambos son del mismo período** (con selección manual
+  puede haber mismatch de años).
 - Alerta `warning` si corrió sobre PDF (cifras auto-reportadas, sin verificar);
   alerta `info` si corrió sobre DataCrédito sin PDF (sin contraste de veracidad).
+  Con selección manual las salvedades son específicas (ver abajo).
+
+### Selección manual de la fuente (`POST /:id/perform`, body `{ source }`)
+
+**Motivación (2026-07-25):** los EEFF que la central reporta para algunas
+empresas vienen casi vacíos — caso real: casi todos los rubros en `"-"`, total
+activo `0` pero patrimonio `105.400` (miles) — y con la regla automática esos
+datos "oficiales" gobiernan el cálculo y el estudio sale no viable
+injustamente. El usuario ve ambas fuentes en el step2 y decide.
+
+- `source` (opcional): `'datacredito'` | `'pdf_upload'` — los **mismos códigos**
+  que expone el step2 en `sources[].source`. Omitido → regla automática.
+  DTO: [`perform-study.dto.ts`](../src/credit-studies/dto/perform-study.dto.ts).
+- **400** si la fuente forzada no tiene análisis congelado en el estudio.
+- El motor recibe `sourceOverride` y lo declara en `summary.sourceSelection:
+  'manual'`. Los pesos, dimensiones y reglas eliminatorias NO cambian: solo
+  cambia de qué análisis salen los indicadores.
+- **Forzar PDF con central del mismo año:** el contraste de veracidad (Dim 6)
+  **se mantiene** (compara PDF↔central igual); `financialsVerified: false`;
+  `warning` específica ("por selección manual del usuario, aunque la central
+  reporta EEFF del mismo período").
+- **Forzar la central con años distintos** (auto habría elegido el PDF): la
+  Veracidad queda en `period_mismatch` (igual que siempre),
+  `financialsVerified: false`, `info` específica con ambos años.
+- Cinturón en el motor: si la fuente forzada no trae cifras, cae a la regla
+  automática (inalcanzable vía API por la validación 400 del servicio).
+
+### Reset de estudio por soporte (`POST /admin/credit-studies/:id/reset`)
+
+**Motivación (2026-07-26):** cuando la extracción del PDF lee mal una cifra y
+el estudio ya quedó realizado, llega un ticket. Tras corregir el prompt,
+soporte (portal admin, `AdminGuard`) resetea el estudio para que el usuario
+re-cargue los EEFF y re-analice **sin nueva consulta al bureau** (el snapshot
+de riesgo vigente se reutiliza; cero consumo de bolsa).
+
+- Body: `{ reason }` (obligatorio, queda en auditoría) + `supportTicketId`
+  (opcional, **FK real a `support_tickets`**; se valida que exista, que sea de
+  la misma empresa del estudio y — si el ticket está vinculado a un estudio —
+  que sea EL MISMO que se resetea; 404/400 si no).
+
+> **Tickets con vínculo tipado (2026-07-26, migración
+> `20260726140000_support_ticket_typed_relations`, staging + prod):** el viejo
+> par polimórfico `relatedEntityType`/`relatedEntityId` (texto libre, sin
+> integridad) se reemplazó por FKs reales en `support_tickets`:
+> `credit_study_id` y `customer_id`. Regla por área (validada en el servicio):
+> `credit_study` exige `creditStudyId` (el `customerId` se deriva del estudio);
+> `customer` exige `customerId`; `payment`/`account`/`other` no llevan id extra
+> (`companyId` ya ata el ticket). Todo id se valida contra la empresa. El
+> listado/detalle de tickets ahora incluye el estudio (con cliente y estado) y
+> el cliente resueltos por join, y desde un estudio o cliente se pueden listar
+> sus tickets (relaciones inversas `supportTickets`). El catálogo
+> `support_related_entity` quedó desactivado.
+- **Antes de limpiar** se congela el estado previo COMPLETO en la tabla
+  **`credit_study_resets`** (append-only): resultado de viabilidad, status,
+  solicitud y los análisis congelados con sus períodos/indicadores/red flags —
+  atado al ticket (`support_ticket_id`, ON DELETE SET NULL), al motivo y al
+  admin que lo ejecutó (`resetBy`).
+- Luego, en la misma transacción: borra los análisis congelados del estudio
+  (join + períodos + indicadores; los `AiAnalysis` — log de extracciones — se
+  conservan como evidencia), limpia `viability*`/`recommended*`/
+  `resolutionDate`/`scoringConfigurationId` y regresa el estado a
+  `pendingFinancialStatements`.
+- **400** si el estudio está en estado bloqueado (`confirmed`, `rejected`,
+  `pendingSignature`, `closed` — `LOCKED_STUDY_STATUSES`, ahora compartido en
+  `credit-study-status.constants.ts`): un estudio confirmado/firmado no se
+  resetea; eso sería un flujo de anulación aparte.
+
+**Consulta de la auditoría (portal admin):**
+- `GET /admin/credit-study-resets` — listado (desc por fecha): empresa, cliente
+  y solicitud del estudio con su estado ACTUAL (permite ver si ya se
+  re-analizó), ticket (referencia/asunto/descripción), motivo y admin que lo
+  ejecutó. NO incluye el snapshot (pesado).
+- `GET /admin/credit-study-resets/:id` — detalle: `previousStatus` (del
+  snapshot), ticket con estado/prioridad, estado actual del estudio (antes/
+  después) y el **snapshot completo** congelado al resetear.
+
+**Cinturones relacionados (mismo cambio):**
+- **Re-cargar el PDF REEMPLAZA, no duplica**: `extract-pdf` descongela y borra
+  los análisis previos del estudio antes de persistir los nuevos (después de
+  que la IA extrajo con éxito, para no perder lo anterior si falla). Antes, una
+  re-carga duplicaba las fuentes congeladas y el perform usaba la MÁS VIEJA
+  (`.find` sobre la join ordenada asc) — es decir, re-cargar no corregía nada.
+- `extract-pdf` ahora rechaza (400) la carga sobre estudios en estado bloqueado.
 
 ### Monto aprobado (lo mandan los EEFF; la central es referencia)
 - **No** reimplementamos las *recomendaciones de cupo/plazo* con fórmula propia
@@ -1009,7 +1123,7 @@ El resultado declara con qué se calculó:
 | [`credit-studies.service.ts`](../src/credit-studies/credit-studies.service.ts) | `performStudy()` arma la entrada y corre el motor; `getSteps()` sirve el stepper. |
 | [`ai-analyses.service.ts`](../src/ai-analyses/ai-analyses.service.ts) | `analyze()` — informe ejecutivo IA sobre el resultado. |
 | [`credit-study-analysis.prompt.ts`](../src/ai/prompts/credit-study-analysis.prompt.ts) | Prompt v2 del informe IA (consciente de PN/PJ, 3 capas de flags, keyFigures). |
-| [`credit-study-report.mapper.ts`](../src/credit-studies/pdf/credit-study-report.mapper.ts) + [plantilla](../src/credit-studies/pdf/templates/credit-study-report.template.html) | PDF descargable "Concepto de Viabilidad": espejo del front (veredicto, keyFigures, dimensiones, alertas, central de riesgo — incluye **score de la central con su banda** y las **sugerencias de verificación** — e informe IA). |
+| [`credit-study-report.mapper.ts`](../src/credit-studies/pdf/credit-study-report.mapper.ts) + [plantilla](../src/credit-studies/pdf/templates/credit-study-report.template.html) | PDF descargable "Concepto de Viabilidad": espejo del front (veredicto, keyFigures, dimensiones, alertas, central de riesgo — incluye **score de la central con su banda** y las **sugerencias de verificación** —, las **dos capas de red flags** (`pdfReliabilityFlags` "Fiabilidad del Documento" y `centralRiskFlags` "Señales de la Central de Riesgo", agrupadas por severidad como en el front) e informe IA). |
 
 > **Nota de redacción:** los mensajes del motor hablan de "el cliente" (nunca
 > "la empresa") cuando se refieren al sujeto analizado, porque aplica igual a PN

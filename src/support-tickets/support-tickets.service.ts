@@ -45,13 +45,52 @@ export class SupportTicketsService {
       );
     }
 
-    // Defensa en código del CHECK de BD: ambos null o ambos presentes.
-    const hasType = !!dto.relatedEntityType;
-    const hasId = !!dto.relatedEntityId;
-    if (hasType !== hasId) {
+    // Vínculo por FK tipada según el área: credit_study exige el estudio (y
+    // deriva su cliente); customer exige el cliente; payment/account/other no
+    // llevan id extra (companyId ya ata el ticket al tenant). Todo id que
+    // venga se valida: debe existir y pertenecer a ESTA empresa.
+    if (dto.area === 'credit_study' && !dto.creditStudyId) {
       throw new BadRequestException(
-        'relatedEntityType y relatedEntityId deben venir ambos o ninguno',
+        'El área credit_study requiere creditStudyId (el estudio del problema)',
       );
+    }
+    if (dto.area === 'customer' && !dto.customerId) {
+      throw new BadRequestException(
+        'El área customer requiere customerId (el cliente del problema)',
+      );
+    }
+
+    let creditStudyId: string | null = null;
+    let customerId: string | null = null;
+    if (dto.creditStudyId) {
+      const study = await this.repository.findCreditStudy(
+        dto.creditStudyId,
+        companyId,
+      );
+      if (!study) {
+        throw new BadRequestException(
+          'creditStudyId no corresponde a un estudio de esta empresa',
+        );
+      }
+      creditStudyId = study.id;
+      customerId = study.customerId; // el ticket queda atado a ambos
+    }
+    if (dto.customerId) {
+      const customer = await this.repository.findCustomer(
+        dto.customerId,
+        companyId,
+      );
+      if (!customer) {
+        throw new BadRequestException(
+          'customerId no corresponde a un cliente de esta empresa',
+        );
+      }
+      if (customerId && customerId !== customer.id) {
+        throw new BadRequestException(
+          'customerId no coincide con el cliente del estudio enviado',
+        );
+      }
+      customerId = customer.id;
     }
 
     const year = new Date().getFullYear();
@@ -64,8 +103,8 @@ export class SupportTicketsService {
         statusId: openStatus.id,
         subject: dto.subject,
         description: dto.description,
-        relatedEntityType: dto.relatedEntityType ?? null,
-        relatedEntityId: dto.relatedEntityId ?? null,
+        creditStudyId,
+        customerId,
         context: toJson(dto.context),
         createdBy: userId,
       },
@@ -179,14 +218,33 @@ export class SupportTicketsService {
 
   /**
    * Gestiona un ticket (admin): estado, asignación y/o notas. Los datos del
-   * cliente son inmutables. assignedTo es el id de un PlatformAdmin.
+   * cliente son inmutables. assignedTo es el id de un PlatformAdmin; cuando la
+   * asignación CAMBIA a un admin, se le avisa por correo (best-effort) que el
+   * ticket quedó a su nombre y le toca revisarlo y dar soporte.
    */
   async update(id: string, dto: UpdateSupportTicketDto) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
 
     const data: Prisma.SupportTicketUncheckedUpdateInput = {};
     if (dto.notes !== undefined) data.notes = dto.notes;
-    if (dto.assignedTo !== undefined) data.assignedTo = dto.assignedTo;
+
+    // Asignación: el destino debe ser un admin del portal ACTIVO (evita FKs
+    // rotas y correos a cuentas desactivadas). null = desasignar.
+    let assignedAdmin: { email: string; name: string | null } | null = null;
+    if (dto.assignedTo !== undefined) {
+      if (dto.assignedTo !== null) {
+        const admin = await this.platformAdminRepository.findById(
+          dto.assignedTo,
+        );
+        if (!admin || !admin.isActive) {
+          throw new BadRequestException(
+            'assignedTo no corresponde a un admin del portal activo',
+          );
+        }
+        assignedAdmin = { email: admin.email, name: admin.name };
+      }
+      data.assignedTo = dto.assignedTo;
+    }
 
     if (dto.status) {
       const status = await this.repository.findParameterByTypeAndCode(
@@ -199,7 +257,40 @@ export class SupportTicketsService {
       data.statusId = status.id;
     }
 
-    return this.repository.update(id, data);
+    const updated = await this.repository.update(id, data);
+
+    // Correo SOLO cuando la asignación cambia (no en re-guardados del mismo
+    // admin ni en updates de solo notas/estado). Best-effort: no bloquea.
+    if (assignedAdmin && dto.assignedTo !== current.assignedTo) {
+      void this.notifyAssigned(updated, assignedAdmin);
+    }
+
+    return updated;
+  }
+
+  /** Correo al admin recién asignado con el resumen del ticket. */
+  private async notifyAssigned(
+    ticket: Awaited<ReturnType<SupportTicketsRepository['update']>>,
+    admin: { email: string; name: string | null },
+  ) {
+    try {
+      await this.mailService.sendSupportTicketAssignedEmail({
+        to: admin.email,
+        adminName: admin.name ?? 'equipo Creditia',
+        reference: ticket.reference,
+        companyName: ticket.company.name,
+        areaLabel: ticket.area.label,
+        priorityLabel: ticket.priority.label,
+        subject: ticket.subject,
+        description: ticket.description,
+      });
+    } catch (e) {
+      this.logger.error(
+        `Ticket ${ticket.reference}: fallo al avisar al admin asignado: ${
+          (e as Error).message
+        }`,
+      );
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────

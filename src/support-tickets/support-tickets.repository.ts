@@ -6,7 +6,9 @@ import { Prisma } from '../../generated/prisma/client.js';
 export class SupportTicketsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Para listar/leer: catálogos (code/label), empresa, admin asignado y autor.
+  // Para listar/leer: catálogos (code/label), empresa, admin asignado, autor y
+  // los registros vinculados por FK tipada (estudio con su cliente y estado;
+  // cliente directo).
   private readonly defaultInclude = {
     area: { select: { code: true, label: true } },
     type: { select: { code: true, label: true } },
@@ -17,10 +19,40 @@ export class SupportTicketsRepository {
     createdByUser: {
       select: { id: true, name: true, lastName: true, email: true },
     },
+    creditStudy: {
+      select: {
+        id: true,
+        studyDate: true,
+        requestedCreditLine: true,
+        status: { select: { code: true, label: true } },
+        customer: {
+          select: { id: true, businessName: true, identificationNumber: true },
+        },
+      },
+    },
+    customer: {
+      select: { id: true, businessName: true, identificationNumber: true },
+    },
   } as const;
 
   async findParameterByTypeAndCode(type: string, code: string) {
     return this.prisma.parameter.findFirst({ where: { type, code } });
+  }
+
+  /** Estudio de la empresa (para validar el vínculo del ticket). */
+  async findCreditStudy(creditStudyId: string, companyId: string) {
+    return this.prisma.creditStudy.findFirst({
+      where: { id: creditStudyId, companyId },
+      select: { id: true, customerId: true },
+    });
+  }
+
+  /** Cliente de la empresa (para validar el vínculo del ticket). */
+  async findCustomer(customerId: string, companyId: string) {
+    return this.prisma.customer.findFirst({
+      where: { id: customerId, companyId },
+      select: { id: true },
+    });
   }
 
   async findPlatformAdminByUserId(userId: string) {
