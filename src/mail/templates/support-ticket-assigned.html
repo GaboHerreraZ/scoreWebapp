@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #eef1f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #eef1f6; padding: 40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(17,24,39,0.10);">
+          <tr>
+            <td style="background-color: #ffffff; padding: 28px 40px 0; text-align: center;">
+              <img src="{{logoUrl}}" alt="Creditia" height="40" style="height: 40px; display: inline-block;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 40px 0; text-align: center;">
+              <div style="height: 4px; width: 56px; background-color: #2563eb; border-radius: 2px; margin: 0 auto 24px;"></div>
+              <h1 style="color: #111827; margin: 0; font-size: 22px; font-weight: 700;">Se te asignó un ticket de soporte</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 40px 8px;">
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+                Hola {{adminName}}, el siguiente ticket quedó asignado a tu nombre: te corresponde revisarlo y dar soporte al cliente.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; border-radius: 10px; margin: 0 0 20px;">
+                <tr>
+                  <td style="padding: 18px 20px;">
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Referencia</p>
+                    <p style="color: #111827; font-size: 18px; font-weight: 700; margin: 0 0 12px;">{{reference}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Empresa</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">{{companyName}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Área</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">{{areaLabel}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Prioridad</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">{{priorityLabel}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Asunto</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0;">{{subject}}</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Descripción</p>
+              <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">{{description}}</p>
+              <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0;">
+                Gestiona el ticket desde el panel administrativo y actualiza su estado a medida que avances.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 40px 0;">
+              <div style="border-top: 1px solid #e5e7eb;"></div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #ffffff; padding: 20px 40px 32px; text-align: center;">
+              <p style="color: #9ca3af; font-size: 12px; line-height: 1.6; margin: 0;">
+                Creditia · Panel administrativo<br>
+                © 2026 Creditia. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

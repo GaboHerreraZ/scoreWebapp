@@ -18,6 +18,7 @@ import {
 } from '../credit-bureau/experian/experian.financials.mapper.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { toJson } from '../common/utils/prisma-json.util.js';
+import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
 
 /** Cifras crudas de UN año que devuelve la IA (un objeto por período). */
 interface ExtractedPeriod {
@@ -86,6 +87,26 @@ const PERIOD_FIGURE_FIELDS = [
   'netIncome',
 ] as const;
 
+/**
+ * Campos de costo/gasto que son MAGNITUDES: el estado de resultados los presenta
+ * entre paréntesis (o con signo menos) porque SE RESTAN, no porque sean
+ * negativos. Las fórmulas de financial-indicators los restan por sí mismas, así
+ * que un signo negativo las convierte en sumas (EBITDA y capacidad de pago
+ * inflados ~13× en un caso real). Se normalizan a valor absoluto al persistir —
+ * cinturón de la regla de SIGNOS del prompt de extracción. Los conceptos que sí
+ * pueden ser negativos (netIncome, retainedEarnings, equity, grossProfit) NO
+ * están en esta lista.
+ */
+const EXPENSE_MAGNITUDE_FIELDS: ReadonlySet<string> = new Set([
+  'costOfSales',
+  'administrativeExpenses',
+  'sellingExpenses',
+  'depreciation',
+  'amortization',
+  'financialExpenses',
+  'taxes',
+]);
+
 @Injectable()
 export class FinancialStatementsService {
   constructor(
@@ -119,6 +140,15 @@ export class FinancialStatementsService {
       );
     }
 
+    // Un estudio confirmado/en firma/cerrado tiene su resultado congelado: no
+    // admite re-carga de EEFF. Para corregir un dato mal leído existe el reset
+    // de soporte (portal admin), que devuelve el estudio a este paso.
+    if (study.status?.code && LOCKED_STUDY_STATUSES.has(study.status.code)) {
+      throw new BadRequestException(
+        'Este estudio ya está confirmado o cerrado: no se pueden re-cargar estados financieros.',
+      );
+    }
+
     // 2. La IA lee el PDF una sola vez: cifras (dos años) + red flags. El log de
     //    la corrida (tokens, costo, PDF binario) queda en la tabla AiAnalysis.
     const extraction = await this.aiAnalysesService.extractPdf(
@@ -146,6 +176,12 @@ export class FinancialStatementsService {
     const periods = rawPeriods
       .map((p) => this.buildPeriod(p, companyId, study.customerId, userId, dto))
       .sort((a, b) => b.fiscalYear - a.fiscalYear);
+
+    // Reemplazo, NO duplicado: si el estudio ya tenía análisis congelados (una
+    // re-carga del PDF), se descongelan y borran ANTES de persistir los nuevos.
+    // Se hace DESPUÉS de extraer con éxito para no dejar el estudio sin fuentes
+    // si la IA falla.
+    await this.repository.unfreezeStudyAnalyses(creditStudyId);
 
     // 5. Indicadores: dependen de los 2 períodos MÁS RECIENTES (corriente +
     //    anterior). Se arma en memoria el par que espera el helper (*_1 / *_2);
@@ -356,7 +392,11 @@ export class FinancialStatementsService {
 
     const figures: Record<string, number | null | undefined> = {};
     for (const field of PERIOD_FIGURE_FIELDS) {
-      figures[field] = p[field];
+      const value = p[field];
+      figures[field] =
+        typeof value === 'number' && EXPENSE_MAGNITUDE_FIELDS.has(field)
+          ? Math.abs(value)
+          : value;
     }
 
     return {

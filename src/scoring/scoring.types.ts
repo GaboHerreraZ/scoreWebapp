@@ -110,6 +110,14 @@ export interface ScoringEngineInput {
   centralRisk: CentralRiskInput | null;
   /** Estado legal (matrícula / liquidación). Puede ser eliminatorio. */
   legalStatus: LegalStatusInput | null;
+  /**
+   * Fuente elegida MANUALMENTE por el usuario para el cálculo. El servicio ya
+   * seleccionó los indicadores de esa fuente; el motor la usa para declarar
+   * calculationSource y las salvedades en lugar de inferirla (p. ej. cuando la
+   * central trae EEFF casi vacíos y el usuario prefiere el PDF). null/undefined
+   * = selección automática (central si el año coincide con el PDF, si no PDF).
+   */
+  sourceOverride?: 'datacredito' | 'pdf' | null;
 }
 
 // ─── Salida del motor ───────────────────────────────────────────────────────
@@ -194,9 +202,16 @@ export interface ScoringResult {
     /** Con qué cifras se calculó. 'datacredito' = fuente de verdad (oficial). */
     calculationSource: 'datacredito' | 'pdf' | 'none';
     /**
-     * true solo si el cálculo corrió sobre DataCrédito (fuente de verdad) Y hubo
-     * un PDF para contrastar veracidad. false = análisis sobre cifras
-     * auto-reportadas o sin contraste; el cliente debe considerarlo al decidir.
+     * Cómo se eligió la fuente del cálculo: 'auto' (regla del motor) o 'manual'
+     * (el usuario la seleccionó en el perform). Resultados congelados antiguos
+     * no traen el campo (equivale a 'auto').
+     */
+    sourceSelection?: 'auto' | 'manual';
+    /**
+     * true solo si el cálculo corrió sobre DataCrédito (fuente de verdad), hubo
+     * un PDF para contrastar veracidad Y ambos son del mismo período. false =
+     * análisis sobre cifras auto-reportadas o sin contraste; el cliente debe
+     * considerarlo al decidir.
      */
     financialsVerified: boolean;
     /**

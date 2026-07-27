@@ -22,6 +22,7 @@
     --green-bg: #ecfdf5;  --green-bd: #a7f3d0;  --green-tx: #047857;  --green-dot: #10b981;
     --amber-bg: #fffbeb;  --amber-bd: #fde68a;  --amber-tx: #b45309;  --amber-dot: #f59e0b;
     --red-bg:   #fef2f2;  --red-bd:   #fecaca;  --red-tx:   #b91c1c;  --red-dot:   #ef4444;
+    --blue-bg:  #eff6ff;  --blue-bd:  #bfdbfe;  --blue-tx:  #1d4ed8;  --blue-dot:  #3b82f6;
     --gray-bg:  #f3f4f6;  --gray-bd:  #e5e7eb;  --gray-tx:  #6b7280;  --gray-dot:  #9ca3af;
   }
 
@@ -121,6 +122,13 @@
   .alert.self   { background: var(--red-bg);   border-color: var(--red-bd);   color: var(--red-tx); }
   .alert.linked { background: var(--amber-bg); border-color: var(--amber-bd); color: var(--amber-tx); }
   .alert .ico { font-weight: 800; }
+
+  /* ─── Red flags (fiabilidad del PDF / señales de la central) ─────────── */
+  .flag { border: 1px solid; border-radius: 8px; padding: 8px 11px; margin-bottom: 6px; break-inside: avoid; }
+  .flag.danger  { background: var(--red-bg);   border-color: var(--red-bd); }
+  .flag.warning { background: var(--amber-bg); border-color: var(--amber-bd); }
+  .flag.info    { background: var(--blue-bg);  border-color: var(--blue-bd); }
+  .pill.blue { background: var(--blue-bg); color: var(--blue-tx); }
 
   /* ─── Comportamiento de pago (chips) ─────────────────────────────────── */
   .pb-track { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -404,6 +412,54 @@
       {{/if}}
 
     </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Capa 1: Fiabilidad del Documento ══════════ -->
+  <!-- pdfReliabilityFlags: [ { severity, label, flags: [ { title, category, detail } ] } ] -->
+  {{#if pdfReliabilityFlags.length}}
+  <div class="section">
+    <div class="row between items-center" style="margin-bottom:4px">
+      <h2>Fiabilidad del Documento</h2>
+      <span class="pill red">{{pdfReliabilityCount}} señal(es)</span>
+    </div>
+    <div class="xs muted" style="margin-bottom:8px">Señales detectadas en los estados financieros cargados (el documento contra sí mismo).</div>
+    {{#each pdfReliabilityFlags}}
+    <div class="block-label">{{this.label}}</div>
+    {{#each this.flags}}
+    <div class="flag {{this.severity}}">
+      <div class="row between items-center gap-2 wrap">
+        <span class="semibold">{{this.title}}</span>
+        {{#if this.category}}<span class="pill gray">{{this.category}}</span>{{/if}}
+      </div>
+      {{#if this.detail}}<div class="sm muted" style="margin-top:2px">{{this.detail}}</div>{{/if}}
+    </div>
+    {{/each}}
+    {{/each}}
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Capa 2: Señales de la Central de Riesgo ══════════ -->
+  <!-- centralRiskFlags: [ { severity, label, flags: [ { title, category, detail } ] } ] -->
+  {{#if centralRiskFlags.length}}
+  <div class="section">
+    <div class="row between items-center" style="margin-bottom:4px">
+      <h2>Señales de la Central de Riesgo</h2>
+      <span class="pill amber">{{centralRiskFlagCount}} señal(es)</span>
+    </div>
+    <div class="xs muted" style="margin-bottom:8px">Alertas reportadas por la central sobre el comportamiento y riesgo del cliente.</div>
+    {{#each centralRiskFlags}}
+    <div class="block-label">{{this.label}}</div>
+    {{#each this.flags}}
+    <div class="flag {{this.severity}}">
+      <div class="row between items-center gap-2 wrap">
+        <span class="semibold">{{this.title}}</span>
+        {{#if this.category}}<span class="pill gray">{{this.category}}</span>{{/if}}
+      </div>
+      {{#if this.detail}}<div class="sm muted" style="margin-top:2px">{{this.detail}}</div>{{/if}}
+    </div>
+    {{/each}}
+    {{/each}}
   </div>
   {{/if}}
 

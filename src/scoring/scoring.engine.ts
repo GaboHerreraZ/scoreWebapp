@@ -78,13 +78,22 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     input.truthFigures !== null &&
     input.pdfFigures !== null &&
     input.truthFigures.fiscalYear !== input.pdfFigures.fiscalYear;
-  const source = input.truthFigures
+  const autoSource = input.truthFigures
     ? fiscalYearMismatch
       ? 'pdf'
       : 'datacredito'
     : input.pdfFigures
       ? 'pdf'
       : 'none';
+  // Selección manual del usuario: gana sobre la regla automática, pero solo si
+  // la fuente forzada realmente trae cifras (el servicio ya validó que exista;
+  // esto es el cinturón de seguridad del motor).
+  const source =
+    input.sourceOverride === 'datacredito' && input.truthFigures
+      ? 'datacredito'
+      : input.sourceOverride === 'pdf' && input.pdfFigures
+        ? 'pdf'
+        : autoSource;
 
   // Monto sugerido por la central: REFERENCIA (señal de alerta), no techo. El
   // monto lo mandan los EEFF. null si no hubo consulta (o no vino).
@@ -194,12 +203,18 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
   // todas son igual de confiables: DataCrédito es oficial; el PDF es auto-
   // reportado por el cliente y puede no estar verificado contra la central.
   if (source === 'pdf') {
+    // Tres variantes: año del PDF aún no reportado a la central, central sin
+    // información, o selección MANUAL teniendo la central el mismo período
+    // (solo alcanzable por override: la regla automática habría elegido la
+    // central; típico cuando sus EEFF vienen incompletos).
     alerts.unshift({
       type: 'warning',
       dimension: 'general',
       message: fiscalYearMismatch
         ? `Análisis calculado con estados financieros auto-reportados (PDF). El año más reciente del PDF (${input.pdfFigures?.fiscalYear ?? 'desconocido'}) aún no aparece reportado en la central (su año más reciente es ${input.truthFigures?.fiscalYear ?? 'desconocido'}), por lo que las cifras del cálculo NO pudieron verificarse contra DataCrédito. Decida con cautela.`
-        : 'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera del cliente, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
+        : input.truthFigures
+          ? 'Análisis calculado con estados financieros auto-reportados (PDF) por selección manual del usuario, aunque la central reporta estados financieros del mismo período. El contraste de veracidad PDF↔central se mantiene. Decida con cautela.'
+          : 'Análisis calculado con estados financieros auto-reportados (PDF). La central no tiene información financiera del cliente, por lo que las cifras NO pudieron verificarse. Decida con cautela.',
     });
   } else if (source === 'datacredito' && !input.pdfFigures) {
     // Corrió sobre la fuente de verdad, pero sin PDF no hubo contraste de
@@ -209,6 +224,14 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       dimension: 'general',
       message:
         'Análisis calculado con los estados financieros reportados en la central (DataCrédito). No se cargó un PDF, por lo que no se realizó contraste de veracidad.',
+    });
+  } else if (source === 'datacredito' && fiscalYearMismatch) {
+    // Solo alcanzable por selección manual (la regla automática habría elegido
+    // el PDF por traer un período más nuevo).
+    alerts.unshift({
+      type: 'info',
+      dimension: 'general',
+      message: `Análisis calculado con los estados financieros reportados en la central (DataCrédito) por selección manual del usuario. El PDF cargado trae un período más reciente (${input.pdfFigures?.fiscalYear ?? 'desconocido'}) que no coincide con el de la central (${input.truthFigures?.fiscalYear ?? 'desconocido'}), por lo que no hubo contraste de veracidad entre períodos.`,
     });
   }
 
@@ -327,9 +350,7 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     paymentAtMaturity: Math.round(paymentAtMaturity),
     capacityInTerm: Math.round(capacityInTerm),
     paymentCoverageRatio:
-      paymentAtMaturity > 0
-        ? round2(capacityInTerm / paymentAtMaturity)
-        : null,
+      paymentAtMaturity > 0 ? round2(capacityInTerm / paymentAtMaturity) : null,
     currentDebtService: ind.currentDebtService,
     ebitda: ind.ebitda,
     accountsReceivableTurnover: ind.accountsReceivableTurnover,
@@ -356,8 +377,13 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       maxScore: 100,
       status,
       calculationSource: source,
-      // Verificado solo si corrió sobre la fuente de verdad Y hubo contraste.
-      financialsVerified: source === 'datacredito' && input.pdfFigures !== null,
+      sourceSelection: input.sourceOverride != null ? 'manual' : 'auto',
+      // Verificado solo si corrió sobre la fuente de verdad Y hubo contraste
+      // del MISMO período (con override manual puede haber mismatch de años).
+      financialsVerified:
+        source === 'datacredito' &&
+        input.pdfFigures !== null &&
+        !fiscalYearMismatch,
       eliminatoryReason,
     },
     centralRiskFlags,

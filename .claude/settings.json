@@ -158,7 +158,20 @@
       "PowerShell(node -v; if \\(Test-Path \"$env:ProgramFiles\\\\nodejs\\\\node.exe\"\\) { & \"$env:ProgramFiles\\\\nodejs\\\\node.exe\" -v }; if \\(Get-Command nvm -ErrorAction SilentlyContinue\\) { nvm list })",
       "Bash(node -v 2>/dev/null; ls \"/c/Program Files/nodejs\" 2>/dev/null | head; ls ~/AppData/Roaming/nvm 2>/dev/null | head -20; ls \"/c/Program Files \\(x86\\)/nodejs\" 2>/dev/null)",
       "Read(//c/Program Files/nodejs/**)",
-      "Read(//c/Program Files \\\\\\(x86\\\\\\)/**)"
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/**)",
+      "Read(//c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simpdf/**)",
+      "Read(//c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simpdf/credit-studies/pdf/**)",
+      "Bash(node \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simpdf/smoke.mjs\")",
+      "Bash(node \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simperform/sim.mjs\")",
+      "Bash(ls \"/c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simperform\")",
+      "Read(//c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simperform/**)",
+      "Bash(sed -i \"s|'./scoring/scoring.engine.js'|'./scoring.engine.js'|; s|'./scoring/scoring.constants.js'|'./scoring.constants.js'|\" sim.mjs)",
+      "Bash(node sim.mjs)",
+      "Bash(ls -R \"/c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simsigns\" | head -20)",
+      "Read(//c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simsigns/**)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -cv \"^$\")",
+      "Bash(grep -v \"\\\\.ts$\")"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",

@@ -94,6 +94,15 @@ interface ScoringDimension {
   evaluable: boolean;
 }
 
+/** Red flag del resultado (misma forma en las dos capas: PDF y central). */
+interface RedFlag {
+  severity: 'danger' | 'warning' | 'info';
+  category: string | null;
+  categoryLabel: string | null;
+  title: string | null;
+  detail: string | null;
+}
+
 interface ScoringResult {
   summary: {
     totalScore: number;
@@ -111,6 +120,10 @@ interface ScoringResult {
   reference: { experianSuggestedAmount: number | null } | null;
   alerts: { type: string; message: string }[];
   keyFigures: Record<string, number | null> | null;
+  /** Capa 1: fiabilidad del PDF (el documento contra sí mismo). Opcional: resultados viejos no la traen. */
+  pdfReliabilityFlags?: RedFlag[] | null;
+  /** Capa 2: red flags derivadas de la central de riesgo. Opcional: resultados viejos no la traen. */
+  centralRiskFlags?: RedFlag[] | null;
 }
 
 interface Step3Input {
@@ -290,6 +303,28 @@ const ALERT_GROUP_META: Record<string, string> = {
   info: 'Informativas',
   success: 'Favorables',
 };
+
+/**
+ * Agrupa red flags por severidad (groupBySeverity del front) para las dos capas:
+ * fiabilidad del PDF y señales de la central. El chip de categoría usa el label
+ * legible (categoryLabel) con fallback al código.
+ */
+function buildFlagGroups(flags: RedFlag[] | null | undefined) {
+  return (['danger', 'warning', 'info'] as const)
+    .map((severity) => ({
+      severity,
+      label: ALERT_GROUP_META[severity],
+      flags: (flags ?? [])
+        .filter((f) => f.severity === severity)
+        .map((f) => ({
+          severity,
+          title: f.title ?? '—',
+          category: f.categoryLabel ?? f.category ?? null,
+          detail: f.detail ?? null,
+        })),
+    }))
+    .filter((g) => g.flags.length > 0);
+}
 
 // ─── Central de riesgo → bloque de la plantilla ───────────────────────────────
 
@@ -597,6 +632,11 @@ export function buildReportViewModel(
     keyFigures,
     centralRisk: buildCentralRisk(steps.step1?.centralRisk ?? null),
     dimensions,
+    // Dos capas de red flags (mismo orden y agrupación que el front).
+    pdfReliabilityFlags: buildFlagGroups(result?.pdfReliabilityFlags),
+    pdfReliabilityCount: (result?.pdfReliabilityFlags ?? []).length,
+    centralRiskFlags: buildFlagGroups(result?.centralRiskFlags),
+    centralRiskFlagCount: (result?.centralRiskFlags ?? []).length,
     alertGroups,
     aiAnalysis,
   };
