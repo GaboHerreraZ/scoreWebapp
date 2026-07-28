@@ -1,8 +1,8 @@
-# Solo para correr la imagen LOCALMENTE (contra staging). En AWS las variables
-# las inyecta la task definition / Secrets Manager, no este archivo.
+# Solo para correr la imagen LOCALMENTE (contra staging). En Railway/AWS las
+# variables las inyecta la plataforma, no este archivo.
 #
 #   docker compose up --build     # reconstruye si hay cambios y levanta
-#   docker compose down           # detiene y elimina el contenedor
+#   docker compose down           # detiene y elimina los contenedores
 #
 # A diferencia de `docker run --env-file`, Compose parsea el .env con semántica
 # dotenv real (interpreta comillas), así que puede leer .env.staging tal cual.
@@ -12,5 +12,21 @@ services:
     image: webappapi:latest
     env_file:
       - .env.staging
+    environment:
+      # Dentro de la red de Compose, el servicio se alcanza por su nombre.
+      # Pisa el valor de .env.staging, que apunta a localhost para `start:dev`.
+      GOTENBERG_URL: http://gotenberg:3000
     ports:
       - '3000:3000'
+    depends_on:
+      - gotenberg
+
+  # Render HTML → PDF. Antes vivía dentro de la API (Puppeteer + Chromium
+  # embebido); se separó porque cada render consume cientos de MB y un pico de
+  # PDFs simultáneos competía por la memoria con el resto de la API.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    # 3001 en el host para poder usarlo también con `npm run start:dev`
+    # (la API fuera de Docker ocupa el 3000).
+    ports:
+      - '3001:3000'

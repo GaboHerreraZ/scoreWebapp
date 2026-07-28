@@ -3,8 +3,9 @@ import { PdfService } from './pdf.service.js';
 
 /**
  * Servicio de renderizado HTML → PDF, global (mismo patrón que ExcelModule):
- * cualquier módulo puede inyectar PdfService sin re-importar. Mantiene un único
- * Chromium por proceso, así que conviene un solo provider compartido.
+ * cualquier módulo puede inyectar PdfService sin re-importar. El render lo hace
+ * Gotenberg (servicio externo vía HTTP), así que este provider es apenas un
+ * cliente sin estado.
  */
 @Global()
 @Module({

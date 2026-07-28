@@ -9,10 +9,6 @@
 FROM node:24.3.0-slim AS build
 WORKDIR /app
 
-# El navegador se instala en la imagen final (chrome-headless-shell); no
-# descargar nada de Puppeteer durante npm ci.
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -32,8 +28,6 @@ RUN npx prisma generate && npm run build
 FROM node:24.3.0-slim AS prod-deps
 WORKDIR /app
 
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev \
   && rm -rf \
@@ -45,23 +39,20 @@ RUN npm ci --omit=dev \
     node_modules/@prisma/studio-core
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Stage 3: runtime — imagen final. chrome-headless-shell (variante recortada de
-# Chrome para render de PDFs; PdfService lanza con headless: 'shell') y tini
-# como init (Chromium deja procesos zombie sin un init que los coseche).
+# Stage 3: runtime — imagen final. Solo Node: el render de PDFs se delega a
+# Gotenberg (servicio aparte), así que aquí ya no hay Chromium ni sus fuentes.
+# tini se mantiene como init para propagar bien SIGTERM en los despliegues.
 # ──────────────────────────────────────────────────────────────────────────────
 FROM node:24.3.0-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    fonts-liberation \
     ca-certificates \
     tini \
-    unzip \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \
-    PUPPETEER_CACHE_DIR=/app/.cache/puppeteer \
     PORT=3000
 
 # package.json es obligatorio en runtime: su "type": "module" es lo que hace
@@ -69,13 +60,6 @@ ENV NODE_ENV=production \
 COPY --chown=node:node package.json ./
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
-
-# Descarga chrome-headless-shell al cache y sus librerías de sistema
-# (--install-deps resuelve los .deb que necesita el binario).
-RUN apt-get update \
-  && npx puppeteer browsers install chrome-headless-shell --install-deps \
-  && rm -rf /var/lib/apt/lists/* \
-  && chown -R node:node /app/.cache
 
 USER node
 
