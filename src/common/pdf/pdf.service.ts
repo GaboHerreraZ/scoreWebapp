@@ -69,29 +69,12 @@ const PAPER_SIZES = {
 export class PdfService implements OnModuleInit {
   private readonly logger = new Logger(PdfService.name);
   private readonly baseUrl: string;
-  /** Cabecera Authorization, solo si Gotenberg corre con basic auth. */
-  private readonly authHeader: Record<string, string>;
 
   constructor(private readonly configService: ConfigService) {
     // Sin barra final: se concatena con rutas que ya empiezan con '/'.
     this.baseUrl = (
       this.configService.get<string>('GOTENBERG_URL') ?? ''
     ).replace(/\/+$/, '');
-
-    // Basic auth opcional. Solo hace falta cuando Gotenberg queda expuesto en un
-    // dominio público (no tiene autenticación propia por defecto, así que sin
-    // esto cualquiera podría usarlo para renderizar HTML arbitrario). Con red
-    // privada no se configura y no se envía nada.
-    const user = this.configService.get<string>('GOTENBERG_BASIC_AUTH_USER');
-    const password = this.configService.get<string>(
-      'GOTENBERG_BASIC_AUTH_PASSWORD',
-    );
-    this.authHeader =
-      user && password
-        ? {
-            Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`,
-          }
-        : {};
   }
 
   /**
@@ -107,7 +90,6 @@ export class PdfService implements OnModuleInit {
     }
     try {
       const res = await fetch(`${this.baseUrl}/health`, {
-        headers: this.authHeader,
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
@@ -173,7 +155,6 @@ export class PdfService implements OnModuleInit {
     try {
       res = await fetch(`${this.baseUrl}/forms/chromium/convert/html`, {
         method: 'POST',
-        headers: this.authHeader,
         body: form,
         signal: AbortSignal.timeout(timeoutMs),
       });
