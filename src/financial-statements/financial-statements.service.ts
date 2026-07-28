@@ -8,9 +8,16 @@ import { AiAnalysesService } from '../ai-analyses/ai-analyses.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import {
   computeFinancialIndicators,
-  type FinancialStatementRawFigures,
   type FinancialIndicators,
 } from './utils/financial-indicators.js';
+import {
+  normalizeExtractedPeriod,
+  toIndicatorFigures,
+  PERIOD_FIGURE_FIELDS,
+  type ExtractedFinancialData,
+  type ExtractedPeriod,
+  type PeriodFigures,
+} from './utils/extracted-periods.js';
 import { ExtractPdfDto } from './dto/extract-pdf.dto.js';
 import {
   mapDataCreditoFinancials,
@@ -19,93 +26,6 @@ import {
 import { Prisma } from '../../generated/prisma/client.js';
 import { toJson } from '../common/utils/prisma-json.util.js';
 import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
-
-/** Cifras crudas de UN año que devuelve la IA (un objeto por período). */
-interface ExtractedPeriod {
-  fiscalYear?: number | null;
-  balanceSheetDate?: string | null;
-
-  cashAndEquivalents?: number | null;
-  accountsReceivable?: number | null;
-  inventories?: number | null;
-  totalCurrentAssets?: number | null;
-  fixedAssetsProperty?: number | null;
-  totalNonCurrentAssets?: number | null;
-  totalAssets?: number | null;
-  shortTermFinancialLiabilities?: number | null;
-  suppliers?: number | null;
-  totalCurrentLiabilities?: number | null;
-  longTermFinancialLiabilities?: number | null;
-  totalNonCurrentLiabilities?: number | null;
-  totalLiabilities?: number | null;
-  retainedEarnings?: number | null;
-  equity?: number | null;
-
-  ordinaryActivityRevenue?: number | null;
-  costOfSales?: number | null;
-  grossProfit?: number | null;
-  administrativeExpenses?: number | null;
-  sellingExpenses?: number | null;
-  depreciation?: number | null;
-  amortization?: number | null;
-  financialExpenses?: number | null;
-  taxes?: number | null;
-  netIncome?: number | null;
-}
-
-/** La IA devuelve un arreglo de períodos (uno por año del documento). */
-interface ExtractedFinancialData {
-  periods?: ExtractedPeriod[];
-}
-
-/** Campos monetarios que se copian tal cual de la IA al período de Prisma. */
-const PERIOD_FIGURE_FIELDS = [
-  'cashAndEquivalents',
-  'accountsReceivable',
-  'inventories',
-  'totalCurrentAssets',
-  'fixedAssetsProperty',
-  'totalNonCurrentAssets',
-  'totalAssets',
-  'shortTermFinancialLiabilities',
-  'suppliers',
-  'totalCurrentLiabilities',
-  'longTermFinancialLiabilities',
-  'totalNonCurrentLiabilities',
-  'totalLiabilities',
-  'retainedEarnings',
-  'equity',
-  'ordinaryActivityRevenue',
-  'costOfSales',
-  'grossProfit',
-  'administrativeExpenses',
-  'sellingExpenses',
-  'depreciation',
-  'amortization',
-  'financialExpenses',
-  'taxes',
-  'netIncome',
-] as const;
-
-/**
- * Campos de costo/gasto que son MAGNITUDES: el estado de resultados los presenta
- * entre paréntesis (o con signo menos) porque SE RESTAN, no porque sean
- * negativos. Las fórmulas de financial-indicators los restan por sí mismas, así
- * que un signo negativo las convierte en sumas (EBITDA y capacidad de pago
- * inflados ~13× en un caso real). Se normalizan a valor absoluto al persistir —
- * cinturón de la regla de SIGNOS del prompt de extracción. Los conceptos que sí
- * pueden ser negativos (netIncome, retainedEarnings, equity, grossProfit) NO
- * están en esta lista.
- */
-const EXPENSE_MAGNITUDE_FIELDS: ReadonlySet<string> = new Set([
-  'costOfSales',
-  'administrativeExpenses',
-  'sellingExpenses',
-  'depreciation',
-  'amortization',
-  'financialExpenses',
-  'taxes',
-]);
 
 @Injectable()
 export class FinancialStatementsService {
@@ -374,30 +294,8 @@ export class FinancialStatementsService {
     createdBy: string,
     dto: ExtractPdfDto,
   ): Prisma.FinancialStatementPeriodUncheckedCreateInput {
-    const balanceSheetDate =
-      typeof p.balanceSheetDate === 'string' && p.balanceSheetDate
-        ? new Date(p.balanceSheetDate)
-        : undefined;
-
-    const fiscalYear =
-      (typeof p.fiscalYear === 'number' ? p.fiscalYear : null) ??
-      balanceSheetDate?.getUTCFullYear() ??
-      dto.fiscalYear ??
-      null;
-    if (fiscalYear === null) {
-      throw new BadRequestException(
-        'No se pudo determinar el año fiscal de un período: la IA no devolvió fiscalYear ni fecha de balance. Envía fiscalYear.',
-      );
-    }
-
-    const figures: Record<string, number | null | undefined> = {};
-    for (const field of PERIOD_FIGURE_FIELDS) {
-      const value = p[field];
-      figures[field] =
-        typeof value === 'number' && EXPENSE_MAGNITUDE_FIELDS.has(field)
-          ? Math.abs(value)
-          : value;
-    }
+    const { fiscalYear, balanceSheetDate, ...figures } =
+      normalizeExtractedPeriod(p, dto.fiscalYear);
 
     return {
       companyId,
@@ -412,47 +310,26 @@ export class FinancialStatementsService {
   }
 
   /**
-   * Arma las cifras que consume computeFinancialIndicators a partir del par de
-   * períodos más recientes: el corriente aporta todo (EERR + saldos de cierre) y
-   * el anterior solo los saldos de apertura (*_2) para promediar rotaciones. El
-   * helper (algoritmo Altman) queda intacto: se le entrega el formato *_1 / *_2.
+   * Adapta el par de períodos de Prisma al shape que espera toIndicatorFigures
+   * (cifras planas). El cálculo vive en utils/extracted-periods para que el
+   * portal admin lo corra idéntico sin persistir nada.
    */
   private toIndicatorFigures(
     current: Prisma.FinancialStatementPeriodUncheckedCreateInput,
     prior: Prisma.FinancialStatementPeriodUncheckedCreateInput | undefined,
-  ): FinancialStatementRawFigures {
-    const num = (v: unknown): number | null | undefined =>
-      v as number | null | undefined;
-    return {
-      totalCurrentAssets: num(current.totalCurrentAssets),
-      totalCurrentLiabilities: num(current.totalCurrentLiabilities),
-      totalAssets: num(current.totalAssets),
-      retainedEarnings: num(current.retainedEarnings),
-      grossProfit: num(current.grossProfit),
-      administrativeExpenses: num(current.administrativeExpenses),
-      sellingExpenses: num(current.sellingExpenses),
-      equity: num(current.equity),
-      totalLiabilities: num(current.totalLiabilities),
-      ordinaryActivityRevenue: num(current.ordinaryActivityRevenue),
-      costOfSales: num(current.costOfSales),
-      depreciation: num(current.depreciation),
-      amortization: num(current.amortization),
-      shortTermFinancialLiabilities: num(current.shortTermFinancialLiabilities),
-      longTermFinancialLiabilities: num(current.longTermFinancialLiabilities),
-      financialExpenses: num(current.financialExpenses),
-      netIncome: num(current.netIncome),
-      // Pares para rotaciones: cierre (corriente) + apertura (anterior).
-      accountsReceivable1: num(current.accountsReceivable),
-      accountsReceivable2: num(prior?.accountsReceivable),
-      inventories1: num(current.inventories),
-      inventories2: num(prior?.inventories),
-      suppliers1: num(current.suppliers),
-      suppliers2: num(prior?.suppliers),
-      // Totales del año anterior para ratios de variación/crecimiento.
-      totalAssets2: num(prior?.totalAssets),
-      totalLiabilities2: num(prior?.totalLiabilities),
-      equity2: num(prior?.equity),
-      ordinaryActivityRevenue2: num(prior?.ordinaryActivityRevenue),
+  ) {
+    const flatten = (
+      period: Prisma.FinancialStatementPeriodUncheckedCreateInput,
+    ): PeriodFigures => {
+      const figures: PeriodFigures = {};
+      for (const field of PERIOD_FIGURE_FIELDS) {
+        figures[field] = period[field];
+      }
+      return figures;
     };
+    return toIndicatorFigures(
+      flatten(current),
+      prior ? flatten(prior) : undefined,
+    );
   }
 }

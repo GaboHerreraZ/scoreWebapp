@@ -34,7 +34,12 @@ import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
-import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
+import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
+import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
+import {
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_BYTES,
+} from '../common/constants/upload-limits.js';
 
 @ApiTags('Admin Portal')
 @ApiBearerAuth()
@@ -44,6 +49,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly scoringService: ScoringService,
+    private readonly pdfExtractionTestService: PdfExtractionTestService,
   ) {}
 
   @Get('platform-admins')
@@ -293,6 +299,64 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Reset no encontrado' })
   getCreditStudyReset(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.getCreditStudyReset(id);
+  }
+
+  // ── Banco de pruebas de la extracción de PDF ───────────────────────────────
+
+  @Post('pdf-extraction-test')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_PDF_UPLOAD_BYTES } }),
+  )
+  @ApiOperation({
+    summary:
+      'Probar la extracción IA de un PDF de estados financieros SIN guardar nada',
+    description:
+      'Corre la misma cadena del flujo real (extracción IA → normalización de períodos → indicadores y ratios) pero no persiste nada: ni la corrida de IA, ni el PDF, ni períodos, ni análisis, y no consume bolsa de ningún cliente. Devuelve los períodos leídos (uno por año, más reciente primero), los indicadores y ratios calculados sobre los dos períodos más recientes, las red flags de fiabilidad y el consumo de la corrida (tokens y costo estimado).',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'PDF con los estados financieros',
+        },
+        incomeStatementId: { type: 'number', example: 1 },
+        fiscalYear: { type: 'number', example: 2024 },
+        includeRaw: { type: 'boolean', example: false },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'period, periods, indicators, ratios, reliabilityFlags, usage',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Archivo inválido o extracción fallida',
+  })
+  testPdfExtraction(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: TestExtractPdfDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException('El archivo PDF es requerido');
+    }
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('Solo se aceptan archivos en formato PDF');
+    }
+    // El mimetype lo declara el cliente según la extensión (un .jpg renombrado
+    // a .pdf lo pasa); los bytes mágicos del contenido no se pueden falsear así.
+    if (!file.buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+      throw new BadRequestException(
+        'El archivo no es un PDF válido. Verifica que no sea una imagen u otro documento renombrado a .pdf',
+      );
+    }
+
+    return this.pdfExtractionTestService.testExtraction(file.buffer, dto);
   }
 
   // ── Catálogo de dimensiones de scoring (scoring_dimensions) ────────────────
