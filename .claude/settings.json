@@ -171,7 +171,8 @@
       "Read(//c/Users/User/AppData/Local/Temp/claude/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/8927c9e0-6d97-410f-8605-1102a6e74e38/scratchpad/simsigns/**)",
       "Bash(grep -v \"^$\")",
       "Bash(grep -cv \"^$\")",
-      "Bash(grep -v \"\\\\.ts$\")"
+      "Bash(grep -v \"\\\\.ts$\")",
+      "Bash(npx jest *)"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
