@@ -44,6 +44,7 @@ const ALL_SCREENS = [
   'datacredito',
   'discount-calculator',
   'credit-study-resets',
+  'pdf-extraction-test',
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.
