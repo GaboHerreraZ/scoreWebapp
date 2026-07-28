@@ -57,17 +57,41 @@ const PAPER_SIZES = {
  *
  * El HTML debe seguir siendo autocontenido (CSS inline, sin recursos externos):
  * Gotenberg lo recibe como un archivo suelto, no navega a ninguna URL.
+ *
+ * DESPLIEGUE (Railway): el servicio va sin dominio público y se alcanza por la
+ * red privada — GOTENBERG_URL=http://<servicio>.railway.internal:3000 (3000 es
+ * el puerto del contenedor; el 3001 del compose es solo el mapeo local).
+ * NO configurar API_BIND_IP: la red privada alcanza el 0.0.0.0 por defecto, y
+ * los valores IPv6 no sirven en Gotenberg 8.34 — `::` pasa la validación pero
+ * rompe el listen ("too many colons"), y `[::]` la falla ("must be a valid IP").
  */
 @Injectable()
 export class PdfService implements OnModuleInit {
   private readonly logger = new Logger(PdfService.name);
   private readonly baseUrl: string;
+  /** Cabecera Authorization, solo si Gotenberg corre con basic auth. */
+  private readonly authHeader: Record<string, string>;
 
   constructor(private readonly configService: ConfigService) {
     // Sin barra final: se concatena con rutas que ya empiezan con '/'.
     this.baseUrl = (
       this.configService.get<string>('GOTENBERG_URL') ?? ''
     ).replace(/\/+$/, '');
+
+    // Basic auth opcional. Solo hace falta cuando Gotenberg queda expuesto en un
+    // dominio público (no tiene autenticación propia por defecto, así que sin
+    // esto cualquiera podría usarlo para renderizar HTML arbitrario). Con red
+    // privada no se configura y no se envía nada.
+    const user = this.configService.get<string>('GOTENBERG_BASIC_AUTH_USER');
+    const password = this.configService.get<string>(
+      'GOTENBERG_BASIC_AUTH_PASSWORD',
+    );
+    this.authHeader =
+      user && password
+        ? {
+            Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`,
+          }
+        : {};
   }
 
   /**
@@ -83,6 +107,7 @@ export class PdfService implements OnModuleInit {
     }
     try {
       const res = await fetch(`${this.baseUrl}/health`, {
+        headers: this.authHeader,
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
@@ -148,6 +173,7 @@ export class PdfService implements OnModuleInit {
     try {
       res = await fetch(`${this.baseUrl}/forms/chromium/convert/html`, {
         method: 'POST',
+        headers: this.authHeader,
         body: form,
         signal: AbortSignal.timeout(timeoutMs),
       });
