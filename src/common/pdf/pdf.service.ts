@@ -1,101 +1,201 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
-import puppeteer, { type Browser, type PDFOptions } from 'puppeteer';
+import { Injectable, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+
+/** Márgenes de página. Acepta unidades: in, cm, mm, pt, px (o número = pulgadas). */
+export interface PdfMargin {
+  top?: string | number;
+  bottom?: string | number;
+  left?: string | number;
+  right?: string | number;
+}
+
+export interface PdfOptions {
+  /** Tamaño de página. Por defecto A4. */
+  format?: 'A4' | 'Letter';
+  landscape?: boolean;
+  /** Imprime fondos de color/imágenes. Por defecto true (las plantillas los usan). */
+  printBackground?: boolean;
+  scale?: number;
+  margin?: PdfMargin;
+  /**
+   * Encabezado y pie. Se renderizan en un contexto Chromium APARTE: el CSS del
+   * documento principal NO aplica y no se cargan recursos externos, así que
+   * todo el estilo debe ir inline. Soportan `<span class="pageNumber">` y
+   * `<span class="totalPages">`.
+   */
+  headerHtml?: string;
+  footerHtml?: string;
+  /** Espera adicional antes de imprimir (p. ej. '1s'). Normalmente innecesario. */
+  waitDelay?: string;
+  /** Timeout de la petición a Gotenberg. Por defecto 60s. */
+  timeoutMs?: number;
+}
+
+/** Pulgadas por unidad, para normalizar los márgenes (Gotenberg los quiere en pulgadas). */
+const INCHES_PER_UNIT: Record<string, number> = {
+  in: 1,
+  cm: 1 / 2.54,
+  mm: 1 / 25.4,
+  pt: 1 / 72,
+  px: 1 / 96,
+};
+
+/** Dimensiones de página en pulgadas. */
+const PAPER_SIZES = {
+  A4: { width: 8.27, height: 11.7 },
+  Letter: { width: 8.5, height: 11 },
+} as const;
 
 /**
- * Servicio genérico HTML → PDF vía Chromium headless (Puppeteer). Mantiene UN
- * navegador vivo por proceso (singleton) y abre una página nueva por request:
- * lanzar Chromium por cada PDF cuesta ~300-800ms y mucha RAM. Reutilizable por
- * cualquier módulo que necesite renderizar un PDF a partir de HTML autocontenido.
+ * Servicio genérico HTML → PDF. El render lo hace **Gotenberg**, un servicio
+ * aparte que expone Chromium por HTTP; esta API ya no embebe el navegador.
  *
- * El HTML debe traer TODO embebido (CSS inline, sin recursos externos); no se
- * navega a ninguna URL, se inyecta con setContent.
+ * El motivo es de capacidad: cada render abre un Chromium que consume cientos
+ * de MB. Teniéndolo dentro del proceso, un pico de PDFs simultáneos competía
+ * por la memoria con el resto de la API (logins, webhooks, consultas). Ahora el
+ * pico lo absorbe un contenedor dedicado y un fallo de render no tumba la API.
+ *
+ * El HTML debe seguir siendo autocontenido (CSS inline, sin recursos externos):
+ * Gotenberg lo recibe como un archivo suelto, no navega a ninguna URL.
  */
 @Injectable()
-export class PdfService implements OnModuleInit, OnModuleDestroy {
+export class PdfService implements OnModuleInit {
   private readonly logger = new Logger(PdfService.name);
-  private browser: Browser | null = null;
-  /** Evita lanzar dos navegadores si llegan requests concurrentes en frío. */
-  private launching: Promise<Browser> | null = null;
+  private readonly baseUrl: string;
 
+  constructor(private readonly configService: ConfigService) {
+    // Sin barra final: se concatena con rutas que ya empiezan con '/'.
+    this.baseUrl = (
+      this.configService.get<string>('GOTENBERG_URL') ?? ''
+    ).replace(/\/+$/, '');
+  }
+
+  /**
+   * Ping best-effort al arranque: avisa temprano si el servicio no responde,
+   * pero NO bloquea el boot (el resto de la API funciona sin PDFs).
+   */
   async onModuleInit(): Promise<void> {
-    // Arranque perezoso: no bloqueamos el boot esperando a Chromium. Se lanza en
-    // la primera generación (o aquí, best-effort, sin romper si falla).
+    if (!this.baseUrl) {
+      this.logger.warn(
+        'GOTENBERG_URL no está configurada: la generación de PDFs fallará.',
+      );
+      return;
+    }
     try {
-      await this.getBrowser();
+      const res = await fetch(`${this.baseUrl}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        this.logger.log(`Gotenberg disponible en ${this.baseUrl}`);
+      } else {
+        this.logger.warn(`Gotenberg respondió ${res.status} en /health.`);
+      }
     } catch (err) {
       this.logger.warn(
-        `No se pudo pre-lanzar Chromium en el arranque; se reintentará en el primer PDF. ${
+        `No se pudo contactar a Gotenberg en ${this.baseUrl}; se reintentará en el primer PDF. ${
           (err as Error).message
         }`,
       );
     }
   }
 
-  async onModuleDestroy(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close().catch(() => undefined);
-      this.browser = null;
+  /** Renderiza un HTML autocontenido a un Buffer PDF. */
+  async htmlToPdf(html: string, options: PdfOptions = {}): Promise<Buffer> {
+    if (!this.baseUrl) {
+      throw new InternalServerErrorException(
+        'Generación de PDF no disponible: falta configurar GOTENBERG_URL.',
+      );
     }
-  }
 
-  /** Devuelve el navegador vivo, relanzándolo si se cerró/crasheó. */
-  private async getBrowser(): Promise<Browser> {
-    if (this.browser?.connected) return this.browser;
-    if (this.launching) return this.launching;
+    const paper = PAPER_SIZES[options.format ?? 'A4'];
+    const margin = options.margin ?? {};
 
-    this.launching = puppeteer
-      .launch({
-        // 'shell' usa chrome-headless-shell: el binario recortado de Chrome
-        // pensado para page.pdf()/screenshots (~200 MB menos que Chrome
-        // completo en la imagen Docker). Puppeteer lo descarga por defecto
-        // junto a Chrome, así que en dev local funciona sin pasos extra.
-        headless: 'shell',
-        // Flags estándar para correr Chromium en servidores (VPS/contenedores)
-        // sin sandbox de usuario ni /dev/shm amplio.
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
-      })
-      .then((browser) => {
-        this.browser = browser;
-        this.launching = null;
-        this.logger.log('Chromium headless listo para renderizar PDFs.');
-        return browser;
-      })
-      .catch((err) => {
-        this.launching = null;
-        throw err;
+    const form = new FormData();
+    // El archivo principal DEBE llamarse index.html; es como Gotenberg lo identifica.
+    form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
+
+    if (options.headerHtml) {
+      form.append(
+        'files',
+        new Blob([this.asDocument(options.headerHtml)], { type: 'text/html' }),
+        'header.html',
+      );
+    }
+    if (options.footerHtml) {
+      form.append(
+        'files',
+        new Blob([this.asDocument(options.footerHtml)], { type: 'text/html' }),
+        'footer.html',
+      );
+    }
+
+    form.append('paperWidth', String(paper.width));
+    form.append('paperHeight', String(paper.height));
+    form.append('marginTop', this.toInches(margin.top, 0.39));
+    form.append('marginBottom', this.toInches(margin.bottom, 0.39));
+    form.append('marginLeft', this.toInches(margin.left, 0.39));
+    form.append('marginRight', this.toInches(margin.right, 0.39));
+    // Gotenberg trae printBackground en false; las plantillas dependen de los
+    // fondos de color, así que aquí el default es true (como estaba con Puppeteer).
+    form.append('printBackground', String(options.printBackground ?? true));
+    form.append('landscape', String(options.landscape ?? false));
+    if (options.scale !== undefined) form.append('scale', String(options.scale));
+    if (options.waitDelay) form.append('waitDelay', options.waitDelay);
+
+    const timeoutMs = options.timeoutMs ?? 60_000;
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/forms/chromium/convert/html`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(timeoutMs),
       });
+    } catch (err) {
+      const message =
+        (err as Error).name === 'TimeoutError'
+          ? `Gotenberg no respondió en ${timeoutMs} ms.`
+          : `No se pudo contactar a Gotenberg: ${(err as Error).message}`;
+      this.logger.error(message);
+      throw new InternalServerErrorException(
+        'No se pudo generar el PDF. Intenta de nuevo en unos minutos.',
+      );
+    }
 
-    return this.launching;
+    if (!res.ok) {
+      // El cuerpo del error trae el detalle de Chromium (plantilla inválida,
+      // recurso que no carga...). Se loguea completo pero no se expone al cliente.
+      const detail = await res.text().catch(() => '');
+      this.logger.error(
+        `Gotenberg devolvió ${res.status} al renderizar el PDF. ${detail}`,
+      );
+      throw new InternalServerErrorException('No se pudo generar el PDF.');
+    }
+
+    return Buffer.from(await res.arrayBuffer());
   }
 
   /**
-   * Renderiza un HTML autocontenido a un Buffer PDF. `printBackground` va en
-   * true por defecto (obligatorio para los fondos de color de la plantilla).
+   * Gotenberg exige que header.html y footer.html sean documentos HTML
+   * completos; los callers pasan fragmentos, así que se envuelven.
    */
-  async htmlToPdf(html: string, options: PDFOptions = {}): Promise<Buffer> {
-    const browser = await this.getBrowser();
-    const page = await browser.newPage();
-    try {
-      // HTML autocontenido (CSS inline, sin recursos externos): con 'load' basta.
-      await page.setContent(html, { waitUntil: 'load' });
-      const pdf = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        ...options,
-      });
-      return Buffer.from(pdf);
-    } finally {
-      await page.close().catch(() => undefined);
+  private asDocument(fragment: string): string {
+    if (/<html[\s>]/i.test(fragment)) return fragment;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${fragment}</body></html>`;
+  }
+
+  /** Normaliza un margen a pulgadas, que es lo que espera Gotenberg. */
+  private toInches(value: string | number | undefined, fallback: number): string {
+    if (value === undefined) return String(fallback);
+    if (typeof value === 'number') return String(value);
+
+    const match = /^\s*([\d.]+)\s*(in|cm|mm|pt|px)?\s*$/i.exec(value);
+    if (!match) {
+      this.logger.warn(`Margen no reconocido: "${value}". Se usa ${fallback}in.`);
+      return String(fallback);
     }
+    const amount = Number(match[1]);
+    const unit = (match[2] ?? 'in').toLowerCase();
+    return (amount * (INCHES_PER_UNIT[unit] ?? 1)).toFixed(4);
   }
 }

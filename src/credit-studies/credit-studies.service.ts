@@ -401,9 +401,8 @@ export class CreditStudiesService {
     );
     const html = renderReportHtml(viewModel);
     const buffer = await this.pdfService.htmlToPdf(html, {
-      displayHeaderFooter: true,
-      headerTemplate: '<span></span>',
-      footerTemplate: `<div style="width:100%;font-size:8px;color:#9ca3af;padding:0 14mm;text-align:right;">
+      // Sin encabezado: Gotenberg solo lo dibuja si se le envía header.html.
+      footerHtml: `<div style="width:100%;font-size:8px;color:#9ca3af;padding:0 14mm;text-align:right;">
         Página <span class="pageNumber"></span> de <span class="totalPages"></span>
       </div>`,
       margin: { top: '16mm', bottom: '18mm', left: '14mm', right: '14mm' },
