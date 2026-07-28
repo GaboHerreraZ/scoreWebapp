@@ -39,6 +39,25 @@ export interface ExtractPdfResult {
   extractionId: string;
 }
 
+/** Métricas de la corrida IA (modelo, tokens, costo) para el modo de prueba. */
+export interface AiRunUsage {
+  model: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  estimatedCostUsd: number | null;
+  durationMs: number | null;
+}
+
+/** Resultado de la extracción SIN persistir (prueba del portal admin). */
+export interface ExtractPdfDryRunResult {
+  financialData: Record<string, unknown>;
+  reliabilityFlags: ReliabilityFlag[];
+  usage: AiRunUsage;
+  /** Texto crudo que devolvió el modelo, para depurar el prompt. */
+  rawContent: string | null;
+}
+
 /**
  * Forma (parcial) del ScoringResult persistido en CreditStudy.viabilityConditions
  * por performStudy. Solo lo que el prompt IA consume; se lee como JSON.
@@ -316,41 +335,8 @@ export class AiAnalysesService {
 
     // 2. Call Claude AI to extract data from PDF
     try {
-      const aiResult = await this.aiService.extractFromPdf(
-        pdfBuffer,
-        extractionPrompt,
-      );
-
-      const estimatedCostUsd = this.aiService.estimateCostUsd(
-        aiResult.model,
-        aiResult.promptTokens,
-        aiResult.completionTokens,
-      );
-
-      let rawContent = aiResult.content || '{}';
-      // Claude may wrap JSON in ```json ... ``` blocks — strip them
-      const jsonBlockMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonBlockMatch) {
-        rawContent = jsonBlockMatch[1].trim();
-      }
-      const parsed = JSON.parse(rawContent) as ExtractPdfResponse;
-
-      // The prompt returns { financialData, reliabilityFlags }. Fall back to the
-      // old flat shape (financial fields at the top level) for resilience.
-      const financialData: Record<string, unknown> =
-        parsed.financialData ?? (parsed as Record<string, unknown>);
-      const reliabilityFlags: ReliabilityFlag[] = Array.isArray(
-        parsed.reliabilityFlags,
-      )
-        ? parsed.reliabilityFlags
-        : [];
-
-      // Replace null values with 0 (except balanceSheetDate which is a date string)
-      for (const key of Object.keys(financialData)) {
-        if (financialData[key] === null && key !== 'balanceSheetDate') {
-          financialData[key] = 0;
-        }
-      }
+      const { aiResult, financialData, reliabilityFlags, estimatedCostUsd } =
+        await this.runPdfExtraction(pdfBuffer, extractionPrompt);
 
       // 3. Save the extraction record with the PDF file. En el flujo nuevo el
       //    estudio ya existe, así que la fila queda ligada a él de una vez.
@@ -396,6 +382,88 @@ export class AiAnalysesService {
         `La extraccion del PDF fallo: ${errorMessage}`,
       );
     }
+  }
+
+  /**
+   * Corre la MISMA extracción IA sobre un PDF pero SIN persistir nada: ni la
+   * fila de AiAnalysis, ni el PDF, ni períodos. Es la herramienta de prueba del
+   * portal admin (afinar el prompt / verificar cómo lee un documento) y por eso
+   * no exige empresa ni cliente, que en el portal no existen. Devuelve además
+   * las métricas de la corrida (tokens y costo) y el texto crudo del modelo.
+   */
+  async extractPdfDryRun(pdfBuffer: Buffer): Promise<ExtractPdfDryRunResult> {
+    const extractionPrompt = buildFinancialPdfExtractionPrompt(new Date());
+
+    try {
+      const { aiResult, financialData, reliabilityFlags, estimatedCostUsd } =
+        await this.runPdfExtraction(pdfBuffer, extractionPrompt);
+
+      return {
+        financialData,
+        reliabilityFlags,
+        rawContent: aiResult.content,
+        usage: {
+          model: aiResult.model,
+          promptTokens: aiResult.promptTokens,
+          completionTokens: aiResult.completionTokens,
+          totalTokens: aiResult.totalTokens,
+          estimatedCostUsd,
+          durationMs: aiResult.durationMs,
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error('Extraccion de PDF (prueba admin) fallida', error);
+      throw new BadRequestException(
+        `La extraccion del PDF fallo: ${errorMessage}`,
+      );
+    }
+  }
+
+  /**
+   * Llamada a la IA + parseo del JSON de la extracción. Núcleo compartido por el
+   * flujo real (extractPdf, que persiste) y la prueba del portal admin
+   * (extractPdfDryRun): ambos leen el PDF exactamente igual.
+   */
+  private async runPdfExtraction(pdfBuffer: Buffer, extractionPrompt: string) {
+    const aiResult = await this.aiService.extractFromPdf(
+      pdfBuffer,
+      extractionPrompt,
+    );
+
+    const estimatedCostUsd = this.aiService.estimateCostUsd(
+      aiResult.model,
+      aiResult.promptTokens,
+      aiResult.completionTokens,
+    );
+
+    let rawContent = aiResult.content || '{}';
+    // Claude may wrap JSON in ```json ... ``` blocks — strip them
+    const jsonBlockMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonBlockMatch) {
+      rawContent = jsonBlockMatch[1].trim();
+    }
+    const parsed = JSON.parse(rawContent) as ExtractPdfResponse;
+
+    // The prompt returns { financialData, reliabilityFlags }. Fall back to the
+    // old flat shape (financial fields at the top level) for resilience.
+    const financialData: Record<string, unknown> =
+      parsed.financialData ?? (parsed as Record<string, unknown>);
+    const reliabilityFlags: ReliabilityFlag[] = Array.isArray(
+      parsed.reliabilityFlags,
+    )
+      ? parsed.reliabilityFlags
+      : [];
+
+    // Replace null values with 0 (except balanceSheetDate which is a date string)
+    for (const key of Object.keys(financialData)) {
+      if (financialData[key] === null && key !== 'balanceSheetDate') {
+        financialData[key] = 0;
+      }
+    }
+
+    return { aiResult, financialData, reliabilityFlags, estimatedCostUsd };
   }
 
   async getPdf(id: string, companyId: string) {
