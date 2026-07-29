@@ -469,7 +469,19 @@ Mapeo de campos (cada objeto de "periods") con terminologia contable colombiana:
 - sellingExpenses = Gastos de ventas / distribucion
 - depreciation = Depreciacion
 - amortization = Amortizacion
-- financialExpenses = Gastos financieros
+- financialExpenses = SOLO los INTERESES de los gastos financieros (intereses de
+  creditos y obligaciones financieras / costo financiero de la deuda). Este campo
+  alimenta el SERVICIO DE DEUDA del analisis, asi que NO incluyas gastos
+  bancarios, comisiones, gravamen a los movimientos financieros (GMF / 4x1000),
+  diferencia en cambio ni partidas diversas. Busca el DESGLOSE en la nota de
+  gastos financieros y suma unicamente las partidas de intereses (p. ej.
+  "intereses", "intereses de creditos", "costos de financiacion"). Reglas:
+  - Nota desglosada SIN partidas de intereses -> financialExpenses: 0.
+  - El ERI trae el total pero NO hay desglose en las notas (imposible separar
+    los intereses) -> usa el TOTAL como aproximacion y deja constancia con una
+    reliabilityFlag severity "info", category "notas", indicando que el rubro no
+    estaba desglosado y se tomo el total de gastos financieros.
+  - No aparece el rubro en el documento -> null.
 - taxes = Impuesto a las ganancias / Impuesto de renta
 
 GUIA PARA DETECTAR RED FLAGS (no es exhaustiva; usa tu criterio profesional):
