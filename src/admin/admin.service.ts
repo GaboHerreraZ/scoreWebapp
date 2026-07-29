@@ -45,6 +45,7 @@ const ALL_SCREENS = [
   'discount-calculator',
   'credit-study-resets',
   'pdf-extraction-test',
+  'datacredito-connection',
 ] as const;
 
 // Bucket de Supabase Storage para las fotos de los usuarios del portal.
@@ -56,6 +57,7 @@ const BASE_SCREENS = [
   'payment-alerts',
   'contact-requests',
   'support-tickets',
+  'pdf-extraction-test',
 ];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
