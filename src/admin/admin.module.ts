@@ -3,6 +3,7 @@ import { AdminController } from './admin.controller.js';
 import { AuthMeController } from './auth-me.controller.js';
 import { AdminService } from './admin.service.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
+import { PdfExtractionTestRepository } from './pdf-extraction-test.repository.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { ParametersModule } from '../parameters/parameters.module.js';
 import { AnalysisPacksModule } from '../analysis-packs/analysis-packs.module.js';
@@ -18,6 +19,10 @@ import { AiAnalysesModule } from '../ai-analyses/ai-analyses.module.js';
     AiAnalysesModule,
   ],
   controllers: [AdminController, AuthMeController],
-  providers: [AdminService, PdfExtractionTestService],
+  providers: [
+    AdminService,
+    PdfExtractionTestService,
+    PdfExtractionTestRepository,
+  ],
 })
 export class AdminModule {}

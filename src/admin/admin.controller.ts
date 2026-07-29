@@ -35,6 +35,7 @@ import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
+import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
 import {
   MAX_IMAGE_UPLOAD_BYTES,
@@ -332,7 +333,8 @@ export class AdminController {
   })
   @ApiResponse({
     status: 201,
-    description: 'period, periods, indicators, ratios, reliabilityFlags, usage',
+    description:
+      'id, fileName, createdAt, period, periods, indicators, ratios, reliabilityFlags, usage',
   })
   @ApiResponse({
     status: 400,
@@ -341,6 +343,7 @@ export class AdminController {
   testPdfExtraction(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: TestExtractPdfDto,
+    @Req() req: Request,
   ) {
     if (!file) {
       throw new BadRequestException('El archivo PDF es requerido');
@@ -356,7 +359,42 @@ export class AdminController {
       );
     }
 
-    return this.pdfExtractionTestService.testExtraction(file.buffer, dto);
+    const adminUserId = (req as any).user.id as string;
+    return this.pdfExtractionTestService.testExtraction(file, dto, adminUserId);
+  }
+
+  @Get('pdf-extraction-tests')
+  @ApiOperation({
+    summary:
+      'Listar las corridas archivadas del banco de pruebas, de la más reciente a la más antigua',
+    description:
+      'Fila liviana para elegir cuál abrir: archivo, contexto, modelo, consumo y conteos. No incluye el JSON de la corrida ni el texto crudo (esos van en el detalle). ?search filtra por nombre del PDF.',
+  })
+  @ApiResponse({ status: 200, description: 'data + meta (paginado)' })
+  listPdfExtractionTests(@Query() filters: FilterPdfExtractionTestDto) {
+    return this.pdfExtractionTestService.findAll(filters);
+  }
+
+  @Get('pdf-extraction-tests/:id')
+  @ApiOperation({
+    summary: 'Detalle de una corrida archivada (sin re-procesar el PDF)',
+    description:
+      'Devuelve el response completo tal cual se generó el día de la corrida (period, periods, indicators, ratios, reliabilityFlags, usage) más el texto crudo del modelo.',
+  })
+  @ApiResponse({ status: 200, description: 'Corrida archivada completa' })
+  @ApiResponse({ status: 404, description: 'Corrida no encontrada' })
+  getPdfExtractionTest(@Param('id', ParseUUIDPipe) id: string) {
+    return this.pdfExtractionTestService.findById(id);
+  }
+
+  @Delete('pdf-extraction-tests/:id')
+  @ApiOperation({
+    summary: 'Borrar una corrida archivada (limpieza del banco de pruebas)',
+  })
+  @ApiResponse({ status: 200, description: 'Corrida borrada' })
+  @ApiResponse({ status: 404, description: 'Corrida no encontrada' })
+  deletePdfExtractionTest(@Param('id', ParseUUIDPipe) id: string) {
+    return this.pdfExtractionTestService.remove(id);
   }
 
   // ── Catálogo de dimensiones de scoring (scoring_dimensions) ────────────────

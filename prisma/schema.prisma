@@ -915,6 +915,52 @@ model AiAnalysis {
   @@map("ai_analyses")
 }
 
+// ─── Banco de pruebas de extracción de PDF (portal admin) ───
+
+/// Archivo de las corridas del endpoint /admin/pdf-extraction-test. Esa prueba
+/// NO persiste nada del flujo real (no crea AiAnalysis, ni períodos, ni
+/// análisis); esta tabla guarda solo el RESULTADO para poder volver a mirarlo
+/// por nombre de archivo sin re-subir el PDF ni pagar otra corrida de IA.
+/// El PDF en sí no se almacena: la llave de consulta es el nombre del archivo.
+model PdfExtractionTest {
+  id            String @id @default(uuid()) @db.Uuid
+  fileName      String @map("file_name") @db.VarChar(255)
+  fileSizeBytes Int?   @map("file_size_bytes")
+
+  // Contexto que aportó quien corrió la prueba (mismo del flujo real).
+  incomeStatementId Int? @map("income_statement_id")
+  fiscalYear        Int? @map("fiscal_year")
+
+  // Response COMPLETO del endpoint (period, periods, indicators, ratios,
+  // reliabilityFlags, usage) tal cual se devolvió. Fuente de verdad de la
+  // corrida archivada; el detalle lo sirve sin transformar.
+  response Json @db.JsonB
+
+  // Texto crudo que devolvió el modelo (para depurar el prompt). Aparte del
+  // JSON porque es pesado y solo se mira en el detalle.
+  rawContent String? @map("raw_content") @db.Text
+
+  // Métricas desnormalizadas del response: permiten listar, filtrar y sumar
+  // costos sin abrir el JSONB.
+  model            String @db.VarChar(100)
+  promptTokens     Int?   @map("prompt_tokens")
+  completionTokens Int?   @map("completion_tokens")
+  totalTokens      Int?   @map("total_tokens")
+  estimatedCostUsd Float? @map("estimated_cost_usd")
+  durationMs       Int?   @map("duration_ms")
+  periodsCount     Int    @map("periods_count")
+  flagsCount       Int    @map("flags_count")
+
+  // Usuario del portal admin que corrió la prueba (PlatformAdmin.userId), misma
+  // convención que CreditStudyReset.resetBy: sin FK, se resuelve al listar.
+  performedBy String   @map("performed_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([fileName]) // buscar todas las corridas de un mismo documento
+  @@index([createdAt]) // listado del más reciente al más antiguo
+  @@map("pdf_extraction_tests")
+}
+
 // ─── Invitaciones a colaborar en empresa ────────────────────
 
 model Invitation {
