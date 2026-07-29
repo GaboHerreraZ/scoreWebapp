@@ -165,6 +165,19 @@ misma medida juzga también el tamaño del monto pedido — ver 4.4.)
 deudas financieras de corto plazo y los gastos financieros (su "servicio de
 deuda" actual), y el cupo + plazo solicitados.
 
+> **`financialExpenses` = solo INTERESES (2026-07-26).** En los ERI colombianos
+> el rubro "Gastos financieros" suele mezclar gastos bancarios, comisiones, GMF
+> (4×1000) y diversos con los intereses de la deuda. Para el servicio de deuda
+> solo pesan los **intereses** (costo de financiación de obligaciones), así que
+> la extracción del PDF toma únicamente las partidas de intereses del desglose
+> de la nota. Caso real que lo motivó: una nota de gastos financieros de
+> $1.026.178 compuesta 100% por gastos bancarios/gravamen/comisiones — cero
+> intereses → `financialExpenses: 0`. Reglas del prompt: nota desglosada sin
+> intereses → `0`; total sin desglose en notas → se usa el total como
+> aproximación + reliabilityFlag `info` (categoría `notas`) dejando constancia;
+> rubro ausente → `null`. Los EEFF de DataCrédito no traen este rubro (el campo
+> va `null` en esa fuente, servicio de deuda = solo obligaciones CP).
+
 **Cómo se calcula, paso a paso:**
 
 1. **EBITDA** — la utilidad que deja la operación pura del negocio: ingresos −
