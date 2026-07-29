@@ -16,6 +16,6 @@ import { CustomerAuthorizationsModule } from '../customer-authorizations/custome
     ExperianProvider,
     { provide: CREDIT_BUREAU_PROVIDER, useClass: ExperianProvider },
   ],
-  exports: [CreditBureauService],
+  exports: [CreditBureauService, ExperianClient],
 })
 export class CreditBureauModule {}

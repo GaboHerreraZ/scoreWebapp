@@ -9,6 +9,7 @@ import { ParametersModule } from '../parameters/parameters.module.js';
 import { AnalysisPacksModule } from '../analysis-packs/analysis-packs.module.js';
 import { ScoringModule } from '../scoring/scoring.module.js';
 import { AiAnalysesModule } from '../ai-analyses/ai-analyses.module.js';
+import { CreditBureauModule } from '../credit-bureau/credit-bureau.module.js';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AiAnalysesModule } from '../ai-analyses/ai-analyses.module.js';
     AnalysisPacksModule,
     ScoringModule,
     AiAnalysesModule,
+    CreditBureauModule,
   ],
   controllers: [AdminController, AuthMeController],
   providers: [

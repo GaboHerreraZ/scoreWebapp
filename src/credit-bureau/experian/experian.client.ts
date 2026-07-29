@@ -25,6 +25,23 @@ export interface ExperianQueryResult {
   raw: unknown;
 }
 
+export interface ExperianConnectionCheck {
+  ok: boolean;
+  baseUrl: string;
+  username: string;
+  httpStatus: number | null;
+  durationMs: number;
+  token: {
+    preview: string;
+    length: number;
+    type: string | null;
+    issuedAt: string | null;
+    expiresIn: string | null;
+  } | null;
+  error: string | null;
+  message: string;
+}
+
 @Injectable()
 export class ExperianClient {
   private readonly logger = new Logger(ExperianClient.name);
@@ -130,6 +147,129 @@ export class ExperianClient {
       );
     }
     return data.access_token;
+  }
+
+  /**
+   * Verifica la conexión con DataCrédito pidiendo un token con las credenciales
+   * YA CONFIGURADAS (EXPERIAN_*) del entorno en que corre la app. Es la prueba
+   * de que la IP de salida está autorizada: la central corta por IP antes de
+   * mirar el usuario, así que un token devuelto implica IP habilitada.
+   *
+   * A diferencia de getToken, NO lanza: devuelve el diagnóstico (incluido el
+   * cuerpo del error de la central, que es lo que distingue "IP no autorizada"
+   * de "credenciales inválidas").
+   *
+   * @param personType 'pj' usa el usuario de persona jurídica; por defecto el de
+   *                   persona natural. La autorización de IP es la misma para
+   *                   ambos; sirve para validar cada cuenta por separado.
+   */
+  async checkConnection(
+    personType: 'pn' | 'pj' = 'pn',
+  ): Promise<ExperianConnectionCheck> {
+    const { username, password } = this.resolveCredentials(
+      personType === 'pj' ? '2' : '1',
+    );
+
+    const base = {
+      baseUrl: this.baseUrl,
+      username,
+    };
+
+    if (!this.baseUrl || !this.clientId || !this.clientSecret || !username) {
+      return {
+        ...base,
+        ok: false,
+        httpStatus: null,
+        durationMs: 0,
+        token: null,
+        error: null,
+        message:
+          'Faltan variables de entorno de DataCrédito (EXPERIAN_BASE_URL / CLIENT_ID / CLIENT_SECRET / USERNAME). No se intentó la conexión.',
+      };
+    }
+
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/spla/oauth2/v1/token`, {
+        method: 'POST',
+        headers: {
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+    } catch (err) {
+      const detail = (err as Error).message;
+      this.logger.error(`Chequeo de conexión con DataCrédito falló: ${detail}`);
+      return {
+        ...base,
+        ok: false,
+        httpStatus: null,
+        durationMs: Date.now() - startedAt,
+        token: null,
+        error: detail,
+        message:
+          'No hubo respuesta de DataCrédito (fallo de red, DNS o bloqueo de salida). Ni siquiera se llegó a la validación de IP.',
+      };
+    }
+
+    const durationMs = Date.now() - startedAt;
+
+    if (!response.ok) {
+      const detail = await this.safeText(response);
+      this.logger.warn(
+        `Chequeo de conexión con DataCrédito: HTTP ${response.status}`,
+      );
+      return {
+        ...base,
+        ok: false,
+        httpStatus: response.status,
+        durationMs,
+        token: null,
+        error: detail || null,
+        message:
+          response.status === 401 || response.status === 403
+            ? `DataCrédito rechazó la autenticación (HTTP ${response.status}). Suele ser IP no autorizada o credenciales inválidas: revisa el detalle en "error".`
+            : `DataCrédito respondió HTTP ${response.status} al pedir el token.`,
+      };
+    }
+
+    const data = (await this.safeJson(
+      response,
+    )) as ExperianTokenResponse | null;
+    const accessToken = data?.access_token;
+    if (!accessToken) {
+      return {
+        ...base,
+        ok: false,
+        httpStatus: response.status,
+        durationMs,
+        token: null,
+        error: null,
+        message:
+          'DataCrédito respondió 200 pero sin access_token en el cuerpo. Respuesta inesperada.',
+      };
+    }
+
+    return {
+      ...base,
+      ok: true,
+      httpStatus: response.status,
+      durationMs,
+      token: {
+        // Solo un prefijo: el token es una credencial viva, no se expone entero.
+        preview: `${accessToken.slice(0, 12)}…`,
+        length: accessToken.length,
+        type: data?.token_type ?? null,
+        issuedAt: data?.issued_at ?? null,
+        expiresIn: data?.expires_in ?? null,
+      },
+      error: null,
+      message:
+        'Conexión OK: DataCrédito devolvió un token, así que la IP de salida está autorizada y las credenciales son válidas.',
+    };
   }
 
   async queryMiDecisor(

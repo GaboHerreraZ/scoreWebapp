@@ -24,6 +24,7 @@ import {
   ApiResponse,
   ApiConsumes,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
 import { AdminService } from './admin.service.js';
@@ -37,6 +38,7 @@ import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
+import { ExperianClient } from '../credit-bureau/experian/experian.client.js';
 import {
   MAX_IMAGE_UPLOAD_BYTES,
   MAX_PDF_UPLOAD_BYTES,
@@ -51,7 +53,33 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly scoringService: ScoringService,
     private readonly pdfExtractionTestService: PdfExtractionTestService,
+    private readonly experianClient: ExperianClient,
   ) {}
+
+  @Get('datacredito/connection-check')
+  @ApiOperation({
+    summary:
+      'Verificar la conexión con DataCrédito (prueba de que la IP de salida está autorizada)',
+    description:
+      'Pide un token al endpoint de autenticación de DataCrédito con las credenciales configuradas del entorno (EXPERIAN_*). Si devuelve token, la IP está habilitada y las credenciales sirven. NO consulta a ningún cliente ni consume bolsa. Siempre responde 200: el fallo viaja en ok=false con el detalle de la central, que es lo que distingue "IP no autorizada" de "credenciales inválidas".',
+  })
+  @ApiQuery({
+    name: 'personType',
+    required: false,
+    enum: ['pn', 'pj'],
+    description:
+      'Cuenta a probar: pn (persona natural, por defecto) o pj (persona jurídica). La autorización de IP es la misma; sirve para validar cada usuario.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'ok, baseUrl, username, httpStatus, durationMs, token, message',
+  })
+  checkDatacreditoConnection(@Query('personType') personType?: string) {
+    return this.experianClient.checkConnection(
+      personType === 'pj' ? 'pj' : 'pn',
+    );
+  }
 
   @Get('platform-admins')
   @ApiOperation({
