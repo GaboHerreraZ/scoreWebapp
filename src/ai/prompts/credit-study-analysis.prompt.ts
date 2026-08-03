@@ -392,6 +392,43 @@ si mismo, asi que:
 - Al verificar coherencias aritmeticas (p. ej. utilidad bruta = ingresos - costo de
   ventas) usa esta convencion: los costos/gastos positivos SE RESTAN.
 
+AGREGADO DEL BALANCE vs. DETALLE DE LA NOTA (CRITICO — NO CONFUNDIR EL TOTAL CON LA PARTIDA):
+El balance presenta renglones AGREGADOS que agrupan varios conceptos, y la nota
+correspondiente los DESGLOSA. Varios campos de este JSON piden UNA partida especifica,
+no el agregado que la contiene. Cuando exista la nota, la cifra sale del DESGLOSE.
+- Campos que piden UNA partida especifica del desglose (NUNCA el total del renglon):
+  accountsReceivable, suppliers, shortTermFinancialLiabilities,
+  longTermFinancialLiabilities, inventories, cashAndEquivalents.
+- Campos que SI son totales/subtotales y se toman del balance:
+  totalCurrentAssets, totalNonCurrentAssets, totalAssets, totalCurrentLiabilities,
+  totalNonCurrentLiabilities, totalLiabilities, equity.
+- Procedimiento: para cada campo del primer grupo, BUSCA la nota referenciada por ese
+  renglon del balance y toma SOLO la linea que corresponde al concepto pedido. Si la
+  nota no existe o no desglosa ese concepto, usa el renglon del balance y deja
+  constancia con una reliabilityFlag severity "info", category "notas", indicando que
+  el rubro no estaba desglosado y se tomo el agregado.
+- Senal de que te equivocaste: si el valor que pusiste coincide EXACTAMENTE con el
+  "Total" de la nota, con la suma del renglon del balance, o si al sumar las demas
+  partidas del desglose te pasas del total. Revisalo antes de responder.
+- Ejemplo real (nota "Cuentas por pagar comerciales y otras cuentas por pagar"):
+  Proveedores 3.658.483 | Retencion en la fuente 32.554 | Retencion industria y
+  comercio 905 | Retenciones y aportes de nomina 68.457 | Costos y gastos por pagar 40
+  | Total 3.760.439.
+  CORRECTO -> "suppliers": 3658483 (la linea Proveedores).
+  INCORRECTO -> "suppliers": 3760439 (ese es el Total del renglon, incluye retenciones
+  y nomina, que NO son deuda con proveedores).
+- Ejemplo real (nota "Cuentas por cobrar comerciales y otras cuentas por cobrar, neto"):
+  Clientes 2.038.874 | Menos: provision por deterioro (83.870) | Clientes neto
+  1.955.004 | Anticipo de impuestos y contribuciones 371.286 | Prestamos a terceros
+  2.009.635 | Deudores varios 1.583.612 | Total 5.919.537.
+  CORRECTO -> "accountsReceivable": 1955004 (la linea "Clientes neto": cartera
+  comercial ya descontado el deterioro).
+  INCORRECTO -> "accountsReceivable": 5919537 (ese es el Total; los prestamos a
+  terceros y el anticipo de impuestos NO son cartera de clientes y NO rotan contra
+  los ingresos).
+  INCORRECTO -> "accountsReceivable": 2038874 (ese es el bruto, sin descontar la
+  provision por deterioro).
+
 FORMATO DE RESPUESTA (JSON con dos secciones):
 
 {
@@ -447,14 +484,30 @@ Mapeo de campos (cada objeto de "periods") con terminologia contable colombiana:
   la columna (31/12/2025 -> 2025). OBLIGATORIO en cada periodo.
 - balanceSheetDate = fecha de corte del balance de ESE periodo (YYYY-MM-DD, p.ej. 2025-12-31).
 - cashAndEquivalents = Efectivo y equivalentes de efectivo
-- accountsReceivable = Deudores comerciales / Cuentas por cobrar
+- accountsReceivable = SOLO la cartera COMERCIAL: la linea "Clientes" / "Deudores
+  comerciales" NETA de su provision por deterioro (si la nota muestra "Clientes" y
+  "Menos: provision por deterioro", usa el "Clientes neto"). Alimenta la ROTACION DE
+  CARTERA (dias de recaudo) contra los ingresos, asi que NO puede incluir anticipos de
+  impuestos, prestamos a terceros, cuentas por cobrar a socios o vinculados, deudores
+  varios ni el "Total" del renglon "Cuentas por cobrar comerciales y otras cuentas por
+  cobrar" del balance. Ve al desglose de la nota. Si la nota no separa la cartera
+  comercial, usa el agregado y emite la reliabilityFlag "info"/"notas" descrita arriba.
 - inventories = Inventarios
 - totalCurrentAssets = Total activos corrientes
 - fixedAssetsProperty = Propiedades, planta y equipo
 - totalNonCurrentAssets = Total activos no corrientes
 - totalAssets = Total activos (activo corriente + no corriente)
 - shortTermFinancialLiabilities = Obligaciones financieras a corto plazo
-- suppliers = Proveedores / Cuentas por pagar comerciales
+- suppliers = SOLO la linea "Proveedores" (o "Cuentas por pagar a proveedores" /
+  "Proveedores nacionales y del exterior"): la deuda con proveedores de bienes y
+  servicios. Este campo alimenta la ROTACION DE PROVEEDORES (dias de pago), asi que
+  NO puede incluir retenciones (en la fuente, ICA, IVA), aportes y retenciones de
+  nomina, acreedores varios, costos y gastos por pagar, dividendos por pagar ni
+  anticipos de clientes. NUNCA uses el renglon agregado "Cuentas por pagar
+  comerciales y otras cuentas por pagar" del balance ni el "Total" de esa nota: ve al
+  desglose de la nota y toma unicamente la linea de proveedores. Si la nota no
+  desglosa proveedores por separado, usa el agregado y emite la reliabilityFlag
+  "info"/"notas" descrita arriba.
 - totalCurrentLiabilities = Total pasivos corrientes
 - longTermFinancialLiabilities = Obligaciones financieras a largo plazo
 - totalNonCurrentLiabilities = Total pasivos no corrientes
