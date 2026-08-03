@@ -148,9 +148,14 @@ export function normalizeExtractedPeriod(
 
 /**
  * Arma las cifras que consume computeFinancialIndicators a partir del par de
- * períodos más recientes: el corriente aporta todo (EERR + saldos de cierre) y
- * el anterior solo los saldos de apertura (*_2) para promediar rotaciones. El
- * helper (algoritmo Altman) queda intacto: se le entrega el formato *_1 / *_2.
+ * períodos más recientes. El corriente aporta todo el EERR y los saldos de
+ * cierre; del anterior solo se toman los saldos de apertura.
+ *
+ * Numeración de los pares (igual que el modelo financiero original): *_1 es el
+ * año MÁS ANTIGUO (apertura) y *_2 el MÁS RECIENTE (cierre). Con unos EEFF
+ * 2024–2025: suppliers1 = 2024, suppliers2 = 2025. Las cifras del año anterior
+ * que usan los ratios de variación van con sufijo "Prior", no con "2", para que
+ * no se confunda con el 2 = más reciente de los pares.
  */
 export function toIndicatorFigures(
   current: PeriodFigures,
@@ -174,17 +179,18 @@ export function toIndicatorFigures(
     longTermFinancialLiabilities: current.longTermFinancialLiabilities,
     financialExpenses: current.financialExpenses,
     netIncome: current.netIncome,
-    // Pares para rotaciones: cierre (corriente) + apertura (anterior).
-    accountsReceivable1: current.accountsReceivable,
-    accountsReceivable2: prior?.accountsReceivable,
-    inventories1: current.inventories,
-    inventories2: prior?.inventories,
-    suppliers1: current.suppliers,
-    suppliers2: prior?.suppliers,
+    // Pares para rotaciones: *_1 = apertura (año antiguo), *_2 = cierre (año
+    // reciente). El delta de inventario de las compras depende de este orden.
+    accountsReceivable1: prior?.accountsReceivable,
+    accountsReceivable2: current.accountsReceivable,
+    inventories1: prior?.inventories,
+    inventories2: current.inventories,
+    suppliers1: prior?.suppliers,
+    suppliers2: current.suppliers,
     // Totales del año anterior para ratios de variación/crecimiento.
-    totalAssets2: prior?.totalAssets,
-    totalLiabilities2: prior?.totalLiabilities,
-    equity2: prior?.equity,
-    ordinaryActivityRevenue2: prior?.ordinaryActivityRevenue,
+    totalAssetsPrior: prior?.totalAssets,
+    totalLiabilitiesPrior: prior?.totalLiabilities,
+    equityPrior: prior?.equity,
+    ordinaryActivityRevenuePrior: prior?.ordinaryActivityRevenue,
   };
 }
