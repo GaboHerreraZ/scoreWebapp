@@ -22,6 +22,18 @@ export interface FinancialStatementRawFigures {
   longTermFinancialLiabilities?: number | null;
   financialExpenses?: number | null;
   netIncome?: number | null;
+  // ── Pares de saldos de los dos cierres ─────────────────────────
+  // CONVENCIÓN: *_1 = año MÁS ANTIGUO (saldo de APERTURA del período),
+  //             *_2 = año MÁS RECIENTE (saldo de CIERRE, el mismo año al que
+  //                   pertenecen las cifras sin sufijo).
+  // Ejemplo con unos EEFF 2024–2025: inventories1 = 2024, inventories2 = 2025.
+  // Es la misma numeración "Año 1 / Año 2" del modelo financiero original.
+  //
+  // Las rotaciones promedian el par (ahí el orden da igual), pero hay dos
+  // lugares donde SÍ importa y que hay que revisar si esto se toca:
+  //   · el delta de inventario de las compras: final − inicial =
+  //     inventories2 − inventories1;
+  //   · acidTest, que resta el inventario del año CORRIENTE (inventories2).
   accountsReceivable1?: number | null;
   accountsReceivable2?: number | null;
   inventories1?: number | null;
@@ -31,10 +43,13 @@ export interface FinancialStatementRawFigures {
 
   // ── Cifras del año ANTERIOR para ratios de variación/crecimiento ──
   // (los 11 indicadores del núcleo no las usan; sí los ratios de presentación).
-  totalAssets2?: number | null;
-  totalLiabilities2?: number | null;
-  equity2?: number | null;
-  ordinaryActivityRevenue2?: number | null;
+  // Van con sufijo "Prior" y NO con "2": bajo la convención de arriba el 2 es el
+  // año más reciente, así que un totalAssets2 que significara "anterior" sería
+  // justo la trampa que causó el error del delta de inventario.
+  totalAssetsPrior?: number | null;
+  totalLiabilitiesPrior?: number | null;
+  equityPrior?: number | null;
+  ordinaryActivityRevenuePrior?: number | null;
 }
 
 /**
@@ -155,14 +170,29 @@ export function computeFinancialIndicators(
       365,
   );
 
+  // Saldo promedio de proveedores (apertura + cierre). El orden no importa: es
+  // un promedio.
   const accountsPayableTurnover1 =
     ((figures.suppliers1 ?? 0) + (figures.suppliers2 ?? 0)) / 2;
+
+  // Variación del inventario del período: FINAL (año reciente, *_2) menos
+  // INICIAL (año antiguo, *_1). Si falta cualquiera de los dos extremos no hay
+  // delta que aplicar (p. ej. unos EEFF de un solo período, o una empresa de
+  // servicios sin inventarios): se deja en 0 en vez de tomar el saldo suelto
+  // como si fuera la variación completa.
+  const inventoryDelta =
+    figures.inventories1 == null || figures.inventories2 == null
+      ? 0
+      : figures.inventories2 - figures.inventories1;
+
+  // Compras del período = CMV + variación de inventario, más los gastos de
+  // admin y ventas (este modelo mide el pago a proveedores de bienes Y
+  // servicios, no solo de mercancía).
   const accountsPayableTurnover2 =
     (figures.costOfSales ?? 0) +
-    (figures.inventories2 ?? 0) +
+    inventoryDelta +
     (figures.administrativeExpenses ?? 0) +
-    (figures.sellingExpenses ?? 0) -
-    (figures.inventories1 ?? 0);
+    (figures.sellingExpenses ?? 0);
 
   const accountsPayableTurnover =
     accountsPayableTurnover1 / accountsPayableTurnover2;
@@ -230,7 +260,9 @@ function computeRatios(
   const equity = figures.equity ?? 0;
   const currentAssets = figures.totalCurrentAssets ?? 0;
   const currentLiabilities = figures.totalCurrentLiabilities ?? 0;
-  const inventories = figures.inventories1 ?? 0;
+  // Inventario del año CORRIENTE (*_2): la prueba ácida lo resta del activo
+  // corriente, que también es del año corriente.
+  const inventories = figures.inventories2 ?? 0;
   const financialDebt =
     (figures.shortTermFinancialLiabilities ?? 0) +
     (figures.longTermFinancialLiabilities ?? 0);
@@ -246,13 +278,13 @@ function computeRatios(
 
   return {
     workingCapital: currentAssets - currentLiabilities,
-    assetsVariation: variation(totalAssets, figures.totalAssets2),
+    assetsVariation: variation(totalAssets, figures.totalAssetsPrior),
     liabilitiesVariation: variation(
       totalLiabilities,
-      figures.totalLiabilities2,
+      figures.totalLiabilitiesPrior,
     ),
-    equityVariation: variation(equity, figures.equity2),
-    salesGrowth: variation(revenue, figures.ordinaryActivityRevenue2),
+    equityVariation: variation(equity, figures.equityPrior),
+    salesGrowth: variation(revenue, figures.ordinaryActivityRevenuePrior),
     financialDebtToEbit: round2(safeDiv(financialDebt, operatingIncome)),
     financialDebtToRevenue: round2(safeDiv(financialDebt, revenue)),
     financialDebtToEquity: round2(safeDiv(financialDebt, equity)),
