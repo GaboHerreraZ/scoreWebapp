@@ -147,6 +147,24 @@ export function normalizeExtractedPeriod(
 }
 
 /**
+ * Elige el período ANTERIOR contra el que se comparan las cifras del corriente:
+ * el primero de la lista (ordenada por año DESC) cuyo año sea MENOR.
+ *
+ * No basta con tomar periods[1]. La extracción puede devolver DOS columnas del
+ * MISMO año —pasa con documentos que traen un comparativo intermedio, o cuando
+ * el modelo lee dos veces el mismo cierre—, y entonces periods[1] no es el año
+ * anterior: las variaciones (activos, patrimonio, ventas) y el delta de
+ * inventario se calcularían contra el mismo año, y el año anterior de verdad
+ * quedaría ignorado más abajo en la lista.
+ */
+export function selectPriorPeriod<T extends { fiscalYear: number }>(
+  periods: readonly T[],
+  current: T,
+): T | undefined {
+  return periods.find((p) => p.fiscalYear < current.fiscalYear);
+}
+
+/**
  * Arma las cifras que consume computeFinancialIndicators a partir del par de
  * períodos más recientes. El corriente aporta todo el EERR y los saldos de
  * cierre; del anterior solo se toman los saldos de apertura.
@@ -161,6 +179,13 @@ export function toIndicatorFigures(
   current: PeriodFigures,
   prior?: PeriodFigures,
 ): FinancialStatementRawFigures {
+  // Sin período anterior no hay saldo de APERTURA. Se replica el de cierre para
+  // que el promedio del par sea el propio saldo: con (0 + saldo) / 2 las
+  // rotaciones salían a la MITAD de lo que corresponde, como si la empresa
+  // hubiera arrancado el año en cero. Los campos *Prior se dejan vacíos aparte:
+  // sin año anterior no hay variación que calcular y deben quedar en null.
+  const opening = prior ?? current;
+
   return {
     totalCurrentAssets: current.totalCurrentAssets,
     totalCurrentLiabilities: current.totalCurrentLiabilities,
@@ -181,11 +206,11 @@ export function toIndicatorFigures(
     netIncome: current.netIncome,
     // Pares para rotaciones: *_1 = apertura (año antiguo), *_2 = cierre (año
     // reciente). El delta de inventario de las compras depende de este orden.
-    accountsReceivable1: prior?.accountsReceivable,
+    accountsReceivable1: opening.accountsReceivable,
     accountsReceivable2: current.accountsReceivable,
-    inventories1: prior?.inventories,
+    inventories1: opening.inventories,
     inventories2: current.inventories,
-    suppliers1: prior?.suppliers,
+    suppliers1: opening.suppliers,
     suppliers2: current.suppliers,
     // Totales del año anterior para ratios de variación/crecimiento.
     totalAssetsPrior: prior?.totalAssets,

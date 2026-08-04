@@ -13,6 +13,7 @@ import {
 import {
   normalizeExtractedPeriod,
   toIndicatorFigures,
+  selectPriorPeriod,
   PERIOD_FIGURE_FIELDS,
   type ExtractedFinancialData,
   type ExtractedPeriod,
@@ -103,11 +104,14 @@ export class FinancialStatementsService {
     // si la IA falla.
     await this.repository.unfreezeStudyAnalyses(creditStudyId);
 
-    // 5. Indicadores: dependen de los 2 períodos MÁS RECIENTES (corriente +
-    //    anterior). Se arma en memoria el par que espera el helper (*_1 / *_2);
-    //    el algoritmo Altman del helper NO cambia.
+    // 5. Indicadores: corriente (el año más reciente) + anterior. El anterior se
+    //    busca por AÑO, no por posición: la extracción puede traer dos columnas
+    //    del mismo año y periods[1] no sería el año previo.
     const indicators = computeFinancialIndicators(
-      this.toIndicatorFigures(periods[0], periods[1]),
+      this.toIndicatorFigures(
+        periods[0],
+        selectPriorPeriod(periods, periods[0]),
+      ),
       periodLabel,
     );
 
@@ -183,18 +187,26 @@ export class FinancialStatementsService {
     const mapped = mapDataCreditoFinancials(consultation.rawResponse, 2);
     if (mapped.length === 0) return null;
 
-    const periods = mapped.map((m) =>
-      this.buildDataCreditoPeriod(
-        m,
-        companyId,
-        customerId,
-        userId,
-        consultation.id,
-      ),
-    );
+    // El mapper ya devuelve por año DESC, pero se reordena aquí igual: el resto
+    // del cálculo asume que periods[0] es el año MÁS RECIENTE, y esa garantía no
+    // debe depender de un detalle interno de otro módulo.
+    const periods = mapped
+      .map((m) =>
+        this.buildDataCreditoPeriod(
+          m,
+          companyId,
+          customerId,
+          userId,
+          consultation.id,
+        ),
+      )
+      .sort((a, b) => b.fiscalYear - a.fiscalYear);
 
     const indicators = computeFinancialIndicators(
-      this.toIndicatorFigures(periods[0], periods[1]),
+      this.toIndicatorFigures(
+        periods[0],
+        selectPriorPeriod(periods, periods[0]),
+      ),
       periodLabel,
     );
 

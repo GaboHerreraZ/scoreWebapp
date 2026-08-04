@@ -10,6 +10,7 @@ import { computeFinancialIndicators } from '../financial-statements/utils/financ
 import {
   normalizeExtractedPeriod,
   toIndicatorFigures,
+  selectPriorPeriod,
   type ExtractedFinancialData,
   type NormalizedPeriod,
 } from '../financial-statements/utils/extracted-periods.js';
@@ -67,10 +68,11 @@ export class PdfExtractionTestService {
       .map((p) => normalizeExtractedPeriod(p, dto.fiscalYear))
       .sort((a, b) => b.fiscalYear - a.fiscalYear);
 
-    // 4. Indicadores y ratios: dependen de los 2 períodos MÁS RECIENTES
-    //    (corriente + anterior), igual que en el flujo real.
+    // 4. Indicadores y ratios: corriente + anterior, igual que en el flujo real.
+    //    El anterior se busca por AÑO, no por posición (puede haber dos columnas
+    //    del mismo año en el documento).
     const { ratios, ...indicators } = computeFinancialIndicators(
-      toIndicatorFigures(periods[0], periods[1]),
+      toIndicatorFigures(periods[0], selectPriorPeriod(periods, periods[0])),
       periodLabel,
     );
 
