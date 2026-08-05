@@ -32,11 +32,25 @@ export interface CreateDocFromTemplateParams {
   data: Record<string, string>;
 }
 
+export interface AddSignerParams {
+  docToken: string;
+  name: string;
+  email?: string;
+  /**
+   * Ancla de texto de la plantilla (`<<...>>`) donde Zapsign estampa la firma.
+   * Si se omite, Zapsign anexa una página de firmas al final del documento.
+   */
+  signaturePlacementAnchor?: string;
+  /** Por defecto false: los firmantes internos no deben recibir notificación. */
+  notify?: boolean;
+}
+
 /**
  * Cliente de la API REST de Zapsign para el contrato macro: crea documentos
- * desde plantilla con variables prellenadas, firma automáticamente la parte de
- * Creditia por API, consulta el estado real de un documento (para no confiar
- * solo en el webhook) y descarga el PDF firmado.
+ * desde plantilla con variables prellenadas, agrega firmantes, firma en nombre
+ * de un usuario de nuestra propia organización (la parte de Creditia), consulta
+ * el estado real de un documento (para no confiar solo en el webhook) y descarga
+ * el PDF firmado.
  *
  * Auth: token estático en el header Authorization: Bearer.
  * Docs: https://docs.zapsign.com.br/espanol
@@ -134,6 +148,95 @@ export class ZapsignService {
       );
       throw new InternalServerErrorException(
         'No se pudo crear el contrato en Zapsign.',
+      );
+    }
+  }
+
+  /**
+   * Añade un firmante a un documento ya creado. Hace falta porque
+   * /models/create-doc/ solo admite UN firmante (signer_name/signer_email): el
+   * segundo (Creditia) se agrega aquí.
+   * POST /docs/{token}/add-signer/
+   */
+  async addSigner(params: AddSignerParams): Promise<ZapsignSigner> {
+    const notify = params.notify ?? false;
+    const body: Record<string, unknown> = {
+      name: params.name,
+      send_automatic_email: notify,
+      send_automatic_whatsapp: notify,
+    };
+    if (params.email) body.email = params.email;
+    if (params.signaturePlacementAnchor) {
+      body.signature_placement = params.signaturePlacementAnchor;
+    }
+
+    const res = await fetch(
+      `${this.apiUrl}/docs/${params.docToken}/add-signer/`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(body),
+      },
+    );
+
+    const raw = await res.text();
+    let json: any = null;
+    try {
+      json = raw ? JSON.parse(raw) : null;
+    } catch {
+      json = null;
+    }
+
+    if (!res.ok || !json?.token) {
+      const detail = json?.message ?? json?.detail ?? raw ?? '(sin cuerpo)';
+      this.logger.error(
+        `Zapsign add-signer falló (HTTP ${res.status}): ${detail}`,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo agregar el firmante en Zapsign: ${detail}`,
+      );
+    }
+
+    return json as ZapsignSigner;
+  }
+
+  /**
+   * Firma uno o varios documentos en nombre de un usuario de NUESTRA propia
+   * organización de Zapsign (endpoint "firma en lote"). Es lo que permite que el
+   * representante legal de Creditia no tenga que abrir ningún enlace: su firma y
+   * rúbrica están guardadas en su perfil y Zapsign las estampa por API.
+   *
+   * Requisitos del lado de Zapsign (si faltan, responde 400/404):
+   *  - add-on "Batch signing" activo en la cuenta,
+   *  - el firmante debe ser usuario de la organización, con nombre, apellido,
+   *    teléfono, firma y rúbrica cargados y el switch "Firmar a través de API",
+   *  - el email del firmante del documento debe ir vacío o coincidir con el suyo,
+   *  - autenticación estándar ("firma en pantalla"); nada de selfie/biometría.
+   *
+   * OJO: es ASÍNCRONO. Un 200 significa "encolado", no "ya firmado"; la firma se
+   * confirma después por webhook o consultando getDocState.
+   * POST /sign/
+   */
+  async signAsAccountUser(
+    userToken: string,
+    signerTokens: string[],
+  ): Promise<void> {
+    if (!signerTokens.length) return;
+
+    const res = await fetch(`${this.apiUrl}/sign/`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body: JSON.stringify({
+        user_token: userToken,
+        signer_tokens: signerTokens,
+      }),
+    });
+
+    if (!res.ok) {
+      const detail = (await res.text()) || '(sin cuerpo)';
+      this.logger.error(`Zapsign sign falló (HTTP ${res.status}): ${detail}`);
+      throw new InternalServerErrorException(
+        `No se pudo firmar por API en Zapsign: ${detail}`,
       );
     }
   }
