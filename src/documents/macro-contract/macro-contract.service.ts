@@ -1,7 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MacroContractRepository } from './macro-contract.repository.js';
-import { ZapsignService } from '../signing/zapsign.service.js';
+import {
+  ZapsignService,
+  type ZapsignDocState,
+  type ZapsignSigner,
+} from '../signing/zapsign.service.js';
 import { SupabaseService } from '../../auth/supabase.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
@@ -19,6 +23,13 @@ import { CREDITIA_PARTY } from './creditia.constants.js';
  *  2. handleWebhook(): cuando llega doc_signed, re-consulta el estado real a
  *     Zapsign; si status='signed' (todos firmaron), descarga el PDF a Supabase
  *     Storage (respaldo) y ACTIVA la cuenta de la empresa.
+ *
+ * La firma de Creditia tiene dos modos según ZAPSIGN_CREDITIA_USER_TOKEN:
+ *  - configurado  → el representante legal se agrega como segundo firmante y
+ *    Zapsign estampa su firma por API, sin que él abra nada. El documento queda
+ *    'signed' cuando firman los dos.
+ *  - sin configurar → comportamiento histórico: el único firmante electrónico es
+ *    el cliente y la firma de Creditia va pre-impresa en la plantilla.
  */
 @Injectable()
 export class MacroContractService {
@@ -29,6 +40,14 @@ export class MacroContractService {
   private readonly logoUrl: string;
   /** Vigencia de la URL firmada del PDF en Storage (bucket privado). */
   private readonly signedUrlTtlSeconds = 3600;
+  /**
+   * user_token del representante legal de Creditia en Zapsign (Mi perfil →
+   * "Firmar a través de API"). Vacío = firma pre-impresa en la plantilla, que es
+   * el comportamiento por defecto y no requiere el add-on "Batch signing".
+   */
+  private readonly creditiaUserToken: string;
+  private readonly creditiaSignerEmail: string;
+  private readonly creditiaSignatureAnchor: string;
 
   constructor(
     private readonly repository: MacroContractRepository,
@@ -45,6 +64,58 @@ export class MacroContractService {
     this.logoUrl =
       this.configService.get<string>('LOGO_URL') ??
       'https://creditia.co/logo.png';
+    this.creditiaUserToken =
+      this.configService.get<string>('ZAPSIGN_CREDITIA_USER_TOKEN') ?? '';
+    this.creditiaSignerEmail =
+      this.configService.get<string>('ZAPSIGN_CREDITIA_SIGNER_EMAIL') ?? '';
+    this.creditiaSignatureAnchor =
+      this.configService.get<string>('ZAPSIGN_CREDITIA_SIGNATURE_ANCHOR') ?? '';
+
+    if (this.creditiaUserToken) {
+      this.logger.log(
+        'Firma de Creditia por API HABILITADA para el contrato macro',
+      );
+    }
+  }
+
+  /** ¿Creditia firma electrónicamente por API, o va pre-impresa en la plantilla? */
+  private get apiSignatureEnabled(): boolean {
+    return !!this.creditiaUserToken;
+  }
+
+  /**
+   * Devuelve el token del firmante Creditia en el documento, agregándolo si aún
+   * no existe (create-doc solo admite un firmante, el cliente).
+   *
+   * Va SEPARADO de la firma a propósito: si el alta funciona pero /sign/ falla,
+   * el llamador ya tiene el token y puede persistirlo. Si no, el reintento
+   * volvería a dar de alta a Creditia y el documento quedaría con DOS firmantes
+   * suyos — el duplicado no firma nunca y el contrato jamás llegaría a 'signed'.
+   * Por lo mismo, antes de agregar busca un firmante Creditia ya presente en el
+   * documento (por si el token no llegó a guardarse).
+   */
+  private async ensureCreditiaSigner(
+    docToken: string,
+    existingSignerToken: string | null,
+    docSigners: ZapsignSigner[],
+  ): Promise<string> {
+    if (existingSignerToken) return existingSignerToken;
+
+    const already = docSigners.find((s) =>
+      this.creditiaSignerEmail
+        ? s.email?.toLowerCase() === this.creditiaSignerEmail.toLowerCase()
+        : s.name === this.creditia.signerName,
+    );
+    if (already) return already.token;
+
+    const signer = await this.zapsign.addSigner({
+      docToken,
+      name: this.creditia.signerName,
+      email: this.creditiaSignerEmail || undefined,
+      signaturePlacementAnchor: this.creditiaSignatureAnchor || undefined,
+      notify: false, // firma por API: no debe recibir correo ni WhatsApp
+    });
+    return signer.token;
   }
 
   /**
@@ -108,11 +179,9 @@ export class MacroContractService {
       CLIENTE_REPRESENTANTE: signerName,
       CLIENTE_TIPO_DOC: admin.identificationType?.label ?? '',
       CLIENTE_NUM_DOC: admin.identificationNumber ?? '',
-      // Proveedor (Creditia) — valores fijos
-      PROVEEDOR_RAZON_SOCIAL: this.creditia.legalName,
-      PROVEEDOR_NIT: this.creditia.nit,
+      // Proveedor — valor fijo. Razón social, NIT y representante van escritos
+      // en el texto de la plantilla, no como variables: solo queda la ciudad.
       PROVEEDOR_CIUDAD: this.creditia.city,
-      PROVEEDOR_REPRESENTANTE: this.creditia.signerName,
     };
 
     // 1. Crear el documento desde la plantilla (Zapsign envía la solicitud al
@@ -124,14 +193,37 @@ export class MacroContractService {
       data,
     });
 
-    // 2. El único firmante electrónico es el CLIENTE. Creditia NO firma: su
-    //    firma/sello va pre-impresa en la plantilla (Creditia emite el contrato;
-    //    el cliente lo acepta firmando). Así el documento queda 'signed' apenas
-    //    el cliente firma (un solo firmante = completo).
+    // 2. El firmante que devuelve create-doc es el CLIENTE (único firmante que
+    //    admite ese endpoint).
     const clientSigner =
       doc.signers.find(
         (s) => s.email?.toLowerCase() === admin.email.toLowerCase(),
       ) ?? doc.signers[0];
+
+    // 3. Firma de Creditia por API (si está habilitada). Best-effort a propósito:
+    //    si Zapsign falla aquí NO abortamos, porque el cliente ya recibió su
+    //    solicitud de firma y perder el registro dejaría un documento huérfano
+    //    que ningún webhook sabría resolver. Registramos el contrato igual y
+    //    reconcileCreditiaSignature() reintenta cuando llegue el doc_signed.
+    let creditiaSignerToken: string | null = null;
+    if (this.apiSignatureEnabled) {
+      try {
+        // Dos pasos: si el segundo falla, creditiaSignerToken ya quedó asignado
+        // y se persiste igual, para que el reintento no duplique el firmante.
+        creditiaSignerToken = await this.ensureCreditiaSigner(
+          doc.docToken,
+          null,
+          doc.signers,
+        );
+        await this.zapsign.signAsAccountUser(this.creditiaUserToken, [
+          creditiaSignerToken,
+        ]);
+      } catch (e) {
+        this.logger.error(
+          `No se pudo firmar como Creditia el doc ${doc.docToken}: ${(e as Error).message}. Se reintentará al firmar el cliente.`,
+        );
+      }
+    }
 
     // 4. Registrar el contrato en estado pending_contract.
     const pendingStatus = await this.repository.findParameterByTypeAndCode(
@@ -149,6 +241,7 @@ export class MacroContractService {
       statusId: pendingStatus.id,
       providerDocToken: doc.docToken,
       clientSignerToken: clientSigner?.token ?? null,
+      creditiaSignerToken,
       signUrl: clientSigner?.sign_url ?? null,
       signerName,
       signerEmail: admin.email,
@@ -162,6 +255,7 @@ export class MacroContractService {
         refusedAt: null,
         refusedReason: null,
         signedAt: null,
+        creditiaSignedAt: null,
         firstViewedAt: null,
         lastViewedAt: null,
         viewCount: 0,
@@ -204,6 +298,9 @@ export class MacroContractService {
 
     // Estado autoritativo (no el del payload).
     const state = await this.zapsign.getDocState(docToken);
+
+    // Confirma (o repara) la firma de Creditia antes de evaluar si falta alguien.
+    await this.reconcileCreditiaSignature(contract, state);
 
     // Solo activamos cuando TODOS firmaron (status='signed'). El doc_signed de
     // Creditia (o de un firmante intermedio) deja el doc en 'pending' → esperamos.
@@ -258,6 +355,69 @@ export class MacroContractService {
         ? `Contrato ${contract.id} FIRMADO y cuenta ${contract.companyId} ACTIVADA`
         : `Contrato ${contract.id} ya había sido activado (webhook concurrente)`,
     );
+  }
+
+  /**
+   * Red de seguridad de la firma de Creditia. Como /sign/ es asíncrono y
+   * best-effort al crear el documento, puede quedar sin aplicar; si nadie la
+   * repara, el cliente firma, el documento se queda en 'pending' esperando a
+   * Creditia y LA CUENTA NUNCA SE ACTIVA. Por eso en cada doc_signed:
+   *  - si Zapsign ya la reporta firmada → la marca con fecha (caso normal),
+   *  - si no → la reintenta (agregando el firmante si tampoco se llegó a crear).
+   * El reintento dispara un nuevo doc_signed, que cerrará el ciclo.
+   *
+   * Best-effort: es reparación, no debe tumbar el procesamiento del webhook.
+   */
+  private async reconcileCreditiaSignature(
+    contract: {
+      id: string;
+      creditiaSignerToken: string | null;
+      creditiaSignedAt: Date | null;
+    },
+    state: ZapsignDocState,
+  ): Promise<void> {
+    if (!this.apiSignatureEnabled) return; // firma pre-impresa: nada que hacer
+    if (contract.creditiaSignedAt) return; // ya confirmada
+
+    const signer = contract.creditiaSignerToken
+      ? state.signers.find((s) => s.token === contract.creditiaSignerToken)
+      : undefined;
+
+    if (signer?.status === 'signed') {
+      await this.repository.update(contract.id, {
+        creditiaSignedAt: new Date(),
+      });
+      this.logger.log(
+        `Firma de Creditia confirmada en el contrato ${contract.id}`,
+      );
+      return;
+    }
+
+    try {
+      // Si el firmante nunca llegó a crearse (creditiaSignerToken null), aquí se
+      // agrega; si ya existía, solo se reintenta la firma. El token se persiste
+      // ANTES de firmar para no perderlo si /sign/ vuelve a fallar.
+      const signerToken = await this.ensureCreditiaSigner(
+        state.token,
+        contract.creditiaSignerToken,
+        state.signers,
+      );
+      if (signerToken !== contract.creditiaSignerToken) {
+        await this.repository.update(contract.id, {
+          creditiaSignerToken: signerToken,
+        });
+      }
+      await this.zapsign.signAsAccountUser(this.creditiaUserToken, [
+        signerToken,
+      ]);
+      this.logger.warn(
+        `Firma de Creditia pendiente en el contrato ${contract.id}; reintentada`,
+      );
+    } catch (e) {
+      this.logger.error(
+        `Reintento de firma de Creditia falló en el contrato ${contract.id}: ${(e as Error).message}`,
+      );
+    }
   }
 
   /**
