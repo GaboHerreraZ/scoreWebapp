@@ -153,6 +153,9 @@ model Company {
   logoUrl          String?  @map("logo_url") @db.VarChar(500)
   billingName      String?  @map("billing_name") @db.VarChar(150)
   billingLastName  String?  @map("billing_last_name") @db.VarChar(150)
+  // Razón social: se llena cuando el responsable de facturación es persona
+  // jurídica (doc type NIT). En ese caso el front NO manda nombre/apellido.
+  billingBusinessName String? @map("billing_business_name") @db.VarChar(255)
   billingDocTypeId Int?     @map("billing_doc_type_id")
   billingDocNumber String?  @map("billing_doc_number") @db.VarChar(50)
   billingEmail     String?  @map("billing_email") @db.VarChar(255)

@@ -220,10 +220,11 @@ export class AnalysisPacksService {
     const sep = safePath.includes('?') ? '&' : '?';
     const responseUrl = `${frontendUrl}${safePath}${sep}ref=${pack.id}`;
 
-    const billingName = [company.billingName, company.billingLastName]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    const billingName =
+      [company.billingName, company.billingLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || (company.billingBusinessName ?? '');
 
     // 2. Crear la sesión de Smart Checkout v2. El sessionId va al front.
     const sessionId = await this.epaycoService.createCheckoutSession({
@@ -259,8 +260,21 @@ export class AnalysisPacksService {
         quantity: offering.quantity,
         unitPrice: pricing.unitPrice,
         subtotal: pricing.subtotal,
+        // Descuento por volumen de la oferta.
         discountAmount: pricing.discountAmount,
+        // Total con descuento por volumen, ANTES del código promocional.
         total: pricing.total,
+        // Código promocional aplicado (null si no se envió ninguno).
+        promoCode: promo
+          ? {
+              code: dto.promoCode!.trim().toUpperCase(),
+              discountPercent: promo.discountPercent,
+              discountAmount: promo.discountAmount,
+            }
+          : null,
+        // Lo que REALMENTE se cobra en ePayco (= total - descuento del código).
+        // Es el monto que debe mostrar el front.
+        totalToCharge,
         currency: activePrice.currencyCode,
       },
       validity: { startDate, endDate },
@@ -936,6 +950,8 @@ export class AnalysisPacksService {
             .filter(Boolean)
             .join(' ')
             .trim() ||
+          // Persona jurídica: no hay nombre/apellido, solo razón social.
+          billing?.billingBusinessName ||
           billing?.name ||
           'cliente';
         await this.mailService.sendPaymentReversedClientEmail({

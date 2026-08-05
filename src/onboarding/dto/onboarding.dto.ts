@@ -84,15 +84,35 @@ class OnboardingCompanyDto {
 }
 
 class OnboardingBillingDto {
-  @ApiProperty({ example: 'Gabriel', maxLength: 150 })
+  @ApiPropertyOptional({
+    example: 'Gabriel',
+    maxLength: 150,
+    description: 'Solo persona natural',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(150)
-  billingName: string;
+  billingName?: string;
 
-  @ApiProperty({ example: 'Herrera', maxLength: 150 })
+  @ApiPropertyOptional({
+    example: 'Herrera',
+    maxLength: 150,
+    description: 'Solo persona natural',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(150)
-  billingLastName: string;
+  billingLastName?: string;
+
+  @ApiPropertyOptional({
+    example: 'Acme S.A.S.',
+    maxLength: 255,
+    description: 'Razón social; solo persona jurídica (doc type NIT)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  billingBusinessName?: string;
 
   @ApiProperty({ example: 104, description: 'Parameter ID tipo de documento' })
   @Type(() => Number)

@@ -494,6 +494,7 @@ export class AdminService {
         billing: {
           name: company.billingName,
           lastName: company.billingLastName,
+          businessName: company.billingBusinessName,
           docType: company.billingDocType?.label ?? null,
           docNumber: company.billingDocNumber,
           email: company.billingEmail,

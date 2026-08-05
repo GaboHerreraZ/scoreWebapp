@@ -116,6 +116,7 @@ export class CompaniesService {
       accountNumber: dto.accountNumber,
       billingName: dto.billingName,
       billingLastName: dto.billingLastName,
+      billingBusinessName: dto.billingBusinessName,
       billingDocTypeId: dto.billingDocTypeId,
       billingDocNumber: dto.billingDocNumber,
       billingEmail: dto.billingEmail,

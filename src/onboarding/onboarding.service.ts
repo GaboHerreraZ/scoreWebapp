@@ -114,6 +114,7 @@ export class OnboardingService {
           address: dto.company.address,
           billingName: dto.billing.billingName,
           billingLastName: dto.billing.billingLastName,
+          billingBusinessName: dto.billing.billingBusinessName,
           billingDocTypeId: dto.billing.billingDocTypeId,
           billingDocNumber: dto.billing.billingDocNumber,
           billingEmail: dto.billing.billingEmail,
@@ -237,6 +238,7 @@ export class OnboardingService {
       billing: {
         billingName: company.billingName,
         billingLastName: company.billingLastName,
+        billingBusinessName: company.billingBusinessName,
         billingDocTypeId: company.billingDocTypeId,
         billingDocNumber: company.billingDocNumber,
         billingEmail: company.billingEmail,
