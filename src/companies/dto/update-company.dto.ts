@@ -54,6 +54,16 @@ export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {
   billingLastName?: string;
 
   @ApiPropertyOptional({
+    example: 'Acme S.A.S.',
+    maxLength: 255,
+    description: 'Razón social; solo persona jurídica (doc type NIT)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  billingBusinessName?: string;
+
+  @ApiPropertyOptional({
     example: 5,
     description: 'Billing document type parameter ID (CC, CE, NIT, etc.)',
   })

@@ -44,6 +44,7 @@ export class AnalysisPacksRepository {
         name: true,
         billingName: true,
         billingLastName: true,
+        billingBusinessName: true,
         billingEmail: true,
         billingPhone: true,
         billingAddress: true,
