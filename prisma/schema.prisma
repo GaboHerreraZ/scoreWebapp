@@ -124,6 +124,8 @@ model ConsultationPrice {
   // PackOffering; aquí no hay descuento.
   unitPrice     Float     @map("unit_price")
   currencyCode  String    @default("COP") @map("currency_code") @db.VarChar(10)
+  taxRate       Decimal   @default(19) @map("tax_rate") @db.Decimal(5, 2)
+  taxIncluded   Boolean   @default(true) @map("tax_included")
   isActive      Boolean   @default(true) @map("is_active")
   createdBy     String    @map("created_by") @db.Uuid
   updatedBy     String?   @map("updated_by") @db.Uuid
@@ -293,6 +295,7 @@ model PlatformAdmin {
   handledContactRequests    ContactRequest[]    @relation("ContactRequestHandledBy")
   assignedSupportTickets    SupportTicket[]     @relation("SupportTicketAssignedTo")
   blogPosts                 BlogPost[]          @relation("BlogPostAuthor")
+  einvoicedPacks            AnalysisPack[]      @relation("AnalysisPackEinvoiceMarkedBy")
 
   @@map("platform_admins")
 }
@@ -383,6 +386,21 @@ model AnalysisPack {
   promoDiscountAmount  Float?   @map("promo_discount_amount")
   promoRedeemedBy      String?  @map("promo_redeemed_by") @db.Uuid
 
+  // Desglose fiscal CONGELADO al comprar (la tarifa puede cambiar cada año, y la
+  // factura debe emitirse con la que rigió). Invariante: totalPaid = taxBase +
+  // taxAmount. En una bolsa sin costo los tres quedan en 0.
+  taxRatePaid Decimal? @map("tax_rate_paid") @db.Decimal(5, 2)
+  taxBase     Float?   @map("tax_base")
+  taxAmount   Float?   @map("tax_amount")
+
+  // Facturación electrónica: se emite fuera del sistema y se marca aquí desde el
+  // panel admin (mismo esquema que tenía payment_history antes de las bolsas).
+  // Las bolsas sin costo NO entran a la cola: no hay nada que facturar.
+  einvoiceSent     Boolean   @default(false) @map("einvoice_sent")
+  einvoiceSentAt   DateTime? @map("einvoice_sent_at")
+  einvoiceNumber   String?   @map("einvoice_number") @db.VarChar(100)
+  einvoiceMarkedBy String?   @map("einvoice_marked_by") @db.Uuid // PlatformAdmin
+
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -392,6 +410,7 @@ model AnalysisPack {
   consultationPrice ConsultationPrice?    @relation(fields: [consultationPriceId], references: [id])
   promoCode         PromoCode?            @relation(fields: [promoCodeId], references: [id])
   promoRedeemedByUser Profile?            @relation("AnalysisPackPromoRedeemedBy", fields: [promoRedeemedBy], references: [id])
+  einvoiceMarkedByAdmin PlatformAdmin?    @relation("AnalysisPackEinvoiceMarkedBy", fields: [einvoiceMarkedBy], references: [id])
   consumptions      AnalysisConsumption[]
   paymentAlerts     PaymentAlert[]
   paymentEvents     PaymentEvent[]
@@ -399,6 +418,7 @@ model AnalysisPack {
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
   @@index([statusId, paidAt]) // métricas de venta por fecha (admin-stats)
+  @@index([einvoiceSent, paidAt]) // cola de facturación electrónica pendiente
   @@map("analysis_packs")
 }
 

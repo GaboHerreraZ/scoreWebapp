@@ -32,6 +32,11 @@ export class ConsultationPricesService {
       name: dto.name,
       unitPrice: dto.unitPrice,
       currencyCode: dto.currencyCode,
+      // IVA vigente para este precio (default 19% incluido en el unitPrice).
+      ...(dto.taxRate !== undefined && {
+        taxRate: new Prisma.Decimal(dto.taxRate),
+      }),
+      ...(dto.taxIncluded !== undefined && { taxIncluded: dto.taxIncluded }),
       isActive: dto.isActive,
       createdBy: admin.id,
     });
@@ -97,6 +102,18 @@ export class ConsultationPricesService {
       throw new ConflictException(
         'No se puede editar el precio (unitPrice) de un registro existente. ' +
           'Cree un nuevo precio de consulta; el anterior se desactivará.',
+      );
+    }
+
+    // El IVA es inmutable por la MISMA razón: las bolsas ya vendidas con este
+    // precio congelaron su tarifa y apuntan aquí. Cuando cambie el IVA (o la
+    // forma de cobrarlo), se crea un precio nuevo con la tarifa nueva; las
+    // ventas anteriores conservan la que rigió y su factura sigue cuadrando.
+    if (dto.taxRate !== undefined || dto.taxIncluded !== undefined) {
+      throw new ConflictException(
+        'No se puede editar el IVA (taxRate/taxIncluded) de un registro ' +
+          'existente. Cree un nuevo precio de consulta con la tarifa vigente; ' +
+          'el anterior se desactivará y las ventas ya emitidas conservan la suya.',
       );
     }
 

@@ -2,6 +2,28 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
+/** Motivo por el que un canje no pudo realizarse (resultado esperado, no error). */
+export type PromoRedeemFailReason =
+  | 'not_found'
+  | 'inactive'
+  | 'exhausted'
+  | 'expired'
+  | 'already_redeemed';
+
+export type PromoRedeemResult =
+  | { ok: true }
+  | { ok: false; reason: PromoRedeemFailReason };
+
+/** Datos de un canje (compartidos entre el canje propio y el transaccional). */
+export interface PromoRedeemParams {
+  promoCodeId: string;
+  companyId: string;
+  analysisPackId: string | null;
+  redeemedBy: string | null;
+  discountPercent: number;
+  discountAmount: number;
+}
+
 @Injectable()
 export class PromoCodesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -87,85 +109,78 @@ export class PromoCodesRepository {
    *
    * No lanza por cupo/uso repetido: esos son resultados esperados, no errores.
    */
-  async redeem(params: {
-    promoCodeId: string;
-    companyId: string;
-    analysisPackId: string | null;
-    redeemedBy: string | null;
-    discountPercent: number;
-    discountAmount: number;
-  }): Promise<
-    | { ok: true }
-    | {
-        ok: false;
-        reason:
-          | 'not_found'
-          | 'inactive'
-          | 'exhausted'
-          | 'expired'
-          | 'already_redeemed';
-      }
-  > {
-    return this.prisma.$transaction(async (tx) => {
-      // Lock pesimista sobre la fila del código para serializar canjes
-      // concurrentes que compitan por el último cupo.
-      const rows = await tx.$queryRaw<
-        Array<{
-          id: string;
-          is_active: boolean;
-          max_redemptions: number;
-          redemptions_count: number;
-          valid_from: Date | null;
-          valid_until: Date | null;
-        }>
-      >`SELECT id, is_active, max_redemptions, redemptions_count, valid_from, valid_until
+  async redeem(params: PromoRedeemParams): Promise<PromoRedeemResult> {
+    return this.prisma.$transaction((tx) => this.redeemInTx(tx, params));
+  }
+
+  /**
+   * Núcleo del canje, ejecutable dentro de una transacción AJENA. Lo usa la
+   * compra SIN COSTO (código del 100%): ahí no hay pago que confirme después,
+   * así que el canje y la creación de la bolsa deben ser un solo átomo — si el
+   * cupo ya no está, la bolsa gratuita no debe existir.
+   */
+  async redeemInTx(
+    tx: Prisma.TransactionClient,
+    params: PromoRedeemParams,
+  ): Promise<PromoRedeemResult> {
+    // Lock pesimista sobre la fila del código para serializar canjes
+    // concurrentes que compitan por el último cupo.
+    const rows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        is_active: boolean;
+        max_redemptions: number;
+        redemptions_count: number;
+        valid_from: Date | null;
+        valid_until: Date | null;
+      }>
+    >`SELECT id, is_active, max_redemptions, redemptions_count, valid_from, valid_until
         FROM promo_codes WHERE id = ${params.promoCodeId}::uuid FOR UPDATE`;
 
-      const code = rows[0];
-      if (!code) return { ok: false as const, reason: 'not_found' as const };
-      if (!code.is_active)
-        return { ok: false as const, reason: 'inactive' as const };
-      if (code.redemptions_count >= code.max_redemptions)
-        return { ok: false as const, reason: 'exhausted' as const };
+    const code = rows[0];
+    if (!code) return { ok: false as const, reason: 'not_found' as const };
+    if (!code.is_active)
+      return { ok: false as const, reason: 'inactive' as const };
+    if (code.redemptions_count >= code.max_redemptions)
+      return { ok: false as const, reason: 'exhausted' as const };
 
-      const now = new Date();
-      if (
-        (code.valid_from && now < code.valid_from) ||
-        (code.valid_until && now > code.valid_until)
-      ) {
-        return { ok: false as const, reason: 'expired' as const };
-      }
+    const now = new Date();
+    if (
+      (code.valid_from && now < code.valid_from) ||
+      (code.valid_until && now > code.valid_until)
+    ) {
+      return { ok: false as const, reason: 'expired' as const };
+    }
 
-      // Una empresa, un canje (defensa además del @@unique).
-      const existing = await tx.promoCodeRedemption.findUnique({
-        where: {
-          promoCodeId_companyId: {
-            promoCodeId: params.promoCodeId,
-            companyId: params.companyId,
-          },
-        },
-      });
-      if (existing)
-        return { ok: false as const, reason: 'already_redeemed' as const };
-
-      await tx.promoCodeRedemption.create({
-        data: {
+    // Una empresa, un canje (defensa además del @@unique).
+    const existing = await tx.promoCodeRedemption.findUnique({
+      where: {
+        promoCodeId_companyId: {
           promoCodeId: params.promoCodeId,
           companyId: params.companyId,
-          analysisPackId: params.analysisPackId,
-          redeemedBy: params.redeemedBy,
-          discountPercent: params.discountPercent,
-          discountAmount: params.discountAmount,
         },
-      });
-
-      await tx.promoCode.update({
-        where: { id: params.promoCodeId },
-        data: { redemptionsCount: { increment: 1 } },
-      });
-
-      return { ok: true as const };
+      },
     });
+    if (existing)
+      return { ok: false as const, reason: 'already_redeemed' as const };
+
+    await tx.promoCodeRedemption.create({
+      data: {
+        promoCodeId: params.promoCodeId,
+        companyId: params.companyId,
+        analysisPackId: params.analysisPackId,
+        redeemedBy: params.redeemedBy,
+        discountPercent: params.discountPercent,
+        discountAmount: params.discountAmount,
+      },
+    });
+
+    await tx.promoCode.update({
+      where: { id: params.promoCodeId },
+      data: { redemptionsCount: { increment: 1 } },
+    });
+
+    return { ok: true as const };
   }
 
   /**

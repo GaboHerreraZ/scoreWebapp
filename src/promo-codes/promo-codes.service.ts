@@ -5,7 +5,10 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { PromoCodesRepository } from './promo-codes.repository.js';
+import {
+  PromoCodesRepository,
+  type PromoRedeemParams,
+} from './promo-codes.repository.js';
 import { CreatePromoCodeDto } from './dto/create-promo-code.dto.js';
 import { UpdatePromoCodeDto } from './dto/update-promo-code.dto.js';
 import { FilterPromoCodeDto } from './dto/filter-promo-code.dto.js';
@@ -190,15 +193,17 @@ export class PromoCodesService {
   // ── Canje (webhook) ───────────────────────────────────────────────────
 
   /** Canjea el cupo de forma atómica. Devuelve el resultado del repo. */
-  async redeem(params: {
-    promoCodeId: string;
-    companyId: string;
-    analysisPackId: string | null;
-    redeemedBy: string | null;
-    discountPercent: number;
-    discountAmount: number;
-  }) {
+  async redeem(params: PromoRedeemParams) {
     return this.repository.redeem(params);
+  }
+
+  /**
+   * Canje dentro de una transacción ya abierta por el caller. Lo usa la compra
+   * SIN COSTO (código del 100%), donde el canje debe ser atómico con la creación
+   * de la bolsa: sin pago posterior no hay webhook que lo haga después.
+   */
+  async redeemInTx(tx: Prisma.TransactionClient, params: PromoRedeemParams) {
+    return this.repository.redeemInTx(tx, params);
   }
 
   /** Libera el cupo (reversa de pago). */

@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
-import { AnalysisPacksRepository } from './analysis-packs.repository.js';
+import {
+  AnalysisPacksRepository,
+  PromoRedemptionFailedError,
+} from './analysis-packs.repository.js';
 import { PackOfferingsRepository } from '../pack-offerings/pack-offerings.repository.js';
 import { ConsultationPricesService } from '../consultation-prices/consultation-prices.service.js';
 import { EpaycoService } from '../epayco/epayco.service.js';
@@ -22,9 +25,27 @@ import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import {
   calculatePackPrice,
+  calculateTax,
   type DiscountTypeCode,
 } from '../common/utils/pack-pricing.js';
 import { Prisma } from '../../generated/prisma/client.js';
+
+/**
+ * Monto mínimo que acepta el checkout de ePayco (COP). Por debajo, la creación
+ * de la sesión falla con un error genérico del proveedor y deja la bolsa
+ * huérfana en pending_payment, así que se corta antes con un mensaje claro.
+ * El 0 exacto NO llega hasta aquí: es la compra sin costo, que no usa pasarela.
+ */
+const MIN_CHARGE_AMOUNT = 5000;
+
+/** Motivos de un canje fallido, en texto para el cliente. */
+const PROMO_FAIL_REASONS: Record<string, string> = {
+  not_found: 'el código ya no existe',
+  inactive: 'el código está inactivo',
+  exhausted: 'el código ya agotó sus usos disponibles',
+  expired: 'el código está fuera de vigencia',
+  already_redeemed: 'tu empresa ya utilizó este código',
+};
 
 @Injectable()
 export class AnalysisPacksService {
@@ -109,11 +130,15 @@ export class AnalysisPacksService {
       };
     }
 
-    if (totalToCharge <= 0) {
-      throw new BadRequestException(
-        'El monto de la compra no es válido para procesar el pago',
-      );
-    }
+    // IVA sobre el valor YA descontado (comercialmente el descuento va antes del
+    // impuesto). Con taxIncluded=true —el caso actual— el cobro no cambia: solo
+    // se desglosa para la factura. La tarifa queda congelada en la bolsa.
+    const tax = calculateTax(
+      totalToCharge,
+      Number(activePrice.taxRate),
+      activePrice.taxIncluded,
+    );
+    totalToCharge = tax.total;
 
     // Vigencia: hoy → hoy + validityDays.
     const startDate = new Date();
@@ -128,6 +153,43 @@ export class AnalysisPacksService {
     if (!pendingStatus) {
       throw new BadRequestException(
         'Falta el parámetro de estado de bolsa (pending_payment)',
+      );
+    }
+
+    // Compra SIN COSTO: el código promocional cubre el 100%. No hay pasarela
+    // (ePayco ni siquiera acepta montos en 0) ni webhook que confirme, así que
+    // la bolsa se activa aquí mismo. Sin código, un total en 0 sería un error de
+    // configuración del catálogo: se rechaza como antes.
+    if (totalToCharge <= 0) {
+      if (!promo) {
+        throw new BadRequestException(
+          'El monto de la compra no es válido para procesar el pago',
+        );
+      }
+      return this.purchaseFree({
+        companyId,
+        userId,
+        offering: { id: offering.id, quantity: offering.quantity },
+        activePrice: {
+          id: activePrice.id,
+          currencyCode: activePrice.currencyCode,
+        },
+        pricing,
+        promo,
+        promoCodeText: dto.promoCode!.trim().toUpperCase(),
+        startDate,
+        endDate,
+        pendingStatusId: pendingStatus.id,
+      });
+    }
+
+    // Mínimo de la pasarela: por debajo, session/create falla con un error
+    // genérico. Se corta antes de crear nada para no dejar bolsas huérfanas.
+    if (totalToCharge < MIN_CHARGE_AMOUNT) {
+      throw new BadRequestException(
+        `El monto a pagar (${totalToCharge} ${activePrice.currencyCode}) está por ` +
+          `debajo del mínimo que acepta la pasarela de pagos ` +
+          `(${MIN_CHARGE_AMOUNT} ${activePrice.currencyCode}).`,
       );
     }
 
@@ -164,6 +226,14 @@ export class AnalysisPacksService {
       promoRedeemedBy: promo ? (userId ?? null) : null,
     };
 
+    // Desglose fiscal congelado: la tarifa puede cambiar el año que viene y la
+    // factura de esta compra debe emitirse con la que rigió hoy.
+    const taxSnapshot = {
+      taxRatePaid: new Prisma.Decimal(tax.taxRate),
+      taxBase: tax.base,
+      taxAmount: tax.taxAmount,
+    };
+
     const pack = existingPending
       ? await this.repository.refreshPendingPurchase(existingPending.id, {
           quantityPurchased: offering.quantity,
@@ -175,6 +245,7 @@ export class AnalysisPacksService {
           consultationPriceId: activePrice.id,
           paymentToken,
           ...promoSnapshot,
+          ...taxSnapshot,
         })
       : await this.repository.create({
           companyId,
@@ -190,6 +261,7 @@ export class AnalysisPacksService {
           statusId: pendingStatus.id,
           paymentToken,
           ...promoSnapshot,
+          ...taxSnapshot,
         });
 
     // invoice = referencia única propia que ePayco devuelve en la confirmación.
@@ -224,7 +296,8 @@ export class AnalysisPacksService {
       [company.billingName, company.billingLastName]
         .filter(Boolean)
         .join(' ')
-        .trim() || (company.billingBusinessName ?? '');
+        .trim() ||
+      (company.billingBusinessName ?? '');
 
     // 2. Crear la sesión de Smart Checkout v2. El sessionId va al front.
     const sessionId = await this.epaycoService.createCheckoutSession({
@@ -256,6 +329,9 @@ export class AnalysisPacksService {
       analysisPackId: pack.id,
       invoice,
       sessionId,
+      // El front debe abrir el checkout de ePayco con el sessionId.
+      requiresPayment: true,
+      status: pendingStatus.code,
       pricing: {
         quantity: offering.quantity,
         unitPrice: pricing.unitPrice,
@@ -272,12 +348,174 @@ export class AnalysisPacksService {
               discountAmount: promo.discountAmount,
             }
           : null,
-        // Lo que REALMENTE se cobra en ePayco (= total - descuento del código).
+        // Desglose de IVA de lo que se cobra (base + impuesto = totalToCharge).
+        tax: {
+          rate: tax.taxRate,
+          included: tax.taxIncluded,
+          base: tax.base,
+          amount: tax.taxAmount,
+        },
+        // Lo que REALMENTE se cobra en ePayco (= total - descuento del código,
+        // más IVA si el precio del catálogo no lo incluía).
         // Es el monto que debe mostrar el front.
         totalToCharge,
         currency: activePrice.currencyCode,
       },
       validity: { startDate, endDate },
+    };
+  }
+
+  /**
+   * Compra SIN COSTO: el código promocional cubre el 100% del total. Replica en
+   * una sola operación lo que en una compra normal reparten el checkout y el
+   * webhook: activa la bolsa, canjea el cupo (atómico con la creación, para que
+   * un doble click no regale dos bolsas), deja el evento de pago sintético y
+   * dispara los efectos de "primer pack": onboarding listo + contrato macro.
+   *
+   * NO se emite documento de cobro: no hubo pago, así que no hay nada que
+   * facturar (invoice va en null y totalPaid queda en 0).
+   */
+  private async purchaseFree(params: {
+    companyId: string;
+    userId?: string;
+    offering: { id: string; quantity: number };
+    activePrice: { id: string; currencyCode: string };
+    pricing: {
+      unitPrice: number;
+      subtotal: number;
+      discountAmount: number;
+      total: number;
+    };
+    promo: {
+      promoCodeId: string;
+      discountPercent: number;
+      discountAmount: number;
+    };
+    promoCodeText: string;
+    startDate: Date;
+    endDate: Date;
+    pendingStatusId: number;
+  }) {
+    const { companyId, userId, offering, activePrice, pricing, promo } = params;
+
+    const activeStatus = await this.repository.findParameterByTypeAndCode(
+      'analysis_pack_status',
+      'active',
+    );
+    if (!activeStatus) {
+      throw new BadRequestException(
+        'Falta el parámetro de estado de bolsa (active)',
+      );
+    }
+
+    // Reutiliza una pendiente de la misma oferta (intento de pago abandonado que
+    // ahora queda cubierto por el código) en vez de dejarla huérfana.
+    const existingPending =
+      await this.repository.findPendingByCompanyAndOffering(
+        companyId,
+        offering.id,
+        params.pendingStatusId,
+      );
+
+    let pack: Awaited<
+      ReturnType<AnalysisPacksRepository['createFreeActivePack']>
+    >;
+    try {
+      pack = await this.repository.createFreeActivePack({
+        existingPendingId: existingPending?.id ?? null,
+        activeStatusId: activeStatus.id,
+        pendingStatusId: params.pendingStatusId,
+        data: {
+          companyId,
+          packOfferingId: offering.id,
+          quantityPurchased: offering.quantity,
+          startDate: params.startDate,
+          endDate: params.endDate,
+          unitPricePaid: pricing.unitPrice,
+          currencyCode: activePrice.currencyCode,
+          consultationPriceId: activePrice.id,
+          promoCodeId: promo.promoCodeId,
+          promoDiscountPercent: new Prisma.Decimal(promo.discountPercent),
+          promoDiscountAmount: promo.discountAmount,
+          promoRedeemedBy: userId ?? null,
+        },
+        redeem: (tx, packId) =>
+          this.promoCodesService.redeemInTx(tx, {
+            promoCodeId: promo.promoCodeId,
+            companyId,
+            analysisPackId: packId,
+            redeemedBy: userId ?? null,
+            discountPercent: promo.discountPercent,
+            discountAmount: promo.discountAmount,
+          }),
+      });
+    } catch (e) {
+      // El cupo se agotó entre la validación y el canje (o hubo un canje
+      // concurrente): no se entrega nada y se explica el motivo. A diferencia de
+      // la compra pagada, aquí NO hay oversold que gestionar: no se cobró nada.
+      if (e instanceof PromoRedemptionFailedError) {
+        throw new BadRequestException(
+          `No se pudo aplicar el código promocional: ${
+            PROMO_FAIL_REASONS[e.reason] ?? e.reason
+          }`,
+        );
+      }
+      throw e;
+    }
+
+    // Mismos efectos secundarios que un pago aprobado (best-effort: un fallo no
+    // debe deshacer una bolsa ya entregada).
+    try {
+      await this.repository.markOnboardingReady(companyId);
+    } catch (e) {
+      this.logger.error(
+        `No se pudo marcar el onboarding como listo para la empresa ${companyId}: ${
+          (e as Error).message
+        }`,
+      );
+    }
+
+    try {
+      await this.macroContractService.sendContractForCompany(companyId);
+    } catch (e) {
+      this.logger.error(
+        `No se pudo enviar el contrato macro para la empresa ${companyId}: ${
+          (e as Error).message
+        }`,
+      );
+    }
+
+    this.logger.log(
+      `Empresa ${companyId} obtuvo la bolsa ${pack.id} SIN COSTO (oferta ${offering.id}, ` +
+        `código ${params.promoCodeText} al ${promo.discountPercent}%, ` +
+        `valor cubierto ${promo.discountAmount} ${activePrice.currencyCode})`,
+    );
+
+    return {
+      analysisPackId: pack.id,
+      // Sin cobro no hay documento de cobro: no se factura nada.
+      invoice: null,
+      sessionId: null,
+      // El front NO debe abrir el checkout: la bolsa ya quedó activa.
+      requiresPayment: false,
+      status: activeStatus.code,
+      pricing: {
+        quantity: offering.quantity,
+        unitPrice: pricing.unitPrice,
+        subtotal: pricing.subtotal,
+        discountAmount: pricing.discountAmount,
+        total: pricing.total,
+        promoCode: {
+          code: params.promoCodeText,
+          discountPercent: promo.discountPercent,
+          discountAmount: promo.discountAmount,
+        },
+        // Sin cobro no hay hecho generador: base e IVA en 0.
+        tax: { rate: 0, included: true, base: 0, amount: 0 },
+        totalToCharge: 0,
+        currency: activePrice.currencyCode,
+      },
+      validity: { startDate: params.startDate, endDate: params.endDate },
     };
   }
 
@@ -474,14 +712,17 @@ export class AnalysisPacksService {
       Awaited<ReturnType<AnalysisPacksRepository['findByReceiptRef']>>
     >,
   ) {
-    const subtotal = pack.unitPricePaid * pack.quantityPurchased;
+    const subtotal = Math.round(pack.unitPricePaid * pack.quantityPurchased);
     const discountAmount = Math.max(0, subtotal - pack.totalPaid);
+    // Bolsa entregada sin cobro (código promocional del 100%): no pasó por la
+    // pasarela y no genera documento de cobro, así que no lleva "factura".
+    const isFree = pack.totalPaid === 0;
 
     return {
       analysisPackId: pack.id,
       status: pack.status.code, // pending_payment | active | cancelled
       statusLabel: pack.status.label,
-      invoice: `PACK-${pack.id}`,
+      invoice: isFree ? null : `PACK-${pack.id}`,
 
       // Empresa para la que se compró (se creó en el onboarding).
       company: {
@@ -505,6 +746,13 @@ export class AnalysisPacksService {
         subtotal, // unitPrice × consultas (sin descuento)
         discountAmount, // descuento aplicado (>= 0)
         total: pack.totalPaid, // lo que efectivamente se pagó
+        isFree, // true = entregada sin costo, sin cobro ni factura
+        // Desglose fiscal congelado en la compra (base + IVA = total).
+        tax: {
+          rate: Number(pack.taxRatePaid ?? 0),
+          base: pack.taxBase ?? pack.totalPaid,
+          amount: pack.taxAmount ?? 0,
+        },
         currency: pack.currencyCode,
         providerReference: pack.providerReference,
         providerTransactionId: pack.providerTransactionId,
@@ -738,6 +986,15 @@ export class AnalysisPacksService {
         );
       }
 
+      // Aviso de venta a facturación: SOLO si esta confirmación fue la que activó
+      // la bolsa (activated=true evita duplicar el aviso ante webhooks
+      // concurrentes o reenvíos). Deja la alerta en el panel y notifica a los
+      // admins con el desglose fiscal para emitir la factura electrónica.
+      // Best-effort: un fallo aquí no debe romper el webhook.
+      if (activated) {
+        await this.notifyPurchasePaid(pack, dto.x_ref_payco ?? null);
+      }
+
       // Canje del código promocional: SOLO si esta confirmación fue la que
       // activó la bolsa (activated=true evita canjear dos veces en webhooks
       // concurrentes) y la bolsa traía un código congelado. El canje es atómico
@@ -925,6 +1182,112 @@ export class AnalysisPacksService {
     }
 
     return { received: true };
+  }
+
+  /**
+   * Avisa de una venta cobrada: alerta informativa en el panel + correo a los
+   * admins con TODO lo que necesita facturación electrónica (datos fiscales del
+   * comprador, desglose base/IVA y referencia del recaudo). La factura se emite
+   * fuera del sistema y luego se marca desde el panel (cola de FE).
+   *
+   * Todo best-effort: la bolsa ya está activa y el cliente ya pagó, así que un
+   * fallo de correo no puede tumbar el webhook. Queda en logs y en la alerta.
+   */
+  private async notifyPurchasePaid(
+    pack: NonNullable<Awaited<ReturnType<AnalysisPacksRepository['findById']>>>,
+    providerReference: string | null,
+  ) {
+    const planName = pack.packOffering?.name ?? 'Bolsa de consultas';
+    const billing = await this.repository.findCompanyBilling(pack.companyId);
+
+    // Nombre fiscal: razón social si es persona jurídica, nombre+apellido si es
+    // natural, y como último recurso el nombre comercial de la empresa.
+    const billingName =
+      billing?.billingBusinessName ||
+      [billing?.billingName, billing?.billingLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      billing?.name ||
+      '—';
+
+    const taxRate = Number(pack.taxRatePaid ?? 0);
+    const taxBase = pack.taxBase ?? pack.totalPaid;
+    const taxAmount = pack.taxAmount ?? 0;
+
+    try {
+      await this.paymentAlertsService.createAlert({
+        companyId: pack.companyId,
+        analysisPackId: pack.id,
+        typeCode: 'payment_approved',
+        severityCode: 'info',
+        title: 'Pago aprobado — pendiente de facturar',
+        message:
+          `${billingName} pagó ${planName} (${pack.quantityPurchased} consultas) ` +
+          `por ${pack.totalPaid} ${pack.currencyCode}. Queda pendiente de emitir ` +
+          `la factura electrónica.`,
+        metadata: {
+          providerReference,
+          providerTransactionId: pack.providerTransactionId,
+          totalPaid: pack.totalPaid,
+          taxRate,
+          taxBase,
+          taxAmount,
+          currency: pack.currencyCode,
+          billingName,
+          billingDocNumber: billing?.billingDocNumber ?? null,
+          billingEmail: billing?.billingEmail ?? null,
+        },
+      });
+    } catch (e) {
+      this.logger.error(
+        `No se pudo crear la alerta de pago aprobado para la bolsa ${pack.id}: ${
+          (e as Error).message
+        }`,
+      );
+    }
+
+    try {
+      const adminEmails =
+        await this.platformAdminRepository.findActiveAdminEmails();
+      if (adminEmails.length === 0) {
+        this.logger.warn(
+          `Venta de la bolsa ${pack.id}: no hay admins activos a quién notificar`,
+        );
+        return;
+      }
+
+      const money = (v: number) => v.toLocaleString('es-CO');
+      await Promise.all(
+        adminEmails.map((to) =>
+          this.mailService.sendPurchasePaidAdminEmail({
+            to,
+            companyName: billing?.name ?? pack.companyId,
+            billingName,
+            billingDocNumber: billing?.billingDocNumber ?? '—',
+            billingEmail: billing?.billingEmail ?? '—',
+            billingAddress: billing?.billingAddress ?? '—',
+            billingCity: billing?.billingCity ?? '—',
+            planName,
+            quantity: String(pack.quantityPurchased),
+            taxBase: money(taxBase),
+            taxRate: String(taxRate),
+            taxAmount: money(taxAmount),
+            total: money(pack.totalPaid),
+            currency: pack.currencyCode,
+            providerReference: providerReference ?? '—',
+            paidAt: (pack.paidAt ?? new Date()).toLocaleString('es-CO'),
+            isTest: pack.isTest ? 'Sí (transacción de prueba)' : 'No',
+          }),
+        ),
+      );
+    } catch (e) {
+      this.logger.error(
+        `Venta de la bolsa ${pack.id}: fallo al notificar a los admins: ${
+          (e as Error).message
+        }`,
+      );
+    }
   }
 
   /**
