@@ -25,7 +25,14 @@
       "Bash(npx prisma migrate:*)",
       "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Sí\" npx prisma migrate reset:*)",
       "Bash(cd \"c:/Users/User/Documents/Documentos Gabo/new project/webAppApi\" && grep -o 'alertas[^,}]\\\\{0,120\\\\}' \"C:/Users/User/.claude/projects/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/1cd6a060-8583-4b4a-be99-e503a5a09ea6.jsonl\" 2>/dev/null | head -10)",
-      "Read(//c/Users/User/.claude/projects/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/**)"
+      "Read(//c/Users/User/.claude/projects/c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi/**)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)",
+      "PowerShell(npm run prisma:migrate:pro 2>&1)",
+      "PowerShell(npm run migrate:check 2>&1)",
+      "PowerShell(git add prisma/schema.prisma prisma/migrations/20260804120000_add_company_billing_business_name src/admin/admin.service.ts src/analysis-packs src/companies src/onboarding)",
+      "PowerShell(git push origin staging 2>&1)",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(Object.keys\\({...p.dependencies,...p.devDependencies}\\).filter\\(d=>/^\\(pg|tsx|ts-node\\)$/.test\\(d\\)\\)\\)\")",
+      "Bash(node -e ' *)"
     ]
   }
 }
