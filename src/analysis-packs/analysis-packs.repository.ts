@@ -11,6 +11,16 @@ export class NoCreditsAvailableError extends ConflictException {
   }
 }
 
+
+export const FREE_PACK_PROVIDER = 'promo';
+
+export class PromoRedemptionFailedError extends Error {
+  constructor(readonly reason: string) {
+    super(`No se pudo canjear el código promocional (${reason})`);
+    this.name = 'PromoRedemptionFailedError';
+  }
+}
+
 /** Datos del comprobante de pago extraídos de la confirmación del proveedor. */
 export interface PaymentReceipt {
   providerFranchise?: string | null;
@@ -50,6 +60,10 @@ export class AnalysisPacksRepository {
         billingAddress: true,
         billingDocNumber: true,
         billingDocTypeId: true,
+        // Ciudad/departamento: los pide la factura electrónica (domicilio fiscal).
+        billingCity: true,
+        billingState: true,
+        nit: true,
       },
     });
   }
@@ -107,12 +121,142 @@ export class AnalysisPacksRepository {
       promoDiscountPercent?: Prisma.Decimal | null;
       promoDiscountAmount?: number | null;
       promoRedeemedBy?: string | null;
+      // Desglose fiscal congelado (recalculado en cada reintento con la tarifa
+      // vigente, igual que el precio).
+      taxRatePaid?: Prisma.Decimal | null;
+      taxBase?: number | null;
+      taxAmount?: number | null;
     },
   ) {
     return this.prisma.analysisPack.update({
       where: { id },
       data,
       include: this.defaultInclude,
+    });
+  }
+
+  /**
+   * Compra SIN COSTO (código promocional del 100%): crea la bolsa ya ACTIVA,
+   * canjea el cupo del código y registra el evento de pago sintético, TODO en
+   * una sola transacción. Es el equivalente de lo que en una compra normal hacen
+   * el checkout + el webhook, que aquí no existen (ePayco no acepta monto 0).
+   *
+   * El canje va DENTRO de la transacción a propósito: es lo único que impide que
+   * un doble click (o dos pestañas) regalen dos bolsas con el mismo código. Si
+   * el cupo ya no está, el callback devuelve ok:false → se lanza
+   * PromoRedemptionFailedError y la bolsa se deshace con la transacción.
+   *
+   * Si la empresa tenía una bolsa pendiente de la MISMA oferta (un intento de
+   * pago abandonado), se reutiliza en vez de dejarla huérfana; el claim por
+   * statusId garantiza que no se pisa una que ya se activó por otra vía.
+   *
+   * @param redeem callback que canjea el código con el cliente transaccional.
+   */
+  async createFreeActivePack(params: {
+    existingPendingId?: string | null;
+    activeStatusId: number;
+    pendingStatusId: number;
+    data: {
+      companyId: string;
+      packOfferingId: string;
+      quantityPurchased: number;
+      startDate: Date;
+      endDate: Date;
+      unitPricePaid: number;
+      currencyCode: string;
+      consultationPriceId: string;
+      promoCodeId: string;
+      promoDiscountPercent: Prisma.Decimal;
+      promoDiscountAmount: number;
+      promoRedeemedBy: string | null;
+    };
+    redeem: (
+      tx: Prisma.TransactionClient,
+      packId: string,
+    ) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  }) {
+    const { existingPendingId, activeStatusId, pendingStatusId, data } = params;
+
+    // Estado de una bolsa gratuita: activa, sin datos de pasarela y con paidAt
+    // marcado (la "fecha de entrega" del cupo) para que el histórico ordene bien.
+    const packState = {
+      ...data,
+      totalPaid: 0,
+      // Sin cobro no hay hecho generador de IVA, pero se dejan los campos en 0
+      // (y no en null) para que la invariante totalPaid = base + IVA se sostenga.
+      taxRatePaid: new Prisma.Decimal(0),
+      taxBase: 0,
+      taxAmount: 0,
+      // Estado de facturación limpio (importa al reutilizar una pendiente). La
+      // cola de FE filtra por totalPaid > 0, así que una bolsa sin costo nunca
+      // aparece ahí: no hay nada que facturar.
+      einvoiceSent: false,
+      einvoiceSentAt: null,
+      einvoiceNumber: null,
+      einvoiceMarkedBy: null,
+      statusId: activeStatusId,
+      provider: FREE_PACK_PROVIDER,
+      providerSessionId: null,
+      providerReference: null,
+      providerTransactionId: null,
+      providerResponseReason: null,
+      paymentToken: null,
+      paidAt: new Date(),
+      isTest: false,
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      let pack: Awaited<ReturnType<typeof this.findById>> = null;
+
+      if (existingPendingId) {
+        const claimed = await tx.analysisPack.updateMany({
+          where: { id: existingPendingId, statusId: pendingStatusId },
+          data: packState,
+        });
+        if (claimed.count > 0) {
+          pack = await tx.analysisPack.findUnique({
+            where: { id: existingPendingId },
+            include: this.defaultInclude,
+          });
+        }
+      }
+
+      if (!pack) {
+        pack = await tx.analysisPack.create({
+          data: { ...packState, quantityConsumed: 0 },
+          include: this.defaultInclude,
+        });
+      }
+
+      const redeemed = await params.redeem(tx, pack.id);
+      if (!redeemed.ok) {
+        throw new PromoRedemptionFailedError(redeemed.reason);
+      }
+
+      // Evento sintético: la bolsa no pasó por ePayco, pero el histórico de
+      // pagos del cliente debe explicar de dónde salió. Monto 0 y cod_response 1
+      // (aceptada) para que se lea como una entrega confirmada.
+      await tx.paymentEvent.create({
+        data: {
+          analysisPackId: pack.id,
+          companyId: data.companyId,
+          provider: FREE_PACK_PROVIDER,
+          codResponse: 1,
+          responseText: 'Sin costo: código promocional del 100%',
+          amount: 0,
+          currencyCode: data.currencyCode,
+          isTest: false,
+          payload: {
+            source: 'promo_full_discount',
+            promoCodeId: data.promoCodeId,
+            discountPercent: Number(data.promoDiscountPercent),
+            discountAmount: data.promoDiscountAmount,
+            redeemedBy: data.promoRedeemedBy,
+          },
+        },
+      });
+
+      return pack;
     });
   }
 

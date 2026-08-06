@@ -34,6 +34,7 @@ import { UpdateScoringDimensionDto } from '../scoring/dto/update-scoring-dimensi
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
+import { MarkEinvoiceDto } from './dto/mark-einvoice.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
@@ -423,6 +424,82 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Corrida no encontrada' })
   deletePdfExtractionTest(@Param('id', ParseUUIDPipe) id: string) {
     return this.pdfExtractionTestService.remove(id);
+  }
+
+  // ── Facturación electrónica ────────────────────────────────────────────────
+  // La factura se emite fuera del sistema; aquí vive la COLA: qué ventas están
+  // cobradas y sin facturar, con los datos fiscales listos para el documento.
+  // Las bolsas sin costo (código promocional del 100%) nunca aparecen: no hubo
+  // pago, así que no hay nada que facturar.
+
+  @Get('einvoices')
+  @ApiOperation({
+    summary:
+      'Ventas cobradas para facturación electrónica (cola de pendientes)',
+    description:
+      'Devuelve cada venta con el adquiriente (datos fiscales de la empresa), el concepto y el desglose base/IVA CONGELADO al cobrar, más la referencia del recaudo para conciliar. Ordenadas de la más antigua a la más reciente. meta.totals suma toda la selección, no solo la página.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'pending',
+    required: false,
+    type: Boolean,
+    description:
+      'true (por defecto) = solo las que faltan por facturar; false = todas.',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Nombre, NIT, razón social o documento de facturación',
+  })
+  @ApiResponse({ status: 200, description: 'Ventas + meta con totales' })
+  listEinvoices(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('pending') pending?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.listEinvoices({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      pending: pending === 'false' ? false : true,
+      search,
+    });
+  }
+
+  @Patch('einvoices/:packId')
+  @ApiOperation({
+    summary: 'Marcar una venta como facturada (registra el número de factura)',
+  })
+  @ApiResponse({ status: 200, description: 'Venta marcada como facturada' })
+  @ApiResponse({
+    status: 400,
+    description: 'La bolsa se entregó sin costo: no hay factura que registrar',
+  })
+  @ApiResponse({ status: 404, description: 'Bolsa no encontrada' })
+  markEinvoice(
+    @Param('packId', ParseUUIDPipe) packId: string,
+    @Body() dto: MarkEinvoiceDto,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user.id as string;
+    return this.adminService.markEinvoiceSent(
+      packId,
+      dto.einvoiceNumber,
+      userId,
+    );
+  }
+
+  @Delete('einvoices/:packId')
+  @ApiOperation({
+    summary:
+      'Deshacer la marca de facturada (factura anulada o registrada por error)',
+  })
+  @ApiResponse({ status: 200, description: 'Venta devuelta a la cola' })
+  @ApiResponse({ status: 404, description: 'Bolsa no encontrada' })
+  unmarkEinvoice(@Param('packId', ParseUUIDPipe) packId: string) {
+    return this.adminService.unmarkEinvoiceSent(packId);
   }
 
   // ── Catálogo de dimensiones de scoring (scoring_dimensions) ────────────────

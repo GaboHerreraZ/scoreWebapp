@@ -109,6 +109,44 @@ export class MailService {
     });
   }
 
+  /**
+   * Avisa a un admin de una venta cobrada, con los datos fiscales del comprador
+   * y el desglose base/IVA que necesita la factura electrónica.
+   */
+  async sendPurchasePaidAdminEmail(params: {
+    to: string;
+    companyName: string;
+    billingName: string;
+    billingDocNumber: string;
+    billingEmail: string;
+    billingAddress: string;
+    billingCity: string;
+    planName: string;
+    quantity: string;
+    taxBase: string;
+    taxRate: string;
+    taxAmount: string;
+    total: string;
+    currency: string;
+    providerReference: string;
+    paidAt: string;
+    isTest: string;
+  }) {
+    const { to, ...vars } = params;
+
+    const html = this.loadTemplate('purchase-paid-admin', {
+      ...vars,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Venta cobrada — ${params.billingName} (${params.total} ${params.currency})`,
+      html,
+    });
+  }
+
   /** Notifica a un admin del incidente de pago reversado. */
   async sendPaymentReversedAdminEmail(params: {
     to: string;

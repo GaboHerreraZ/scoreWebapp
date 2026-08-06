@@ -36,6 +36,7 @@ const ALL_SCREENS = [
   'pack-offerings',
   'payment-alerts',
   'promo-codes',
+  'einvoices',
   'contact-requests',
   'support-tickets',
   'platform-admins', // gestión de usuarios del portal: SOLO rol admin
@@ -58,6 +59,7 @@ const BASE_SCREENS = [
   'contact-requests',
   'support-tickets',
   'pdf-extraction-test',
+  'einvoices'
 ];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
@@ -1221,6 +1223,244 @@ export class AdminService {
       // períodos de cada fuente desechada).
       snapshot: reset.snapshot,
     };
+  }
+
+  // ── Facturación electrónica ───────────────────────────────────────────────
+  // La factura se emite FUERA del sistema (proveedor de FE / contabilidad) y
+  // aquí solo se lleva la cola: qué ventas están cobradas y aún sin facturar, y
+  // el registro de cuál factura las cubrió. Nunca entran las bolsas sin costo
+  // (totalPaid = 0): no hubo pago, no hay nada que facturar.
+
+  /**
+   * Ventas cobradas para conciliar con facturación, con TODO lo que necesita el
+   * documento: adquiriente (datos fiscales de la empresa), concepto, desglose
+   * base/IVA congelado y referencia del recaudo.
+   *
+   * @param pending true (default) = solo las que faltan por facturar.
+   */
+  async listEinvoices(params: {
+    page?: number;
+    limit?: number;
+    pending?: boolean;
+    search?: string;
+  }) {
+    // Los query params llegan como texto: un valor no numérico se ignora en vez
+    // de propagar un NaN al skip/take (que reventaría en 500).
+    const page =
+      Number.isFinite(params.page) && params.page! > 0 ? params.page! : 1;
+    const limit =
+      Number.isFinite(params.limit) && params.limit! > 0
+        ? Math.min(params.limit!, 200)
+        : 20;
+
+    const where: Prisma.AnalysisPackWhereInput = {
+      // Solo ventas reales y ya confirmadas por la pasarela.
+      totalPaid: { gt: 0 },
+      paidAt: { not: null },
+      // Se excluyen las que NO representan un cobro firme: pending_payment (aún
+      // sin confirmar, o devuelta ahí por una reversa) y cancelled. Una bolsa
+      // vencida o agotada sí se factura: el cobro existió.
+      status: {
+        type: 'analysis_pack_status',
+        code: { notIn: ['pending_payment', 'cancelled'] },
+      },
+    };
+    if (params.pending !== false) {
+      where.einvoiceSent = false;
+    }
+    if (params.search?.trim()) {
+      const search = params.search.trim();
+      where.company = {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { nit: { contains: search, mode: 'insensitive' } },
+          { billingBusinessName: { contains: search, mode: 'insensitive' } },
+          { billingDocNumber: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    const [rows, total, totals] = await Promise.all([
+      this.prisma.analysisPack.findMany({
+        where,
+        orderBy: { paidAt: 'asc' }, // lo más viejo primero: es una cola
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          packOffering: { select: { name: true } },
+          status: { select: { code: true, label: true } },
+          einvoiceMarkedByAdmin: { select: { name: true, email: true } },
+          company: {
+            select: {
+              id: true,
+              name: true,
+              nit: true,
+              billingBusinessName: true,
+              billingName: true,
+              billingLastName: true,
+              billingDocTypeId: true,
+              billingDocNumber: true,
+              billingEmail: true,
+              billingPhone: true,
+              billingAddress: true,
+              billingCity: true,
+              billingState: true,
+            },
+          },
+        },
+      }),
+      this.prisma.analysisPack.count({ where }),
+      // Totales de la selección completa (no solo de la página), para cuadrar
+      // contra lo que reporte contabilidad.
+      this.prisma.analysisPack.aggregate({
+        where,
+        _sum: { totalPaid: true, taxBase: true, taxAmount: true },
+      }),
+    ]);
+
+    const data = rows.map((p) => {
+      const c = p.company;
+      // Nombre fiscal: razón social (jurídica) → nombre+apellido (natural) →
+      // nombre comercial de la cuenta.
+      const billingName =
+        c.billingBusinessName ||
+        [c.billingName, c.billingLastName].filter(Boolean).join(' ').trim() ||
+        c.name;
+
+      return {
+        analysisPackId: p.id,
+        paidAt: p.paidAt,
+        // Adquiriente (lo que va en la factura).
+        customer: {
+          companyId: c.id,
+          companyName: c.name,
+          nit: c.nit,
+          billingName,
+          billingDocTypeId: c.billingDocTypeId,
+          billingDocNumber: c.billingDocNumber,
+          billingEmail: c.billingEmail,
+          billingPhone: c.billingPhone,
+          billingAddress: c.billingAddress,
+          billingCity: c.billingCity,
+          billingState: c.billingState,
+        },
+        // Concepto.
+        item: {
+          name: p.packOffering?.name ?? 'Bolsa de consultas',
+          quantity: p.quantityPurchased,
+          unitPrice: p.unitPricePaid,
+        },
+        // Valores CONGELADOS al cobrar (base + IVA = total).
+        amounts: {
+          taxRate: Number(p.taxRatePaid ?? 0),
+          taxBase: p.taxBase ?? p.totalPaid,
+          taxAmount: p.taxAmount ?? 0,
+          total: p.totalPaid,
+          currency: p.currencyCode,
+        },
+        // Recaudo, para conciliar con el extracto de la pasarela.
+        payment: {
+          provider: p.provider,
+          providerReference: p.providerReference,
+          providerTransactionId: p.providerTransactionId,
+          franchise: p.providerFranchise,
+          isTest: p.isTest,
+        },
+        einvoice: {
+          sent: p.einvoiceSent,
+          sentAt: p.einvoiceSentAt,
+          number: p.einvoiceNumber,
+          markedBy:
+            p.einvoiceMarkedByAdmin?.name ??
+            p.einvoiceMarkedByAdmin?.email ??
+            null,
+        },
+        packStatus: p.status.code,
+      };
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        // Suma de TODA la selección, no de la página.
+        totals: {
+          taxBase: totals._sum.taxBase ?? 0,
+          taxAmount: totals._sum.taxAmount ?? 0,
+          total: totals._sum.totalPaid ?? 0,
+        },
+      },
+    };
+  }
+
+  /**
+   * Marca una venta como facturada (o corrige el número). Guarda quién la marcó.
+   * Rechaza las bolsas sin cobro: no existe factura para un valor de 0.
+   */
+  async markEinvoiceSent(
+    packId: string,
+    einvoiceNumber: string,
+    callerUserId: string,
+  ) {
+    const pack = await this.prisma.analysisPack.findUnique({
+      where: { id: packId },
+      select: { id: true, totalPaid: true, paidAt: true },
+    });
+    if (!pack) {
+      throw new NotFoundException(`Bolsa con id=${packId} no encontrada`);
+    }
+    if (pack.totalPaid <= 0) {
+      throw new BadRequestException(
+        'Esta bolsa se entregó sin costo: no hay factura que registrar',
+      );
+    }
+
+    const admin =
+      await this.platformAdminRepository.findByUserIdWithRole(callerUserId);
+
+    return this.prisma.analysisPack.update({
+      where: { id: packId },
+      data: {
+        einvoiceSent: true,
+        einvoiceSentAt: new Date(),
+        einvoiceNumber: einvoiceNumber.trim(),
+        einvoiceMarkedBy: admin?.id ?? null,
+      },
+      select: {
+        id: true,
+        einvoiceSent: true,
+        einvoiceSentAt: true,
+        einvoiceNumber: true,
+      },
+    });
+  }
+
+  /**
+   * Deshace la marca (se anuló la factura o se registró por error). Vuelve a la
+   * cola de pendientes conservando el histórico solo en logs.
+   */
+  async unmarkEinvoiceSent(packId: string) {
+    const pack = await this.prisma.analysisPack.findUnique({
+      where: { id: packId },
+      select: { id: true },
+    });
+    if (!pack) {
+      throw new NotFoundException(`Bolsa con id=${packId} no encontrada`);
+    }
+
+    return this.prisma.analysisPack.update({
+      where: { id: packId },
+      data: {
+        einvoiceSent: false,
+        einvoiceSentAt: null,
+        einvoiceNumber: null,
+        einvoiceMarkedBy: null,
+      },
+      select: { id: true, einvoiceSent: true },
+    });
   }
 
   /** Resuelve userIds de Supabase → PlatformAdmin (name/email) para display. */

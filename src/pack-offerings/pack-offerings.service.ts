@@ -11,6 +11,7 @@ import { UpdatePackOfferingDto } from './dto/update-pack-offering.dto.js';
 import { FilterPackOfferingDto } from './dto/filter-pack-offering.dto.js';
 import {
   calculatePackPrice,
+  calculateTax,
   type DiscountTypeCode,
 } from '../common/utils/pack-pricing.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -76,10 +77,12 @@ export class PackOfferingsService {
         : null;
 
       // Precio por consulta YA con el descuento del pack repartido (total/quantity).
-      // Si no hay descuento, coincide con unitPrice.
+      // Si no hay descuento, coincide con unitPrice. Es un valor de DISPLAY: se
+      // redondea a peso, así que unitPriceWithDiscount × quantity puede diferir
+      // del total en unos pocos pesos. Lo que se cobra es siempre `total`.
       const unitPriceWithDiscount =
         pricing && offering.quantity > 0
-          ? pricing.total / offering.quantity
+          ? Math.round(pricing.total / offering.quantity)
           : null;
 
       return {
@@ -186,6 +189,20 @@ export class PackOfferingsService {
           })
         : null;
 
+      // Desglose de IVA con la tarifa vigente, para que el front muestre
+      // base + impuesto sin calcular nada. Se aplica sobre `total` (ya con el
+      // descuento por volumen), igual que en la compra — ahí el código
+      // promocional entra ANTES del impuesto, así que si el usuario aplica uno
+      // el desglose definitivo lo devuelve /purchase, no este catálogo.
+      const tax =
+        pricing && activePrice
+          ? calculateTax(
+              pricing.total,
+              Number(activePrice.taxRate),
+              activePrice.taxIncluded,
+            )
+          : null;
+
       return {
         id: offering.id,
         name: offering.name,
@@ -197,7 +214,21 @@ export class PackOfferingsService {
         unitPrice: pricing?.unitPrice ?? null,
         subtotal: pricing?.subtotal ?? null,
         discountAmount: pricing?.discountAmount ?? null,
+        // Valor comercial del pack (con descuento por volumen, sin IVA sumado).
         total: pricing?.total ?? null,
+        // Desglose fiscal: base + amount = totalToCharge.
+        tax: tax
+          ? {
+              rate: tax.taxRate,
+              included: tax.taxIncluded, // true = `total` YA trae el IVA
+              base: tax.base,
+              amount: tax.taxAmount,
+            }
+          : null,
+        // Lo que se le cobrará al cliente. Con IVA incluido es igual a `total`;
+        // si el precio vigente NO lo incluye, es total + IVA. Es el número que
+        // debe mostrar el front como "total a pagar".
+        totalToCharge: tax?.total ?? pricing?.total ?? null,
       };
     });
   }
