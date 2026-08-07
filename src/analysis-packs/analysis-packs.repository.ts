@@ -68,11 +68,14 @@ export class AnalysisPacksRepository {
     });
   }
 
-  /** Guarda el sessionId del checkout v2 en la bolsa. */
-  async setProviderSessionId(packId: string, sessionId: string) {
+  /**
+   * Guarda los datos del intento de checkout v2 (sessionId + invoice enviada a la
+   * pasarela). Ambos cambian en CADA intento sobre la misma bolsa.
+   */
+  async setCheckoutAttempt(packId: string, sessionId: string, invoice: string) {
     return this.prisma.analysisPack.update({
       where: { id: packId },
-      data: { providerSessionId: sessionId },
+      data: { providerSessionId: sessionId, providerInvoice: invoice },
     });
   }
 
@@ -197,6 +200,7 @@ export class AnalysisPacksRepository {
       statusId: activeStatusId,
       provider: FREE_PACK_PROVIDER,
       providerSessionId: null,
+      providerInvoice: null,
       providerReference: null,
       providerTransactionId: null,
       providerResponseReason: null,
@@ -604,6 +608,9 @@ export class AnalysisPacksRepository {
         providerReference: null,
         providerTransactionId: null,
         providerSessionId: null,
+        // La invoice reversada ya está "quemada" en la pasarela: el próximo
+        // intento genera una nueva.
+        providerInvoice: null,
       },
     });
     return !!result;

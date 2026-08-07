@@ -264,8 +264,14 @@ export class AnalysisPacksService {
           ...taxSnapshot,
         });
 
-    // invoice = referencia única propia que ePayco devuelve en la confirmación.
-    const invoice = `PACK-${pack.id}`;
+    // invoice = referencia propia que ePayco devuelve en la confirmación.
+    // DEBE ser distinta en cada INTENTO, no por bolsa: ePayco registra la invoice
+    // en cuanto se abre la transacción (aunque el cliente cancele el modal) y
+    // rechaza cualquier pago posterior con la misma → "La transacción que intentas
+    // pagar ya cuenta con un registro previo". Como un reintento REUTILIZA la bolsa
+    // pendiente, se le añade un sufijo aleatorio por intento. El cruce con la bolsa
+    // en el webhook NO depende de esto: viaja el id crudo en extra1.
+    const invoice = `PACK-${pack.id}-${randomBytes(4).toString('hex')}`;
     const backendUrl = this.configService.get<string>(
       'BACKEND_PUBLIC_URL',
       'http://localhost:3000',
@@ -318,8 +324,9 @@ export class AnalysisPacksService {
       },
     });
 
-    // 3. Guardar el sessionId en la bolsa (trazabilidad del intento de pago).
-    await this.repository.setProviderSessionId(pack.id, sessionId);
+    // 3. Guardar sessionId + invoice del intento en la bolsa (trazabilidad y
+    //    recibo: buildReceipt ya no puede derivar la invoice del id).
+    await this.repository.setCheckoutAttempt(pack.id, sessionId, invoice);
 
     this.logger.log(
       `Empresa ${companyId} inició compra de pack ${pack.id} (oferta ${offering.id}, total ${pricing.total} ${activePrice.currencyCode}, session ${sessionId})`,
@@ -722,7 +729,9 @@ export class AnalysisPacksService {
       analysisPackId: pack.id,
       status: pack.status.code, // pending_payment | active | cancelled
       statusLabel: pack.status.label,
-      invoice: isFree ? null : `PACK-${pack.id}`,
+      // Invoice del último intento de pago (null en bolsas sin cobro, que no
+      // pasan por la pasarela). Se lee de la bolsa: ya no es derivable del id.
+      invoice: isFree ? null : pack.providerInvoice,
 
       // Empresa para la que se compró (se creó en el onboarding).
       company: {
