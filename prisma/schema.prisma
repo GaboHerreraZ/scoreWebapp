@@ -365,6 +365,10 @@ model AnalysisPack {
   // Pago ÚNICO vía Smart Checkout v2 (no suscripción recurrente).
   provider              String   @default("epayco") @db.VarChar(50)
   providerSessionId     String?  @map("provider_session_id") @db.VarChar(100) // sesión del checkout (1 por intento)
+  // Referencia de factura enviada a la pasarela (x_id_factura). ÚNICA POR INTENTO:
+  // ePayco rechaza un segundo pago con la misma invoice ("ya cuenta con un registro
+  // previo"), así que al reintentar sobre la misma bolsa se genera una nueva.
+  providerInvoice       String?  @map("provider_invoice") @db.VarChar(100)
   providerReference     String?  @map("provider_reference") @db.VarChar(100) // x_ref_payco
   providerTransactionId String?  @map("provider_transaction_id") @db.VarChar(100)
   // Datos del comprobante de pago (de la confirmación del proveedor), para
