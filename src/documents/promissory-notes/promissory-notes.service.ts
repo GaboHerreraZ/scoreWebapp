@@ -121,7 +121,13 @@ export class PromissoryNotesService {
     const study = await this.prisma.creditStudy.findFirst({
       where: { id: dto.creditStudyId, companyId },
       include: {
-        customer: { include: { identificationType: true } },
+        customer: {
+          include: {
+            identificationType: true,
+            personType: true,
+            legalRepIdentificationType: true,
+          },
+        },
         company: { include: { accountType: true, accountBank: true } },
       },
     });
@@ -159,13 +165,60 @@ export class PromissoryNotesService {
       );
     }
 
-    // ── El firmante es el consultado: necesita email ──
+    // ── El firmante: PN en nombre propio; PJ firma su representante legal ──
     const customer = study.customer;
-    const signerEmail = customer.email;
-    if (!signerEmail) {
-      throw new BadRequestException(
-        'El cliente no tiene correo registrado; es necesario para enviarle el pagaré a firma.',
-      );
+    const isPJ = customer.personType.code === 'legalEntity';
+
+    let signerName: string;
+    let signerEmail: string;
+    let firmante: {
+      nombre: string;
+      tipoDoc: string;
+      numDoc: string;
+      actuacion: string;
+      lineaRepresentante: string;
+    };
+
+    if (isPJ) {
+      const missingRep: string[] = [];
+      if (!customer.legalRepName) missingRep.push('nombre');
+      if (!customer.legalRepIdentificationType)
+        missingRep.push('tipo de identificación');
+      if (!customer.legalRepIdentificationNumber)
+        missingRep.push('número de identificación');
+      if (!customer.legalRepEmail) missingRep.push('correo');
+      if (missingRep.length > 0) {
+        throw new BadRequestException(
+          `Para emitir el pagaré de una persona jurídica se requieren los datos del representante legal, que es quien lo firma (falta: ${missingRep.join(', ')}). Puedes completarlos editando el cliente.`,
+        );
+      }
+      signerName = customer.legalRepName!;
+      signerEmail = customer.legalRepEmail!;
+      const nitConDv = customer.verificationDigit
+        ? `${customer.identificationNumber}-${customer.verificationDigit}`
+        : customer.identificationNumber;
+      firmante = {
+        nombre: customer.legalRepName!,
+        tipoDoc: customer.legalRepIdentificationType!.label,
+        numDoc: customer.legalRepIdentificationNumber!,
+        actuacion: `actuando en calidad de representante legal de ${customer.businessName}, identificada con NIT ${nitConDv}`,
+        lineaRepresentante: `Representante legal: ${customer.legalRepName} · ${customer.legalRepIdentificationType!.label} No. ${customer.legalRepIdentificationNumber}`,
+      };
+    } else {
+      if (!customer.email) {
+        throw new BadRequestException(
+          'El cliente no tiene correo registrado; es necesario para enviarle el pagaré a firma.',
+        );
+      }
+      signerName = customer.businessName;
+      signerEmail = customer.email;
+      firmante = {
+        nombre: customer.businessName,
+        tipoDoc: customer.identificationType?.label ?? 'Documento',
+        numDoc: customer.identificationNumber,
+        actuacion: 'actuando en nombre propio',
+        lineaRepresentante: '',
+      };
     }
 
     // ── Datos bancarios del acreedor: los exige el texto del pagaré ──
@@ -176,7 +229,7 @@ export class PromissoryNotesService {
     if (!company.accountBank) missingBank.push('banco');
     if (missingBank.length > 0) {
       throw new BadRequestException(
-        `Completa los datos bancarios de la empresa antes de emitir el pagaré: falta ${missingBank.join(', ')}.`,
+        `Para emitir el pagaré es necesario completar los datos bancarios de la empresa (falta: ${missingBank.join(', ')}). Puedes registrarlos en Administración → Empresa → Datos financieros.`,
       );
     }
 
@@ -191,7 +244,9 @@ export class PromissoryNotesService {
       study,
       customer,
       company,
+      signerName,
       signerEmail,
+      firmante,
       issuedAt,
       dueDate,
       amount,
@@ -209,6 +264,7 @@ export class PromissoryNotesService {
       customer: {
         businessName: string;
         identificationNumber: string;
+        verificationDigit: string | null;
         address: string | null;
         phone: string | null;
         identificationType: { label: string } | null;
@@ -223,6 +279,14 @@ export class PromissoryNotesService {
         accountBank: { label: string } | null;
       };
       signerEmail: string;
+      // Quien suscribe: el deudor (PN) o su representante legal (PJ).
+      firmante: {
+        nombre: string;
+        tipoDoc: string;
+        numDoc: string;
+        actuacion: string;
+        lineaRepresentante: string;
+      };
       issuedAt: Date;
       dueDate: Date;
       amount: number;
@@ -230,7 +294,7 @@ export class PromissoryNotesService {
     },
     noteNumber: number,
   ): Record<string, string> {
-    const { customer, company, signerEmail, issuedAt, dueDate } = ctx;
+    const { customer, company, signerEmail, firmante, issuedAt, dueDate } = ctx;
     const firma = bogotaDateParts(issuedAt);
     const pago = bogotaDateParts(dueDate);
     return {
@@ -238,7 +302,15 @@ export class PromissoryNotesService {
       NOTE_NUMBER: String(noteNumber),
       DEUDOR_NOMBRE: customer.businessName,
       DEUDOR_TIPO_DOC: customer.identificationType?.label ?? 'Documento',
-      DEUDOR_NUM_DOC: customer.identificationNumber,
+      // PJ: NIT con dígito de verificación (900123456-7).
+      DEUDOR_NUM_DOC: customer.verificationDigit
+        ? `${customer.identificationNumber}-${customer.verificationDigit}`
+        : customer.identificationNumber,
+      FIRMANTE_NOMBRE: firmante.nombre,
+      FIRMANTE_TIPO_DOC: firmante.tipoDoc,
+      FIRMANTE_NUM_DOC: firmante.numDoc,
+      FIRMANTE_ACTUACION: firmante.actuacion,
+      FIRMANTE_LINEA_REP: firmante.lineaRepresentante,
       DEUDOR_DIRECCION: customer.address ?? '—',
       DEUDOR_TELEFONO: customer.phone ?? '—',
       DEUDOR_EMAIL: signerEmail,
@@ -304,7 +376,9 @@ export class PromissoryNotesService {
       study,
       customer,
       company,
+      signerName,
       signerEmail,
+      firmante,
       issuedAt,
       dueDate,
       amount,
@@ -358,13 +432,14 @@ export class PromissoryNotesService {
     try {
       const doc = await this.zapsign.createDocFromTemplate({
         templateId: this.templateId,
-        signerName: customer.businessName,
+        signerName,
         signerEmail,
         data: this.buildTemplateData(
           {
             customer,
             company,
             signerEmail,
+            firmante,
             issuedAt,
             dueDate,
             amount,

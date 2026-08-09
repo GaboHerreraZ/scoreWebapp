@@ -40,6 +40,13 @@ export interface MappedCustomer {
   documentStatus: string | null;
   // Perfil PJ (dominio). null para PN. Se guarda como JSONB en Customer.bureauProfile.
   bureauProfile: MappedBureauProfile | null;
+  // Rep. legal principal (solo PJ) para sembrar el Customer al crearlo; el
+  // detalle completo va en bureauProfile.legalRep.
+  legalRepSeed: {
+    name: string;
+    identificationTypeCode: string | null; // code de Parameter 'identification_type'
+    identificationNumber: string | null;
+  } | null;
 }
 
 // ── Perfil PJ en dominio (nombres propios, neutro al proveedor) ─────────────

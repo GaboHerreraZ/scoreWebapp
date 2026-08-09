@@ -1,8 +1,11 @@
 # Pagaré + autorización de espacios en blanco — Mapa de variables
 
-Documento único que firma el **deudor** (el consultado del estudio de crédito)
-cuando el estudio resulta **viable** o **viable con condiciones** (nunca "no
-viable"). Reúne en un solo acto y una sola firma:
+Documento único que se firma cuando el estudio resulta **viable** o **viable con
+condiciones** (nunca "no viable"). Quién firma depende del tipo de persona del
+deudor: **PN** firma el propio consultado; **PJ** firma su **representante
+legal** (columnas editables `legal_rep_*` del Customer — sin nombre, tipo,
+número o correo del representante la emisión retorna 400). Reúne en un solo
+acto y una sola firma:
 
 1. **Pagaré No. N** — título valor (art. 621 y ss. C.Co.)
 2. **Autorización para llenar espacios en blanco** (art. 622 C.Co.)
@@ -28,16 +31,26 @@ Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`.
 - El estudio pasa a `credit_status = pendingSignature` al emitir; a `closed` al
   firmarse; vuelve a `studyCompleted` si se declina o el deudor rechaza.
 
-## EL DEUDOR (quien firma — el consultado)
+## EL DEUDOR (el obligado del título valor)
 
 | Variable               | Origen en la BD                                    | Notas |
 |------------------------|-----------------------------------------------------|-------|
 | `{{DEUDOR_NOMBRE}}`    | `Customer.businessName`                             | nombre completo (PN) o razón social (PJ) |
 | `{{DEUDOR_TIPO_DOC}}`  | label del Parameter `identification_type`           | CC, NIT, CE… |
-| `{{DEUDOR_NUM_DOC}}`   | `Customer.identificationNumber`                     | |
+| `{{DEUDOR_NUM_DOC}}`   | `Customer.identificationNumber` (+ `-DV` en PJ)     | PJ: NIT con dígito de verificación (`900123456-7`) |
 | `{{DEUDOR_DIRECCION}}` | `Customer.address`                                  | `—` si no hay |
 | `{{DEUDOR_TELEFONO}}`  | `Customer.phone`                                    | `—` si no hay |
-| `{{DEUDOR_EMAIL}}`     | `Customer.email`                                    | **= firmante en Zapsign; requerido** |
+| `{{DEUDOR_EMAIL}}`     | correo del **firmante**                             | PN: `Customer.email`; PJ: `Customer.legalRepEmail` — **requerido** |
+
+## EL FIRMANTE (quien suscribe: el deudor en PN, su representante legal en PJ)
+
+| Variable                  | PN                                        | PJ |
+|---------------------------|-------------------------------------------|----|
+| `{{FIRMANTE_NOMBRE}}`     | `Customer.businessName`                   | `Customer.legalRepName` — **requerido** |
+| `{{FIRMANTE_TIPO_DOC}}`   | label del `identification_type` del deudor| label del `legalRepIdentificationType` — **requerido** |
+| `{{FIRMANTE_NUM_DOC}}`    | `Customer.identificationNumber`           | `Customer.legalRepIdentificationNumber` — **requerido** |
+| `{{FIRMANTE_ACTUACION}}`  | fijo: `actuando en nombre propio`         | `actuando en calidad de representante legal de <razón social>, identificada con NIT <nit-dv>` |
+| `{{FIRMANTE_LINEA_REP}}`  | vacío                                     | `Representante legal: <nombre> · <tipo doc> No. <número>` (disponible; hoy la plantilla no la usa) |
 
 ## EL ACREEDOR (la empresa cliente de Creditia)
 
@@ -74,9 +87,10 @@ datos después, el pagaré emitido no cambia).
 
 ## Firma
 
-Un solo firmante: **el deudor** (`{{DEUDOR_EMAIL}}`). La firma electrónica cubre
-las dos secciones (pagaré + autorización de espacios en blanco). El acreedor no
-firma: emite el documento.
+Un solo firmante (`{{DEUDOR_EMAIL}}`): el deudor en PN, o el **representante
+legal** de la sociedad deudora en PJ (Zapsign recibe su nombre y su correo). La
+firma electrónica cubre las dos secciones (pagaré + autorización de espacios en
+blanco). El acreedor no firma: emite el documento.
 
 ## Ciclo de vida y webhook
 

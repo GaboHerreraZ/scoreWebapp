@@ -23,6 +23,23 @@ export interface PersistConsultationParams {
   // la central no trae, el titularEmail que viajó en la petición (el mismo al
   // que se envió la autorización). NUNCA pisa un email ya guardado.
   contactEmail: string | null;
+  // Contacto de la central para sembrar el Customer SOLO al crearlo (luego es
+  // editable vía PATCH y el refresh no lo pisa). PN llega todo null.
+  contactSeed: {
+    phone: string | null;
+    city: string | null;
+    address: string | null;
+    economicActivityId: number | null;
+  };
+  // Primer representante legal principal (solo PJ), sembrado solo al crear.
+  legalRepSeed: {
+    name: string;
+    identificationTypeId: number | null;
+    identificationNumber: string | null;
+  } | null;
+  // titularEmail del from-bureau (solo PJ): correo del representante legal.
+  // Create: se siembra; update: solo si está null.
+  legalRepEmailFallback: string | null;
 }
 
 @Injectable()
@@ -113,8 +130,7 @@ export class CreditBureauRepository {
   ) {
     const { companyId, userId, personTypeId, identificationTypeId } = params;
 
-    // Email: solo se escribe si el Customer no tiene uno (no pisamos un email
-    // editado/confirmado). Se necesita para firmas posteriores (p.ej. pagaré).
+    // Emails: solo se escriben si el Customer no los tiene (no pisar ediciones).
     const existing = await tx.customer.findUnique({
       where: {
         companyId_identificationNumber: {
@@ -122,11 +138,15 @@ export class CreditBureauRepository {
           identificationNumber: data.identificationNumber,
         },
       },
-      select: { email: true },
+      select: { email: true, legalRepEmail: true },
     });
     const emailPatch =
       !existing?.email && params.contactEmail
         ? { email: params.contactEmail }
+        : {};
+    const legalRepEmailPatch =
+      !existing?.legalRepEmail && params.legalRepEmailFallback
+        ? { legalRepEmail: params.legalRepEmailFallback }
         : {};
 
     // Campos que refrescamos con lo que trae la central (el último estado
@@ -163,12 +183,23 @@ export class CreditBureauRepository {
         createdBy: userId,
         updatedBy: userId,
         email: params.contactEmail,
+        phone: params.contactSeed.phone,
+        city: params.contactSeed.city,
+        address: params.contactSeed.address,
+        economicActivityId: params.contactSeed.economicActivityId,
+        legalRepName: params.legalRepSeed?.name ?? null,
+        legalRepIdentificationTypeId:
+          params.legalRepSeed?.identificationTypeId ?? null,
+        legalRepIdentificationNumber:
+          params.legalRepSeed?.identificationNumber ?? null,
+        legalRepEmail: params.legalRepEmailFallback,
         ...refreshable,
       },
       update: {
         updatedBy: userId,
         ...refreshable,
         ...emailPatch,
+        ...legalRepEmailPatch,
       },
     });
   }
@@ -185,6 +216,21 @@ export class CreditBureauRepository {
     const result = await this.prisma.customer.updateMany({
       where: { id: customerId, email: null },
       data: { email },
+    });
+    return result.count > 0;
+  }
+
+  /**
+   * Backfill del correo del representante legal (PJ): solo escribe si está
+   * null; true si esta llamada lo escribió. El llamador garantiza PJ.
+   */
+  async setCustomerLegalRepEmailIfMissing(
+    customerId: string,
+    email: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.customer.updateMany({
+      where: { id: customerId, legalRepEmail: null },
+      data: { legalRepEmail: email },
     });
     return result.count > 0;
   }

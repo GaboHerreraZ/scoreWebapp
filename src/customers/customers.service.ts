@@ -1,16 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CustomersRepository } from './customers.repository.js';
+import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { FilterCustomerDto } from './dto/filter-customer.dto.js';
 import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
+import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { CustomerDetailResponseDto } from './dto/customer-detail-response.dto.js';
 import { CustomerStatsResponseDto } from './dto/customer-stats-response.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn } from '../common/excel/excel.types.js';
 
-// El alta/edición manual de clientes (create/update) se retiró: el Customer nace
-// de una consulta a DataCrédito (ver módulo credit-bureau). Aquí quedan solo las
-// operaciones de lectura, autocompletado, exportación y borrado.
+// El alta manual (create) se retiró: el Customer nace de una consulta al
+// bureau. El update edita SOLO los campos que el refresh no pisa.
 interface CustomerExportRow {
   businessName: string;
   identificationType: string | null;
@@ -33,6 +38,7 @@ type CustomerWithRelations = Prisma.CustomerGetPayload<{
     company: true;
     economicActivity: true;
     identificationType: true;
+    legalRepIdentificationType: true;
   };
 }>;
 
@@ -40,6 +46,7 @@ type CustomerWithRelations = Prisma.CustomerGetPayload<{
 export class CustomersService {
   constructor(
     private readonly repository: CustomersRepository,
+    private readonly parametersRepository: ParametersRepository,
     private readonly excelService: ExcelService,
   ) {}
 
@@ -98,6 +105,64 @@ export class CustomersService {
     return this.toDetailResponse(customer);
   }
 
+  async update(
+    id: string,
+    companyId: string,
+    userId: string,
+    dto: UpdateCustomerDto,
+  ): Promise<CustomerDetailResponseDto> {
+    const existing = await this.repository.findById(id, companyId);
+    if (!existing) {
+      throw new NotFoundException(
+        `Cliente con id=${id} no encontrado en esta empresa`,
+      );
+    }
+
+    if (dto.economicActivityId != null) {
+      const sector = await this.parametersRepository.findById(
+        dto.economicActivityId,
+      );
+      if (!sector || sector.type !== 'sector' || !sector.isActive) {
+        throw new BadRequestException(
+          `economicActivityId=${dto.economicActivityId} no es una actividad económica válida (Parameter tipo 'sector' activo)`,
+        );
+      }
+    }
+
+    if (dto.legalRepIdentificationTypeId != null) {
+      const identType = await this.parametersRepository.findById(
+        dto.legalRepIdentificationTypeId,
+      );
+      if (
+        !identType ||
+        identType.type !== 'identification_type' ||
+        !identType.isActive
+      ) {
+        throw new BadRequestException(
+          `legalRepIdentificationTypeId=${dto.legalRepIdentificationTypeId} no es un tipo de identificación válido (Parameter tipo 'identification_type' activo)`,
+        );
+      }
+    }
+
+    // undefined → Prisma lo ignora; null → limpia el campo.
+    const updated = await this.repository.update(id, {
+      email: dto.email,
+      phone: dto.phone,
+      city: dto.city,
+      state: dto.state,
+      address: dto.address,
+      economicActivityId: dto.economicActivityId,
+      legalRepName: dto.legalRepName,
+      legalRepIdentificationTypeId: dto.legalRepIdentificationTypeId,
+      legalRepIdentificationNumber: dto.legalRepIdentificationNumber,
+      legalRepEmail: dto.legalRepEmail,
+      legalRepPhone: dto.legalRepPhone,
+      updatedBy: userId,
+    });
+
+    return this.toDetailResponse(updated);
+  }
+
   // Aplana la entidad Prisma (nombres, demográficos y verificationDigit sueltos en
   // la raíz) a la forma anidada del DTO unificado. Los bloques que no aplican al
   // tipo de persona quedan null: nameParts + demographics solo para PN;
@@ -117,6 +182,14 @@ export class CustomersService {
       c.gender != null ||
       c.ageRange != null ||
       c.documentStatus != null;
+
+    // Rep. legal de las columnas editables (no el de bureauProfile).
+    const hasLegalRep =
+      c.legalRepName != null ||
+      c.legalRepIdentificationTypeId != null ||
+      c.legalRepIdentificationNumber != null ||
+      c.legalRepEmail != null ||
+      c.legalRepPhone != null;
 
     return {
       id: c.id,
@@ -156,6 +229,21 @@ export class CustomersService {
       city: c.city,
       state: c.state,
       address: c.address,
+      legalRep: hasLegalRep
+        ? {
+            name: c.legalRepName,
+            identificationType: c.legalRepIdentificationType
+              ? {
+                  id: c.legalRepIdentificationType.id,
+                  code: c.legalRepIdentificationType.code,
+                  label: c.legalRepIdentificationType.label,
+                }
+              : null,
+            identificationNumber: c.legalRepIdentificationNumber,
+            email: c.legalRepEmail,
+            phone: c.legalRepPhone,
+          }
+        : null,
       demographics: hasDemographics
         ? {
             birthDate: c.birthDate,

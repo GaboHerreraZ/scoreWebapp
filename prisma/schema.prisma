@@ -35,6 +35,7 @@ model Parameter {
   aiAnalysesByType                      AiAnalysis[]          @relation("AiAnalysisType")
   invitationsByStatus                   Invitation[]          @relation("InvitationStatus")
   customersByIdentificationType         Customer[]            @relation("CustomerIdentificationType")
+  customersByLegalRepIdentificationType Customer[]            @relation("CustomerLegalRepIdentificationType")
   companiesByAccountType                Company[]             @relation("CompanyAccountType")
   companiesByAccountBank                Company[]             @relation("CompanyAccountBank")
   companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
@@ -513,6 +514,14 @@ model Customer {
   ageRange       String?   @map("age_range") @db.VarChar(10)
   documentStatus String?   @map("document_status") @db.VarChar(50) // estadoDocumento: Vigente, Cancelada...
 
+  // ── Representante legal (solo PJ; editable, el refresh del bureau no lo pisa) ──
+  // Sembrado en la 1ª consulta si la central lo trae; firma el pagaré de PJ.
+  legalRepName                 String? @map("legal_rep_name") @db.VarChar(255)
+  legalRepIdentificationTypeId Int?    @map("legal_rep_identification_type_id")
+  legalRepIdentificationNumber String? @map("legal_rep_identification_number") @db.VarChar(50)
+  legalRepEmail                String? @map("legal_rep_email") @db.VarChar(255)
+  legalRepPhone                String? @map("legal_rep_phone") @db.VarChar(50)
+
   // ── Perfil PJ del bureau (solo PJ; en PN va null) ─────
   // Bloque de dominio (perfil general, matrícula, rep. legal, junta, revisoría,
   // socios, contacto) armado por el mapper con nombres propios (NO crudo del
@@ -532,6 +541,7 @@ model Customer {
   company            Company                     @relation(fields: [companyId], references: [id])
   personType         Parameter                   @relation("CustomerPersonType", fields: [personTypeId], references: [id])
   identificationType Parameter?                  @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
+  legalRepIdentificationType Parameter?          @relation("CustomerLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
   economicActivity   Parameter?                  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
   createdByUser      Profile                     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
   updatedByUser      Profile                     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])

@@ -4,6 +4,7 @@ import type {
   ExperianValidacion,
   ExperianRespuesta,
   ExperianPersona,
+  ExperianPrincipalesSuplentes,
   ExperianVinculoNodo,
 } from './experian.types.js';
 import type {
@@ -207,6 +208,30 @@ function mapCustomer(
         ? (datosBasicos.estadoDocumento ?? demografica.estadoDocumento ?? null)
         : null,
     bureauProfile: personType === 'PJ' ? mapBureauProfile(validacion) : null,
+    legalRepSeed:
+      personType === 'PJ'
+        ? mapLegalRepSeed(validacion.representanteLegal)
+        : null,
+  };
+}
+
+/**
+ * Primer representante legal PRINCIPAL (los suplentes no cuentan). null si la
+ * central no lo trae; el usuario lo completa vía PATCH.
+ */
+function mapLegalRepSeed(
+  rl: ExperianPrincipalesSuplentes | undefined,
+): MappedCustomer['legalRepSeed'] {
+  const first = rl?.principales?.[0];
+  if (!first) return null;
+
+  const name = joinName(first.nombre, first.apellidos);
+  if (!name) return null;
+
+  return {
+    name,
+    identificationTypeCode: resolveDocParamCode(first.tipoDocumento),
+    identificationNumber: first.numeroDocumento?.trim() || null,
   };
 }
 
