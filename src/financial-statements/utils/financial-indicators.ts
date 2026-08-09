@@ -1,4 +1,4 @@
-import { getMonthsFromPeriod } from '../../common/enums/income-statement-period.enum.js';
+import { getPeriodDays } from '../../common/enums/income-statement-period.enum.js';
 
 /**
  * Cifras crudas de un estado financiero necesarias para derivar los indicadores.
@@ -104,17 +104,24 @@ export interface FinancialIndicators {
  * Calcula los indicadores financieros derivados de las cifras crudas de un
  * estado financiero. Función pura extraída de getCreditStudyPerform: preserva
  * exactamente el algoritmo (Z-Score de Altman → factor de estabilidad, EBITDA,
- * capacidad de pago, rotaciones). El período (mensual/anual) rige la
- * anualización de la capacidad de pago mensual.
+ * capacidad de pago, rotaciones).
+ *
+ * La DURACIÓN del estado de resultados es un parámetro, no un supuesto: rige la
+ * capacidad de pago mensual y el factor de las rotaciones. Un ERI acumulado a
+ * junio trae medio año de ingresos y costos; medirlo contra 365 días reportaría
+ * el doble de días de cartera de los reales.
  *
  * @param figures cifras crudas del estado financiero
- * @param periodLabel label del Parameter income_statement (p.ej. '12' = anual)
+ * @param periodMonths meses que abarca el estado de resultados (1..12).
+ *   Resolverlo con resolvePeriodMonths: manda lo leído del documento y, si no
+ *   se pudo determinar, el Parameter income_statement.
  */
 export function computeFinancialIndicators(
   figures: FinancialStatementRawFigures,
-  periodLabel: string,
+  periodMonths: number,
 ): FinancialIndicators {
-  const periodMonths = getMonthsFromPeriod(periodLabel);
+  // Días del período para las rotaciones (año comercial de 360 días).
+  const periodDays = getPeriodDays(periodMonths);
 
   // ── Z-Score de Altman → factor de estabilidad ──
   const totalAssets = figures.totalAssets ?? 1;
@@ -160,14 +167,14 @@ export function computeFinancialIndicators(
     (((figures.accountsReceivable1 ?? 0) + (figures.accountsReceivable2 ?? 0)) /
       2 /
       (figures.ordinaryActivityRevenue ?? 1)) *
-      365,
+      periodDays,
   );
 
   const inventoryTurnover = Math.round(
     (((figures.inventories1 ?? 0) + (figures.inventories2 ?? 0)) /
       2 /
       (figures.costOfSales ?? 1)) *
-      365,
+      periodDays,
   );
 
   // Saldo promedio de proveedores (apertura + cierre). El orden no importa: es
@@ -197,7 +204,7 @@ export function computeFinancialIndicators(
   const accountsPayableTurnover =
     accountsPayableTurnover1 / accountsPayableTurnover2;
 
-  const paymentTimeSuppliers = Math.round(accountsPayableTurnover * 365);
+  const paymentTimeSuppliers = Math.round(accountsPayableTurnover * periodDays);
   const suppliersTurnover = -paymentTimeSuppliers;
 
   // ── Ratios de presentación (estándar) ──────────────────

@@ -14,7 +14,7 @@ import {
   type ExtractedFinancialData,
   type NormalizedPeriod,
 } from '../financial-statements/utils/extracted-periods.js';
-import { getMonthsFromPeriod } from '../common/enums/income-statement-period.enum.js';
+import { resolvePeriodMonths } from '../common/enums/income-statement-period.enum.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -70,17 +70,25 @@ export class PdfExtractionTestService {
 
     // 4. Indicadores y ratios: corriente + anterior, igual que en el flujo real.
     //    El anterior se busca por AÑO, no por posición (puede haber dos columnas
-    //    del mismo año en el documento).
+    //    del mismo año en el documento). Los meses del ERI salen del documento
+    //    (período corriente) y solo si faltan se cae al combo del formulario.
+    const months = resolvePeriodMonths(periods[0].statementMonths, periodLabel);
+
     const { ratios, ...indicators } = computeFinancialIndicators(
       toIndicatorFigures(periods[0], selectPriorPeriod(periods, periods[0])),
-      periodLabel,
+      months,
     );
 
     const response = {
       period: {
         incomeStatementId: dto.incomeStatementId ?? null,
         label: periodLabel,
-        months: getMonthsFromPeriod(periodLabel),
+        // Meses efectivamente usados en el cálculo y de dónde salieron: es lo
+        // primero que se revisa cuando una rotación se ve rara.
+        months,
+        detectedMonths: periods[0].statementMonths ?? null,
+        monthsSource: periods[0].statementMonths != null ? 'document' : 'form',
+        periodDays: 30 * months,
       },
       periods: periods.map((p) => this.presentPeriod(p)),
       // Se calculan sobre periods[0] (corriente) y periods[1] (anterior).

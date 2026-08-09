@@ -12,6 +12,7 @@ import type { FinancialStatementRawFigures } from './financial-indicators.js';
 export interface ExtractedPeriod {
   fiscalYear?: number | null;
   balanceSheetDate?: string | null;
+  statementMonths?: number | null;
 
   cashAndEquivalents?: number | null;
   accountsReceivable?: number | null;
@@ -105,6 +106,7 @@ export type PeriodFigures = Partial<
 export interface NormalizedPeriod extends PeriodFigures {
   fiscalYear: number;
   balanceSheetDate?: Date;
+  statementMonths?: number;
 }
 
 /**
@@ -143,7 +145,28 @@ export function normalizeExtractedPeriod(
         : value;
   }
 
-  return { fiscalYear, balanceSheetDate, ...figures };
+  return {
+    fiscalYear,
+    balanceSheetDate,
+    statementMonths: normalizeStatementMonths(p.statementMonths),
+    ...figures,
+  };
+}
+
+/**
+ * Valida los meses del estado de resultados que devolvió la IA. Solo se acepta
+ * un entero de 1 a 12; cualquier otra cosa (null, 0, 18, decimales, texto) se
+ * descarta devolviendo undefined para que decida el fallback del consumidor.
+ *
+ * No se corrige ni se aproxima: un valor fuera de rango significa que el modelo
+ * no entendió el encabezado, y suponer un número sería peor que caer al
+ * fallback explícito.
+ */
+export function normalizeStatementMonths(
+  value: number | null | undefined,
+): number | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return undefined;
+  return value >= 1 && value <= 12 ? value : undefined;
 }
 
 /**

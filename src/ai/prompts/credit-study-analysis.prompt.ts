@@ -429,6 +429,36 @@ no el agregado que la contiene. Cuando exista la nota, la cifra sale del DESGLOS
   INCORRECTO -> "accountsReceivable": 2038874 (ese es el bruto, sin descontar la
   provision por deterioro).
 
+DURACION DEL ESTADO DE RESULTADOS (CRITICO — NO TODOS LOS EEFF SON DE 12 MESES):
+El balance es una FOTO a una fecha de corte, pero el estado de resultados (ERI / estado
+de resultado integral / P&G) es un ACUMULADO de un rango de meses. Muchos documentos son
+INTERMEDIOS (corte a junio, a marzo, a septiembre) y sus ingresos, costos y gastos NO
+corresponden a un ano completo. El sistema usa esa duracion para anualizar y para las
+rotaciones (dias de cartera, inventario y pago a proveedores), asi que leerla mal
+duplica o parte a la mitad esos indicadores.
+- Devuelve "statementMonths" = numero ENTERO de meses (1 a 12) que ABARCA el estado de
+  resultados de ESE periodo. Es OBLIGATORIO en cada periodo.
+- Sale del encabezado del ERI, no del balance. Ejemplos reales:
+  · "Del 1 de Enero al 30 de Junio de 2026 y de 2025" -> statementMonths: 6
+  · "A 30 DE JUNIO DE 2026 Y JUNIO 30 DE 2025" -> statementMonths: 6
+  · "Del 1 de enero al 31 de diciembre de 2025" -> statementMonths: 12
+  · "Por el trimestre terminado el 31 de marzo de 2026" -> statementMonths: 3
+  · Encabezado de columna del ERI "jun-2026" -> statementMonths: 6
+- Si el ERI no declara el rango pero si su fecha de corte, en Colombia el ERI se presenta
+  ACUMULADO desde el 1 de enero: el numero del mes de corte ES la cantidad de meses
+  (corte 30/06 -> 6; corte 30/09 -> 9; corte 31/12 -> 12).
+- Si el documento no permite determinarlo, usa 12 y emite una reliabilityFlag severity
+  "warning", category "resultados", advirtiendo que se asumio un ejercicio anual.
+- Es POR PERIODO, y puede diferir de la fecha del balance de ese mismo ano. Caso muy
+  comun en cierres intermedios: el balance compara 30/06/2026 contra 31/12/2025, pero el
+  ERI compara enero-junio 2026 contra enero-junio 2025. El periodo del ano 2025 lleva
+  entonces "balanceSheetDate": "2025-12-31" (la foto del balance) y
+  "statementMonths": 6 (lo que abarca su columna del ERI). NO los mezcles.
+- Cuando statementMonths sea distinto de 12, emite ADEMAS una reliabilityFlag severity
+  "info", category "resultados", indicando el rango leido (p. ej. "ERI acumulado de 6
+  meses: 1 de enero a 30 de junio de 2026"), para que el analista sepa que las cifras de
+  resultados no son de un ano completo.
+
 FORMATO DE RESPUESTA (JSON con dos secciones):
 
 {
@@ -436,6 +466,7 @@ FORMATO DE RESPUESTA (JSON con dos secciones):
     {
       "fiscalYear": 2025,
       "balanceSheetDate": "YYYY-MM-DD",
+      "statementMonths": 12,
 
       "cashAndEquivalents": null,
       "accountsReceivable": null,
@@ -483,6 +514,8 @@ Mapeo de campos (cada objeto de "periods") con terminologia contable colombiana:
 - fiscalYear = ano fiscal del periodo (numero entero, p.ej. 2025). Sale del encabezado de
   la columna (31/12/2025 -> 2025). OBLIGATORIO en cada periodo.
 - balanceSheetDate = fecha de corte del balance de ESE periodo (YYYY-MM-DD, p.ej. 2025-12-31).
+- statementMonths = meses que abarca el ESTADO DE RESULTADOS de ese periodo (entero 1..12).
+  OBLIGATORIO. Ver la seccion "DURACION DEL ESTADO DE RESULTADOS" arriba.
 - cashAndEquivalents = Efectivo y equivalentes de efectivo
 - accountsReceivable = SOLO la cartera COMERCIAL: la linea "Clientes" / "Deudores
   comerciales" NETA de su provision por deterioro (si la nota muestra "Clientes" y

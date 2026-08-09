@@ -27,6 +27,10 @@ import {
 import { Prisma } from '../../generated/prisma/client.js';
 import { toJson } from '../common/utils/prisma-json.util.js';
 import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
+import { resolvePeriodMonths } from '../common/enums/income-statement-period.enum.js';
+
+/** Los EEFF que reporta la central son cierres anuales (12 meses). */
+const DATACREDITO_STATEMENT_MONTHS = 12;
 
 @Injectable()
 export class FinancialStatementsService {
@@ -107,12 +111,14 @@ export class FinancialStatementsService {
     // 5. Indicadores: corriente (el año más reciente) + anterior. El anterior se
     //    busca por AÑO, no por posición: la extracción puede traer dos columnas
     //    del mismo año y periods[1] no sería el año previo.
+    //    Los meses salen del período CORRIENTE, que es el que aporta el estado de
+    //    resultados sobre el que se calcula todo.
     const indicators = computeFinancialIndicators(
       this.toIndicatorFigures(
         periods[0],
         selectPriorPeriod(periods, periods[0]),
       ),
-      periodLabel,
+      resolvePeriodMonths(periods[0].statementMonths, periodLabel),
     );
 
     // 6. Persistir en una transacción: análisis + N períodos + join (congelación).
@@ -136,7 +142,6 @@ export class FinancialStatementsService {
       companyId,
       creditStudyId,
       userId,
-      periodLabel,
     );
 
     // 8. Avanzar el flujo: una vez cargados los EEFF, el estudio pasa de
@@ -178,7 +183,6 @@ export class FinancialStatementsService {
     companyId: string,
     creditStudyId: string,
     userId: string,
-    periodLabel: string,
   ) {
     const consultation =
       await this.repository.findLastConsultationRaw(customerId);
@@ -202,12 +206,16 @@ export class FinancialStatementsService {
       )
       .sort((a, b) => b.fiscalYear - a.fiscalYear);
 
+    // Los estados financieros que reporta la central son SIEMPRE cierres
+    // anuales, sin importar qué período traiga el PDF que el usuario subió.
+    // Antes se reutilizaba el label del formulario del PDF, así que marcar el
+    // PDF como semestral encogía también las rotaciones de DataCrédito.
     const indicators = computeFinancialIndicators(
       this.toIndicatorFigures(
         periods[0],
         selectPriorPeriod(periods, periods[0]),
       ),
-      periodLabel,
+      DATACREDITO_STATEMENT_MONTHS,
     );
 
     return this.repository.persistAnalysis({
@@ -306,7 +314,7 @@ export class FinancialStatementsService {
     createdBy: string,
     dto: ExtractPdfDto,
   ): Prisma.FinancialStatementPeriodUncheckedCreateInput {
-    const { fiscalYear, balanceSheetDate, ...figures } =
+    const { fiscalYear, balanceSheetDate, statementMonths, ...figures } =
       normalizeExtractedPeriod(p, dto.fiscalYear);
 
     return {
@@ -317,6 +325,9 @@ export class FinancialStatementsService {
       fiscalYear,
       incomeStatementId: dto.incomeStatementId ?? null,
       balanceSheetDate,
+      // Lo que leyó la IA del encabezado del ERI. null si no lo pudo determinar:
+      // el cálculo cae entonces al Parameter income_statement.
+      statementMonths: statementMonths ?? null,
       ...figures,
     };
   }
