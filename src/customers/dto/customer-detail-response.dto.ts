@@ -215,6 +215,25 @@ class CustomerNamePartsDto {
   secondLastName!: string | null;
 }
 
+// ─── Representante legal (columnas editables; solo PJ) ────────────────────────
+// No confundir con bureauProfile.legalRep (informativo, se refresca por consulta).
+class CustomerLegalRepDto {
+  @ApiProperty({ nullable: true })
+  name!: string | null;
+
+  @ApiProperty({ type: ParameterRefDto, nullable: true })
+  identificationType!: ParameterRefDto | null;
+
+  @ApiProperty({ nullable: true })
+  identificationNumber!: string | null;
+
+  @ApiProperty({ nullable: true })
+  email!: string | null;
+
+  @ApiProperty({ nullable: true })
+  phone!: string | null;
+}
+
 // ─── DTO raíz ─────────────────────────────────────────────────────────────────
 export class CustomerDetailResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -269,6 +288,15 @@ export class CustomerDetailResponseDto {
 
   @ApiProperty({ nullable: true })
   address!: string | null;
+
+  // ── Representante legal (columnas editables; solo PJ, null si no hay dato) ──
+  @ApiProperty({
+    type: CustomerLegalRepDto,
+    nullable: true,
+    description:
+      'Representante legal editable (columnas del Customer); null si ningún campo tiene valor',
+  })
+  legalRep!: CustomerLegalRepDto | null;
 
   // ── Demográficos (solo PN; null en PJ) ──
   @ApiProperty({

@@ -33,9 +33,11 @@ class StudyRequestDto {
   // usa la 1ª vez para enviarle el documento; en re-consultas (ya firmado) o con
   // la firma pendiente el flujo lo ignora, pero el front siempre lo envía. El
   // nombre del titular en el documento sale de `apellidoRazonSocial`.
+  // En PJ es el correo del representante legal → se persiste en Customer.legalRepEmail.
   @ApiProperty({
     example: 'titular@correo.com',
-    description: 'Correo del titular; es el firmante de la autorización',
+    description:
+      'Correo del titular; es el firmante de la autorización. En PJ es el correo del representante legal (se guarda en el cliente como legalRepEmail si aún no lo tiene)',
   })
   @IsEmail()
   @MaxLength(255)

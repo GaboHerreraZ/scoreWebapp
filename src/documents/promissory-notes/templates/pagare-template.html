@@ -2,8 +2,9 @@
   PAGARÉ + AUTORIZACIÓN PARA LLENAR ESPACIOS EN BLANCO — CREDITIA
   ===============================================================
 
-  Documento ÚNICO que firma el DEUDOR (el consultado del estudio de crédito)
-  cuando el estudio resulta viable o viable con condiciones. Reúne, en un solo
+  Documento ÚNICO que se firma cuando el estudio resulta viable o viable con
+  condiciones. Firmante (variables FIRMANTE_*): PN el propio consultado; PJ su
+  representante legal (sin sus datos la emisión retorna 400). Reúne, en un solo
   acto y una sola firma:
 
     SECCIÓN 1 — Pagaré No. {{NOTE_NUMBER}} (título valor, art. 621 y ss. C.Co.)
@@ -18,7 +19,8 @@
   asset, no en docs/):
     1. Modelo DOCX que se sube a Zapsign. Las variables {{DOBLES LLAVES}} las
        rellena el backend al crear el documento (createDocFromTemplate). Un
-       solo firmante: el deudor ({{DEUDOR_EMAIL}}).
+       solo firmante ({{DEUDOR_EMAIL}} = correo del firmante: el deudor en PN,
+       su representante legal en PJ).
     2. PREVIEW en runtime: POST .../promissory-notes/preview la devuelve
        rellenada (sin emitir nada) para que el front la muestre tal cual.
   Mapa de variables: docs/promissory-note/variable-map.md.
@@ -82,9 +84,9 @@
 </div>
 
 <div class="titular">
-<p>Yo, <span class="fill">{{DEUDOR_NOMBRE}}</span>, mayor de edad, identificado(a)
-como aparece al pie de mi firma y actuando en nombre propio, por medio del
-presente escrito manifiesto lo siguiente:</p>
+<p>Yo, <span class="fill">{{FIRMANTE_NOMBRE}}</span>, mayor de edad, identificado(a)
+como aparece al pie de mi firma y <span class="fill">{{FIRMANTE_ACTUACION}}</span>,
+por medio del presente escrito manifiesto lo siguiente:</p>
 </div>
 
 <p><span class="clause-title">Primero:</span> que debo y pagaré, incondicionalmente
@@ -154,8 +156,9 @@ reconozco como válida y vinculante conforme a la Ley 527 de 1999 y el Decreto
 NIT <span class="fill">{{ACREEDOR_NIT}}</span></p>
 
 <div class="titular">
-<p>Yo, <span class="fill">{{DEUDOR_NOMBRE}}</span>, mayor de edad, identificado(a)
-como aparece al pie de mi firma, actuando en nombre propio, por medio del presente
+<p>Yo, <span class="fill">{{FIRMANTE_NOMBRE}}</span>, mayor de edad, identificado(a)
+como aparece al pie de mi firma, <span class="fill">{{FIRMANTE_ACTUACION}}</span>,
+por medio del presente
 escrito manifiesto que le faculto a usted, de manera permanente e irrevocable para
 que, en caso de incumplimiento en el pago oportuno de alguna de las obligaciones
 que hemos adquirido, derivadas de los negocios comerciales y contractuales bien

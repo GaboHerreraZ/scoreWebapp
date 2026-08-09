@@ -40,6 +40,21 @@ export class CustomersRepository {
         company: true,
         economicActivity: true,
         identificationType: true,
+        legalRepIdentificationType: true,
+      },
+    });
+  }
+
+  async update(id: string, data: Prisma.CustomerUncheckedUpdateInput) {
+    return this.prisma.customer.update({
+      where: { id },
+      data,
+      include: {
+        personType: true,
+        company: true,
+        economicActivity: true,
+        identificationType: true,
+        legalRepIdentificationType: true,
       },
     });
   }

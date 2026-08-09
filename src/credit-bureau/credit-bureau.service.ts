@@ -28,9 +28,8 @@ export class CreditBureauService {
     companyId: string,
     userId: string,
     dto: ConsultCreditBureauDto,
-    // Email de respaldo para Customer.email cuando la central no trae contacto
-    // (PN nunca trae; PJ a veces): el titularEmail que viajó en el from-bureau.
-    // Sin él, el Customer queda sin correo y flujos posteriores (pagaré) fallan.
+    // titularEmail del from-bureau: respaldo de Customer.email y, en PJ,
+    // correo del representante legal (firmante de la autorización).
     fallbackEmail?: string,
   ) {
     // GATE: el titular debe haber firmado la autorización (documento único) para
@@ -65,6 +64,21 @@ export class CreditBureauService {
           fallbackEmail,
         );
         if (written) cached.customer.email = fallbackEmail;
+      }
+      // Ídem correo del representante legal (solo PJ).
+      if (!cached.customer.legalRepEmail && fallbackEmail) {
+        const legalEntity = await this.parametersRepository.findByTypeAndCode(
+          'person_type',
+          'legalEntity',
+        );
+        if (legalEntity && cached.customer.personTypeId === legalEntity.id) {
+          const written =
+            await this.repository.setCustomerLegalRepEmailIfMissing(
+              cached.customer.id,
+              fallbackEmail,
+            );
+          if (written) cached.customer.legalRepEmail = fallbackEmail;
+        }
       }
       return cached;
     }
@@ -109,9 +123,10 @@ export class CreditBureauService {
     );
 
     // 5. Persistir (snapshot + upsert customer + risk) en transacción.
-    //    Email de contacto: el del bureau (solo PJ lo trae, en el bloque de
-    //    contacto del perfil) o, en su defecto, el que viajó en la petición.
-    const bureauEmail = result.customer.bureauProfile?.contact?.email ?? null;
+    //    Email: el del bureau (solo PJ) o el de la petición. Contacto y rep
+    //    legal solo siembran el create; después son editables.
+    const bureauContact = result.customer.bureauProfile?.contact ?? null;
+    const bureauEmail = bureauContact?.email ?? null;
     const { consultation, customer } =
       await this.repository.persistConsultation({
         companyId,
@@ -125,6 +140,30 @@ export class CreditBureauService {
         rawResponse: result.raw,
         httpStatus: result.httpStatus,
         contactEmail: bureauEmail ?? fallbackEmail ?? null,
+        contactSeed: {
+          phone: bureauContact?.phone ?? null,
+          city: bureauContact?.city ?? null,
+          address: bureauContact?.address ?? null,
+          economicActivityId: await this.resolveEconomicActivityId(
+            result.customer.bureauProfile?.generalProfile?.ciiuCode ?? null,
+          ),
+        },
+        legalRepSeed: result.customer.legalRepSeed
+          ? {
+              name: result.customer.legalRepSeed.name,
+              identificationTypeId: result.customer.legalRepSeed
+                .identificationTypeCode
+                ? await this.resolveIdentificationTypeId(
+                    result.customer.legalRepSeed.identificationTypeCode,
+                  )
+                : null,
+              identificationNumber:
+                result.customer.legalRepSeed.identificationNumber,
+            }
+          : null,
+        // PJ: titularEmail = correo del representante legal (firmante de la autorización).
+        legalRepEmailFallback:
+          result.meta.personType === 'PJ' ? (fallbackEmail ?? null) : null,
       });
 
     // Backfill: enlaza la autorización firmada con el Customer recién creado.
@@ -178,6 +217,27 @@ export class CreditBureauService {
       'identification_type',
       code.toLowerCase(),
     );
+    return param?.id ?? null;
+  }
+
+  /**
+   * CIIU de la central (PJ) → Parameter 'sector'. Reintenta con ceros a la
+   * izquierda; null si no está en el catálogo (nunca bloquea la consulta).
+   */
+  private async resolveEconomicActivityId(
+    ciiuCode: string | null,
+  ): Promise<number | null> {
+    const code = ciiuCode?.trim();
+    if (!code) return null;
+
+    const param =
+      (await this.parametersRepository.findByTypeAndCode('sector', code)) ??
+      (code.length < 4
+        ? await this.parametersRepository.findByTypeAndCode(
+            'sector',
+            code.padStart(4, '0'),
+          )
+        : null);
     return param?.id ?? null;
   }
 }
