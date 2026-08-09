@@ -679,6 +679,12 @@ model FinancialStatementPeriod {
   // los cálculos. Parameter (income_statement).
   incomeStatementId Int?      @map("income_statement_id")
   balanceSheetDate  DateTime? @map("balance_sheet_date") @db.Date
+  // Meses que abarca el ESTADO DE RESULTADOS de este período (1..12), leídos del
+  // documento por la extracción IA. El balance es una foto a balanceSheetDate;
+  // el ERI es un acumulado, y en cierres intermedios NO es de 12 meses. Rige la
+  // capacidad de pago mensual y los días de las rotaciones. null = no se pudo
+  // determinar → se cae al Parameter income_statement.
+  statementMonths   Int?      @map("statement_months")
 
   // Si vino de una consulta al bureau, se ata al snapshot que lo originó
   // (trazabilidad de "estas cifras salieron de esta consulta").
