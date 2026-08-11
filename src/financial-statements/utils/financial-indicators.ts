@@ -131,7 +131,7 @@ export function computeFinancialIndicators(
     totalAssets;
   const x2 = (figures.retainedEarnings ?? 0) / totalAssets;
   // x3 = utilidad operacional / activo total
-  // Utilidad operacional = grossProfit - administrativeExpenses - sellingExpenses
+  // Utilidad operacional = grossProfit + administrativeExpenses + sellingExpenses
   const x3 =
     ((figures.grossProfit ?? 0) +
       (figures.administrativeExpenses ?? 0) +
