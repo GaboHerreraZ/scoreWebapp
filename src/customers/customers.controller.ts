@@ -23,6 +23,7 @@ import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { CustomerDetailResponseDto } from './dto/customer-detail-response.dto.js';
 import { CustomerStatsResponseDto } from './dto/customer-stats-response.dto.js';
+import { LegalRepresentativeResponseDto } from './dto/legal-representative-response.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Customers')
@@ -145,6 +146,27 @@ export class CustomersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.customersService.getStats(id, companyId);
+  }
+
+  @Get(':id/legal-representative')
+  @ApiOperation({
+    summary:
+      'Signer data of a customer: legal representative (PJ) or the customer itself (PN)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Signer data according to person type',
+    type: LegalRepresentativeResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found in this company',
+  })
+  getLegalRepresentative(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.customersService.getLegalRepresentative(id, companyId);
   }
 
   @Get(':id/credit-studies')

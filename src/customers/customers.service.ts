@@ -10,6 +10,7 @@ import { AutocompleteCustomerDto } from './dto/autocomplete-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { CustomerDetailResponseDto } from './dto/customer-detail-response.dto.js';
 import { CustomerStatsResponseDto } from './dto/customer-stats-response.dto.js';
+import { LegalRepresentativeResponseDto } from './dto/legal-representative-response.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn } from '../common/excel/excel.types.js';
@@ -259,6 +260,51 @@ export class CustomersService {
       lastConsultedAt: c.lastConsultedAt,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+    };
+  }
+
+  // Quien firma por el cliente: PJ → columnas legalRep*; PN → su propia identidad.
+  async getLegalRepresentative(
+    id: string,
+    companyId: string,
+  ): Promise<LegalRepresentativeResponseDto> {
+    const customer = await this.repository.findById(id, companyId);
+    if (!customer) {
+      throw new NotFoundException(
+        `Cliente con id=${id} no encontrado en esta empresa`,
+      );
+    }
+
+    const base = {
+      customerId: customer.id,
+      personType: {
+        id: customer.personType.id,
+        code: customer.personType.code,
+        label: customer.personType.label,
+      },
+    };
+
+    if (customer.personType.code === 'legalEntity') {
+      return {
+        ...base,
+        legalRepName: customer.legalRepName,
+        legalRepIdentificationTypeId: customer.legalRepIdentificationTypeId,
+        legalRepIdentificationNumber: customer.legalRepIdentificationNumber,
+        legalRepEmail: customer.legalRepEmail,
+        legalRepPhone: customer.legalRepPhone,
+      };
+    }
+
+    return {
+      ...base,
+      identificationTypeId: customer.identificationTypeId,
+      identificationNumber: customer.identificationNumber,
+      firstName: customer.firstName,
+      secondName: customer.secondName,
+      firstLastName: customer.firstLastName,
+      secondLastName: customer.secondLastName,
+      email: customer.email,
+      phone: customer.phone,
     };
   }
 
