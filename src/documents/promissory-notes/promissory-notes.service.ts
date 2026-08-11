@@ -98,6 +98,17 @@ export class PromissoryNotesService {
     return status.id;
   }
 
+  /** Resuelve un identificationTypeId recibido en el body a su Parameter. */
+  private async identificationTypeParam(id: number) {
+    const param = await this.parametersRepository.findById(id);
+    if (!param || param.type !== 'identification_type' || !param.isActive) {
+      throw new BadRequestException(
+        `identificationTypeId=${id} no es un tipo de identificación válido (Parameter tipo 'identification_type' activo)`,
+      );
+    }
+    return param;
+  }
+
   private async setStudyStatus(
     creditStudyId: string,
     code: string,
@@ -166,8 +177,11 @@ export class PromissoryNotesService {
     }
 
     // ── El firmante: PN en nombre propio; PJ firma su representante legal ──
-    const customer = study.customer;
-    const isPJ = customer.personType.code === 'legalEntity';
+    // Los datos pueden venir en dto.signer (prellenado por el front con GET
+    // .../customers/:id/legal-representative); lo no enviado cae al Customer.
+    const rawCustomer = study.customer;
+    const isPJ = rawCustomer.personType.code === 'legalEntity';
+    const s = dto.signer;
 
     let signerName: string;
     let signerEmail: string;
@@ -178,46 +192,86 @@ export class PromissoryNotesService {
       actuacion: string;
       lineaRepresentante: string;
     };
+    let customer: typeof rawCustomer = rawCustomer;
 
     if (isPJ) {
+      const repName = s?.legalRepName ?? rawCustomer.legalRepName;
+      const repIdTypeId =
+        s?.legalRepIdentificationTypeId ??
+        rawCustomer.legalRepIdentificationTypeId;
+      const repIdNumber =
+        s?.legalRepIdentificationNumber ??
+        rawCustomer.legalRepIdentificationNumber;
+      const repEmail = s?.legalRepEmail ?? rawCustomer.legalRepEmail;
+
       const missingRep: string[] = [];
-      if (!customer.legalRepName) missingRep.push('nombre');
-      if (!customer.legalRepIdentificationType)
-        missingRep.push('tipo de identificación');
-      if (!customer.legalRepIdentificationNumber)
-        missingRep.push('número de identificación');
-      if (!customer.legalRepEmail) missingRep.push('correo');
+      if (!repName) missingRep.push('nombre');
+      if (repIdTypeId == null) missingRep.push('tipo de identificación');
+      if (!repIdNumber) missingRep.push('número de identificación');
+      if (!repEmail) missingRep.push('correo');
       if (missingRep.length > 0) {
         throw new BadRequestException(
-          `Para emitir el pagaré de una persona jurídica se requieren los datos del representante legal, que es quien lo firma (falta: ${missingRep.join(', ')}). Puedes completarlos editando el cliente.`,
+          `Para emitir el pagaré de una persona jurídica se requieren los datos del representante legal, que es quien lo firma (falta: ${missingRep.join(', ')}). Envíalos en el campo signer de la petición.`,
         );
       }
-      signerName = customer.legalRepName!;
-      signerEmail = customer.legalRepEmail!;
-      const nitConDv = customer.verificationDigit
-        ? `${customer.identificationNumber}-${customer.verificationDigit}`
-        : customer.identificationNumber;
+
+      const repIdTypeLabel =
+        s?.legalRepIdentificationTypeId != null
+          ? (await this.identificationTypeParam(s.legalRepIdentificationTypeId))
+              .label
+          : rawCustomer.legalRepIdentificationType!.label;
+
+      signerName = repName!;
+      signerEmail = repEmail!;
+      const nitConDv = rawCustomer.verificationDigit
+        ? `${rawCustomer.identificationNumber}-${rawCustomer.verificationDigit}`
+        : rawCustomer.identificationNumber;
       firmante = {
-        nombre: customer.legalRepName!,
-        tipoDoc: customer.legalRepIdentificationType!.label,
-        numDoc: customer.legalRepIdentificationNumber!,
-        actuacion: `actuando en calidad de representante legal de ${customer.businessName}, identificada con NIT ${nitConDv}`,
-        lineaRepresentante: `Representante legal: ${customer.legalRepName} · ${customer.legalRepIdentificationType!.label} No. ${customer.legalRepIdentificationNumber}`,
+        nombre: repName!,
+        tipoDoc: repIdTypeLabel,
+        numDoc: repIdNumber!,
+        actuacion: `actuando en calidad de representante legal de ${rawCustomer.businessName}, identificada con NIT ${nitConDv}`,
+        lineaRepresentante: `Representante legal: ${repName} · ${repIdTypeLabel} No. ${repIdNumber}`,
       };
     } else {
-      if (!customer.email) {
+      const email = s?.email ?? rawCustomer.email;
+      if (!email) {
         throw new BadRequestException(
-          'El cliente no tiene correo registrado; es necesario para enviarle el pagaré a firma.',
+          'El cliente no tiene correo registrado; es necesario para enviarle el pagaré a firma. Envíalo en el campo signer de la petición.',
         );
       }
-      signerName = customer.businessName;
-      signerEmail = customer.email;
+      const nameFromParts = [
+        s?.firstName,
+        s?.secondName,
+        s?.firstLastName,
+        s?.secondLastName,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const idType =
+        s?.identificationTypeId != null
+          ? await this.identificationTypeParam(s.identificationTypeId)
+          : rawCustomer.identificationType;
+      const numDoc = s?.identificationNumber ?? rawCustomer.identificationNumber;
+
+      signerName = nameFromParts || rawCustomer.businessName;
+      signerEmail = email;
       firmante = {
-        nombre: customer.businessName,
-        tipoDoc: customer.identificationType?.label ?? 'Documento',
-        numDoc: customer.identificationNumber,
+        nombre: signerName,
+        tipoDoc: idType?.label ?? 'Documento',
+        numDoc,
         actuacion: 'actuando en nombre propio',
         lineaRepresentante: '',
+      };
+      // PN: deudor y firmante son la misma persona → los DEUDOR_* del documento
+      // reflejan lo recibido en el body.
+      customer = {
+        ...rawCustomer,
+        businessName: signerName,
+        identificationNumber: numDoc,
+        identificationType: idType,
+        email,
+        phone: s?.phone ?? rawCustomer.phone,
       };
     }
 
