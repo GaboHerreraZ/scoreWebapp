@@ -2,10 +2,11 @@ import {
   IsEmail,
   IsIn,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Datos internos para generar la autorización del titular (documento único:
@@ -45,4 +46,40 @@ export class RequestAuthorizationDto {
   @IsEmail()
   @MaxLength(255)
   titularEmail: string;
+
+  @ApiPropertyOptional({
+    example: 'Bogotá D.C.',
+    description: 'Ciudad de domicilio del titular ({{TITULAR_CIUDAD}})',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  titularCity?: string;
+
+  @ApiPropertyOptional({
+    example: 'Juan Pérez',
+    description: 'PJ: nombre del representante legal (firmante)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  legalRepName?: string;
+
+  @ApiPropertyOptional({
+    example: 'cc',
+    description: 'PJ: tipo de identificación del representante legal',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['cc', 'ce', 'pas', 'pa'])
+  legalRepIdentificationTypeCode?: string;
+
+  @ApiPropertyOptional({
+    example: '79123456',
+    description: 'PJ: número de identificación del representante legal',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepIdentificationNumber?: string;
 }

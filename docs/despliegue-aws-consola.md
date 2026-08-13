@@ -525,7 +525,8 @@ SUPPORT_EMAIL                             soporte@creditia.co
 EPAYCO_TEST                               true
 ZAPSIGN_SANDBOX                           true
 ZAPSIGN_MACRO_TEMPLATE_ID                 9d8942ff-e42d-4b2d-8ab5-1d5857009f98
-ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID         526ebfc3-442a-4fe4-b8a3-474fb33af21b
+ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PN      186c0137-b0e5-4f90-a3b4-5d48044d2399
+ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PJ      e93a0fb4-15de-4ad6-a769-12a6f5665a2e
 ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID       cd10b4fb-b124-4c39-a4ec-eb0ccaf0154e
 DATA_MIGRATION_VERSION                    v003
 SENTRY_ENV                                staging

@@ -207,6 +207,11 @@ export class CreditStudiesService {
         // El nombre del titular en el documento = razón social/apellido validado.
         titularName: dto.apellidoRazonSocial,
         titularEmail: dto.titularEmail,
+        titularCity: dto.titularCity,
+        // PJ: el firmante es el representante legal.
+        legalRepName: dto.legalRepName,
+        legalRepIdentificationTypeCode: dto.legalRepIdentificationTypeCode,
+        legalRepIdentificationNumber: dto.legalRepIdentificationNumber,
       },
     );
     if (!gate.authorized) {

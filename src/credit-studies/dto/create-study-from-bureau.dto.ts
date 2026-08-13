@@ -1,9 +1,11 @@
 import { IntersectionType } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
+  IsString,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -42,6 +44,47 @@ class StudyRequestDto {
   @IsEmail()
   @MaxLength(255)
   titularEmail: string;
+
+  @ApiPropertyOptional({
+    example: 'Bogotá D.C.',
+    description:
+      'Ciudad de domicilio del titular; va en el documento de autorización',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  titularCity?: string;
+
+  // ── Representante legal (solo PJ): es quien firma la autorización. Si la
+  // identidad ya fue consultada antes, lo no enviado cae al Customer existente;
+  // si aun así falta algo → 400.
+
+  @ApiPropertyOptional({
+    example: 'Juan Pérez',
+    description: 'PJ: nombre del representante legal (firma la autorización)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  legalRepName?: string;
+
+  @ApiPropertyOptional({
+    example: 'cc',
+    description: 'PJ: tipo de identificación del representante legal',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['cc', 'ce', 'pas', 'pa'])
+  legalRepIdentificationTypeCode?: string;
+
+  @ApiPropertyOptional({
+    example: '79123456',
+    description: 'PJ: número de identificación del representante legal',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepIdentificationNumber?: string;
 }
 
 // El endpoint recibe la identificación a consultar (ConsultCreditBureauDto) +
