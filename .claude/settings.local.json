@@ -33,7 +33,15 @@
       "PowerShell(git push origin staging 2>&1)",
       "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(Object.keys\\({...p.dependencies,...p.devDependencies}\\).filter\\(d=>/^\\(pg|tsx|ts-node\\)$/.test\\(d\\)\\)\\)\")",
       "Bash(node -e ' *)",
-      "Bash(node --input-type=module -e ' *)"
+      "Bash(node --input-type=module -e ' *)",
+      "PowerShell(npm run build)",
+      "PowerShell(npx eslint src/customer-authorizations src/credit-studies/dto/create-study-from-bureau.dto.ts src/credit-studies/credit-studies.service.ts)",
+      "PowerShell(git stash)",
+      "PowerShell(npx eslint \"src/documents/promissory-notes/promissory-notes.controller.ts\")",
+      "PowerShell(git stash pop)",
+      "PowerShell(git add src/documents/promissory-notes/promissory-notes.controller.ts src/documents/promissory-notes/promissory-notes.module.ts src/documents/promissory-notes/promissory-notes.repository.ts src/documents/promissory-notes/promissory-notes.service.ts src/mail/mail.service.ts src/mail/templates/promissory-payment-reminder-admin.html src/mail/templates/promissory-payment-reminder-client.html)",
+      "PowerShell(git add src/customer-authorizations src/credit-studies/dto/create-study-from-bureau.dto.ts src/credit-studies/credit-studies.service.ts docs/customer-authorization/variable-map.md docs/despliegue-aws-consola.md)",
+      "PowerShell(git add .claude/settings.local.json)"
     ]
   }
 }
