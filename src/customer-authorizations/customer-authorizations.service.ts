@@ -33,7 +33,8 @@ import { CREDITIA_PARTY } from '../documents/macro-contract/creditia.constants.j
 @Injectable()
 export class CustomerAuthorizationsService {
   private readonly logger = new Logger(CustomerAuthorizationsService.name);
-  private readonly templateId: string;
+  private readonly templateIdPN: string;
+  private readonly templateIdPJ: string;
   private readonly storageBucket: string;
   private readonly logoUrl: string;
   private readonly creditia = CREDITIA_PARTY;
@@ -50,8 +51,13 @@ export class CustomerAuthorizationsService {
     private readonly parametersRepository: ParametersRepository,
     private readonly configService: ConfigService,
   ) {
-    this.templateId =
-      this.configService.get<string>('ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID') ?? '';
+    // Plantillas separadas por tipo de persona.
+    this.templateIdPN =
+      this.configService.get<string>('ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PN') ??
+      '';
+    this.templateIdPJ =
+      this.configService.get<string>('ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PJ') ??
+      '';
     this.storageBucket =
       this.configService.get<string>(
         'SUPABASE_STORAGE_BUCKET_AUTHORIZATIONS',
@@ -99,9 +105,13 @@ export class CustomerAuthorizationsService {
     userId: string,
     dto: RequestAuthorizationDto,
   ) {
-    if (!this.templateId) {
+    // Plantilla según tipo de persona: NIT = PJ (firma su representante legal),
+    // resto = PN (firma el propio titular).
+    const isPJ = dto.identificationTypeCode.toLowerCase() === 'nit';
+    const templateId = isPJ ? this.templateIdPJ : this.templateIdPN;
+    if (!templateId) {
       throw new BadRequestException(
-        'ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID no configurado',
+        `ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_${isPJ ? 'PJ' : 'PN'} no configurado`,
       );
     }
 
@@ -140,23 +150,60 @@ export class CustomerAuthorizationsService {
       throw new BadRequestException(`Empresa ${companyId} no encontrada`);
     }
 
+    // Cliente existente de la identidad (si ya fue consultada antes): respaldo
+    // para la ciudad y los datos del representante legal. En la 1ª consulta no
+    // existe (el Customer nace de la consulta, que requiere esta firma).
+    const existingCustomer = await this.prisma.customer.findFirst({
+      where: { companyId, identificationNumber: dto.identificationNumber },
+      select: {
+        city: true,
+        legalRepName: true,
+        legalRepIdentificationNumber: true,
+        legalRepIdentificationType: { select: { label: true } },
+      },
+    });
+
     // Variables de la plantilla (ver docs/customer-authorization/variable-map.md).
+    // EMPRESA_* es SIEMPRE la empresa cliente (la Responsable que consultará),
+    // nunca la sociedad consultada.
     const data: Record<string, string> = {
       LOGO_URL: this.logoUrl,
       PROVEEDOR_NIT: this.creditia.nit,
       PROVEEDOR_CIUDAD: this.creditia.city,
-      TITULAR_NOMBRE: dto.titularName,
-      TITULAR_TIPO_DOC: identType.label,
-      TITULAR_NUM_DOC: dto.identificationNumber,
+      TITULAR_CIUDAD: dto.titularCity ?? existingCustomer?.city ?? '',
       TITULAR_EMAIL: dto.titularEmail,
       EMPRESA_RAZON_SOCIAL: company.name,
       EMPRESA_NIT: company.nit,
     };
 
-    // Crear el documento en Zapsign (envía la solicitud de firma al titular).
+    let signerName = dto.titularName;
+    if (isPJ) {
+      // PJ: TITULAR_* son los datos del representante legal (quien firma); la
+      // sociedad consultada va en TITULAR_RAZON_SOCIAL / TITULAR_NIT.
+      const rep = await this.resolveLegalRep(dto, existingCustomer);
+      signerName = rep.nombre;
+      Object.assign(data, {
+        TITULAR_NOMBRE: rep.nombre,
+        TITULAR_TIPO_DOC: rep.tipoDoc,
+        TITULAR_NUM_DOC: rep.numDoc,
+        TITULAR_RAZON_SOCIAL: dto.titularName,
+        TITULAR_NIT: dto.identificationNumber,
+      });
+    } else {
+      // PN: el titular firma en nombre propio (sin representación).
+      Object.assign(data, {
+        TITULAR_NOMBRE: dto.titularName,
+        TITULAR_TIPO_DOC: identType.label,
+        TITULAR_NUM_DOC: dto.identificationNumber,
+        TITULAR_EN_REPRESENTACION: '',
+      });
+    }
+
+    // Crear el documento en Zapsign (envía la solicitud de firma al firmante:
+    // el titular en PN, su representante legal en PJ).
     const doc = await this.zapsign.createDocFromTemplate({
-      templateId: this.templateId,
-      signerName: dto.titularName,
+      templateId,
+      signerName,
       signerEmail: dto.titularEmail,
       data,
     });
@@ -172,7 +219,7 @@ export class CustomerAuthorizationsService {
       identificationTypeId: identType.id,
       titularName: dto.titularName,
       titularEmail: dto.titularEmail,
-      templateId: this.templateId,
+      templateId,
       providerDocToken: doc.docToken,
       signerToken: signer?.token ?? null,
       signUrl: signer?.sign_url ?? null,
@@ -208,6 +255,50 @@ export class CustomerAuthorizationsService {
       ...saved,
       status: { code: 'pending', label: 'Pendiente de firma' },
     });
+  }
+
+  /**
+   * PJ: datos del representante legal (quien firma la autorización). Vienen en
+   * el dto o, si la identidad ya fue consultada antes, del Customer existente
+   * (mismo fallback que el pagaré). Si aun así faltan → 400.
+   */
+  private async resolveLegalRep(
+    dto: RequestAuthorizationDto,
+    customer: {
+      legalRepName: string | null;
+      legalRepIdentificationNumber: string | null;
+      legalRepIdentificationType: { label: string } | null;
+    } | null,
+  ): Promise<{ nombre: string; tipoDoc: string; numDoc: string }> {
+    const nombre = dto.legalRepName ?? customer?.legalRepName;
+    const numDoc =
+      dto.legalRepIdentificationNumber ??
+      customer?.legalRepIdentificationNumber;
+    let tipoDoc = customer?.legalRepIdentificationType?.label;
+    if (dto.legalRepIdentificationTypeCode) {
+      const identType = await this.parametersRepository.findByTypeAndCode(
+        'identification_type',
+        dto.legalRepIdentificationTypeCode.toLowerCase(),
+      );
+      if (!identType) {
+        throw new BadRequestException(
+          `Tipo de identificación '${dto.legalRepIdentificationTypeCode}' no encontrado en parámetros`,
+        );
+      }
+      tipoDoc = identType.label;
+    }
+
+    const missing: string[] = [];
+    if (!nombre) missing.push('nombre');
+    if (!tipoDoc) missing.push('tipo de identificación');
+    if (!numDoc) missing.push('número de identificación');
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `La autorización de una persona jurídica la firma su representante legal (falta: ${missing.join(', ')}). ` +
+          'Envía legalRepName, legalRepIdentificationTypeCode y legalRepIdentificationNumber en la petición.',
+      );
+    }
+    return { nombre: nombre!, tipoDoc: tipoDoc!, numDoc: numDoc! };
   }
 
   /**
@@ -256,6 +347,11 @@ export class CustomerAuthorizationsService {
       identificationNumber: string;
       titularName: string; // = razón social/apellido validado
       titularEmail: string;
+      titularCity?: string;
+      // PJ: datos del representante legal (firmante del documento).
+      legalRepName?: string;
+      legalRepIdentificationTypeCode?: string;
+      legalRepIdentificationNumber?: string;
     },
   ): Promise<{ authorized: boolean; authorization?: unknown }> {
     const typeId = await this.coreTypeId();
@@ -280,6 +376,10 @@ export class CustomerAuthorizationsService {
       identificationNumber: input.identificationNumber,
       titularName: input.titularName,
       titularEmail: input.titularEmail,
+      titularCity: input.titularCity,
+      legalRepName: input.legalRepName,
+      legalRepIdentificationTypeCode: input.legalRepIdentificationTypeCode,
+      legalRepIdentificationNumber: input.legalRepIdentificationNumber,
     });
     return { authorized: false, authorization };
   }
