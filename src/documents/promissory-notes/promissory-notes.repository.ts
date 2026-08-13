@@ -16,9 +16,16 @@ export class PromissoryNotesRepository {
     });
   }
 
+  /** Fila cruda (con tokens del proveedor) para uso interno del service. */
+  async findRawById(id: number, companyId: string) {
+    return this.prisma.promissoryNote.findFirst({ where: { id, companyId } });
+  }
+
   async findById(id: number, companyId: string) {
     return this.prisma.promissoryNote.findFirst({
       where: { id, companyId },
+      // Tokens del proveedor de firma: uso interno, no salen en la API.
+      omit: { providerDocToken: true, signerToken: true, templateId: true },
       include: {
         status: true,
         customer: {
@@ -26,11 +33,46 @@ export class PromissoryNotesRepository {
             id: true,
             businessName: true,
             email: true,
+            phone: true,
+            city: true,
+            address: true,
             identificationNumber: true,
+            verificationDigit: true,
+            identificationType: {
+              select: { id: true, code: true, label: true },
+            },
+            personType: { select: { id: true, code: true, label: true } },
+            legalRepName: true,
+            legalRepEmail: true,
+          },
+        },
+        company: {
+          select: {
+            id: true,
+            name: true,
+            nit: true,
+            address: true,
+            city: true,
+            state: true,
+            logoUrl: true,
           },
         },
         creditStudy: {
-          select: { id: true, studyDate: true },
+          select: {
+            id: true,
+            studyDate: true,
+            resolutionDate: true,
+            requestedTerm: true,
+            requestedCreditLine: true,
+            recommendedTerm: true,
+            recommendedCreditLine: true,
+            viabilityScore: true,
+            viabilityStatus: true,
+            status: { select: { id: true, code: true, label: true } },
+          },
+        },
+        createdByUser: {
+          select: { id: true, name: true, lastName: true, email: true },
         },
       },
     });
@@ -50,9 +92,18 @@ export class PromissoryNotesRepository {
         take,
         where,
         orderBy,
+        // Tokens del proveedor de firma: uso interno, no se listan.
+        omit: { providerDocToken: true, signerToken: true, templateId: true },
         include: {
           status: true,
-          customer: { select: { id: true, businessName: true } },
+          customer: {
+            select: {
+              id: true,
+              businessName: true,
+              email: true,
+              identificationNumber: true,
+            },
+          },
         },
       }),
       this.prisma.promissoryNote.count({ where }),
@@ -67,6 +118,21 @@ export class PromissoryNotesRepository {
       data,
       include: { status: true },
     });
+  }
+
+  /** Perfiles administradores activos de la empresa (para notificarles por correo). */
+  async findCompanyAdmins(companyId: string) {
+    const memberships = await this.prisma.userCompany.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        role: { type: 'user_company_role', code: 'administrator' },
+      },
+      select: {
+        user: { select: { email: true, name: true, lastName: true } },
+      },
+    });
+    return memberships.map((m) => m.user);
   }
 
   /** Localiza un pagaré por el token del documento del proveedor de firma. */

@@ -5,6 +5,7 @@ import { PromissoryNotesRepository } from './promissory-notes.repository.js';
 import { ParametersModule } from '../../parameters/parameters.module.js';
 import { NotificationsModule } from '../../notifications/notifications.module.js';
 import { SigningModule } from '../signing/signing.module.js';
+import { MailModule } from '../../mail/mail.module.js';
 
 /**
  * Documento firmable: pagaré del estudio de crédito viable, firmado por el
@@ -13,7 +14,7 @@ import { SigningModule } from '../signing/signing.module.js';
  * y los enruta aquí por doc token; por eso el service se exporta.
  */
 @Module({
-  imports: [ParametersModule, NotificationsModule, SigningModule],
+  imports: [ParametersModule, NotificationsModule, SigningModule, MailModule],
   controllers: [PromissoryNotesController],
   providers: [PromissoryNotesService, PromissoryNotesRepository],
   exports: [PromissoryNotesService],

@@ -303,6 +303,60 @@ export class MailService {
     });
   }
 
+  /** Recordatorio de pago del pagaré al deudor (con datos de la cuenta del acreedor). */
+  async sendPromissoryReminderClientEmail(params: {
+    to: string;
+    customerName: string;
+    companyName: string;
+    noteNumber: string;
+    amount: string;
+    dueLabel: string;
+    dueDateText: string;
+    creditorBank: string;
+    creditorAccountType: string;
+    creditorAccountNumber: string;
+  }) {
+    const { to, ...vars } = params;
+
+    const html = this.loadTemplate('promissory-payment-reminder-client', {
+      ...vars,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Recordatorio de pago — Pagaré No. ${params.noteNumber} a favor de ${params.companyName}`,
+      html,
+    });
+  }
+
+  /** Confirma al admin de la empresa que el recordatorio de pago fue enviado al cliente. */
+  async sendPromissoryReminderAdminEmail(params: {
+    to: string;
+    adminName: string;
+    companyName: string;
+    customerName: string;
+    customerEmail: string;
+    noteNumber: string;
+    amount: string;
+    dueDateText: string;
+  }) {
+    const { to, ...vars } = params;
+
+    const html = this.loadTemplate('promissory-payment-reminder-admin', {
+      ...vars,
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Recordatorio de pago enviado — Pagaré No. ${params.noteNumber} (${params.customerName})`,
+      html,
+    });
+  }
+
   /** Aviso al admin del portal al que se le ASIGNÓ un ticket (le toca atenderlo). */
   async sendSupportTicketAssignedEmail(params: {
     to: string;
