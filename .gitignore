@@ -17,6 +17,9 @@ generated/
 *.swp
 *.swo
 
+# Claude Code (permisos locales de la sesion)
+.claude/settings.local.json
+
 # OS
 Thumbs.db
 .DS_Store
