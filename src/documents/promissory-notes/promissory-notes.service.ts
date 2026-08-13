@@ -22,7 +22,8 @@ import {
 import { CreatePromissoryNoteDto } from './dto/create-promissory-note.dto.js';
 import { numberToSpanishWords } from '../../common/utils/number-to-words.js';
 import { formatCOP } from '../../common/utils/currency.js';
-import { bogotaDateParts } from '../../common/utils/bogota-date.js';
+import { bogotaDateParts, MESES_ES } from '../../common/utils/bogota-date.js';
+import { MailService } from '../../mail/mail.service.js';
 import { Prisma } from '../../../generated/prisma/client.js';
 
 /**
@@ -59,6 +60,7 @@ export class PromissoryNotesService {
     private readonly zapsign: ZapsignService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
   ) {
     this.templateId =
       this.configService.get<string>('ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID') ??
@@ -252,7 +254,8 @@ export class PromissoryNotesService {
         s?.identificationTypeId != null
           ? await this.identificationTypeParam(s.identificationTypeId)
           : rawCustomer.identificationType;
-      const numDoc = s?.identificationNumber ?? rawCustomer.identificationNumber;
+      const numDoc =
+        s?.identificationNumber ?? rawCustomer.identificationNumber;
 
       signerName = nameFromParts || rawCustomer.businessName;
       signerEmail = email;
@@ -549,7 +552,12 @@ export class PromissoryNotesService {
    * si aún no hay respaldo, se pide una URL fresca al proveedor de firma.
    */
   async getSignedDocumentUrl(id: number, companyId: string): Promise<string> {
-    const note = await this.findById(id, companyId);
+    const note = await this.repository.findRawById(id, companyId);
+    if (!note) {
+      throw new NotFoundException(
+        `No se encontró el pagaré con id=${id} en esta empresa.`,
+      );
+    }
     if (!note.signedAt) {
       throw new BadRequestException('El pagaré aún no ha sido firmado.');
     }
@@ -580,7 +588,7 @@ export class PromissoryNotesService {
    * so a new document can be sent.
    */
   async decline(id: number, companyId: string) {
-    const note = await this.repository.findById(id, companyId);
+    const note = await this.repository.findRawById(id, companyId);
     if (!note) {
       throw new NotFoundException(
         `No se encontró el pagaré con id=${id} en esta empresa.`,
@@ -641,6 +649,104 @@ export class PromissoryNotesService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  /**
+   * Recordatorio de pago del pagaré: un correo al deudor (valor, vencimiento y
+   * cuenta del acreedor para pagar) y otro a los administradores de la empresa
+   * confirmando el envío. Solo aplica a pagarés FIRMADOS con vencimiento.
+   */
+  async sendPaymentReminder(id: number, companyId: string) {
+    const note = await this.findById(id, companyId);
+
+    if (note.status.code !== 'signed') {
+      throw new BadRequestException(
+        'Solo se puede enviar el recordatorio de pago de pagarés firmados.',
+      );
+    }
+    if (!note.dueDate) {
+      throw new BadRequestException(
+        'El pagaré no tiene fecha de vencimiento registrada.',
+      );
+    }
+
+    const to = note.customer.email ?? note.customer.legalRepEmail;
+    if (!to) {
+      throw new BadRequestException(
+        'El cliente no tiene correo registrado para enviarle el recordatorio.',
+      );
+    }
+
+    // dueDate es @db.Date (medianoche UTC): se formatea con partes UTC para no
+    // correrse un día al aplicar zona horaria.
+    const dueDateText = `${note.dueDate.getUTCDate()} de ${MESES_ES[note.dueDate.getUTCMonth()]} de ${note.dueDate.getUTCFullYear()}`;
+    const todayBogota = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota',
+    }).format(new Date());
+    const isOverdue = note.dueDate.toISOString().slice(0, 10) < todayBogota;
+    const dueLabel = isOverdue
+      ? `<strong>venció el ${dueDateText}</strong>`
+      : `vence el <strong>${dueDateText}</strong>`;
+    const amount = formatCOP(note.amount);
+
+    await this.mailService.sendPromissoryReminderClientEmail({
+      to,
+      customerName: note.customer.businessName,
+      companyName: note.company.name,
+      noteNumber: String(note.noteNumber),
+      amount,
+      dueLabel,
+      dueDateText,
+      creditorBank: note.creditorBank ?? '—',
+      creditorAccountType: note.creditorAccountType ?? 'Cuenta',
+      creditorAccountNumber: note.creditorAccountNumber ?? '—',
+    });
+
+    // Confirmación a los admins de la empresa (best-effort: el recordatorio al
+    // deudor ya salió; un fallo aquí no debe tumbar la petición).
+    let adminsNotified = 0;
+    try {
+      const admins = await this.repository.findCompanyAdmins(companyId);
+      const results = await Promise.allSettled(
+        admins.map((admin) =>
+          this.mailService.sendPromissoryReminderAdminEmail({
+            to: admin.email,
+            adminName:
+              [admin.name, admin.lastName].filter(Boolean).join(' ') ||
+              'Administrador',
+            companyName: note.company.name,
+            customerName: note.customer.businessName,
+            customerEmail: to,
+            noteNumber: String(note.noteNumber),
+            amount,
+            dueDateText,
+          }),
+        ),
+      );
+      adminsNotified = results.filter((r) => r.status === 'fulfilled').length;
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          this.logger.error(
+            `No se pudo notificar a un admin el recordatorio del pagaré ${id}: ${(r.reason as Error)?.message}`,
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.error(
+        `No se pudo notificar a los admins el recordatorio del pagaré ${id}: ${(e as Error).message}`,
+      );
+    }
+
+    this.logger.log(
+      `Recordatorio de pago del pagaré #${note.noteNumber} (id=${id}) enviado a ${to} (admins notificados: ${adminsNotified})`,
+    );
+
+    return {
+      message: 'Recordatorio de pago enviado.',
+      sentTo: to,
+      adminsNotified,
+      dueDate: note.dueDate,
     };
   }
 

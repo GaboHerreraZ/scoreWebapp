@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -130,8 +132,34 @@ export class PromissoryNotesController {
     return this.promissoryNotesService.decline(id, companyId);
   }
 
+  @Post('companies/:companyId/documents/promissory-notes/:id/payment-reminder')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Envía el recordatorio de pago del pagaré: correo al deudor con valor, vencimiento y cuenta del acreedor, y confirmación a los admins de la empresa',
+  })
+  @ApiResponse({ status: 200, description: 'Recordatorio enviado' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'El pagaré no está firmado, no tiene vencimiento o el cliente no tiene correo',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'El pagaré no existe en esta empresa',
+  })
+  sendPaymentReminder(
+    @Param('companyId', companyIdPipe) companyId: string,
+    @Param('id', promissoryIdPipe) id: number,
+  ) {
+    return this.promissoryNotesService.sendPaymentReminder(id, companyId);
+  }
+
   @Get('companies/:companyId/documents/promissory-notes')
-  @ApiOperation({ summary: 'Lista los pagarés de una empresa' })
+  @ApiOperation({
+    summary:
+      'Lista los pagarés de una empresa (datos principales: número, cliente, monto, estado y fechas)',
+  })
   findAll(
     @Param('companyId', companyIdPipe) companyId: string,
     @Query('page') page?: string,
@@ -145,7 +173,10 @@ export class PromissoryNotesController {
   }
 
   @Get('companies/:companyId/documents/promissory-notes/:id')
-  @ApiOperation({ summary: 'Obtiene un pagaré por ID' })
+  @ApiOperation({
+    summary:
+      'Obtiene un pagaré por ID con su cliente, empresa y el estudio de crédito (score y viabilidad)',
+  })
   findById(
     @Param('companyId', companyIdPipe) companyId: string,
     @Param('id', promissoryIdPipe) id: number,
