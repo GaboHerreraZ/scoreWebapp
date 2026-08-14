@@ -11,7 +11,6 @@ export class NoCreditsAvailableError extends ConflictException {
   }
 }
 
-
 export const FREE_PACK_PROVIDER = 'promo';
 
 export class PromoRedemptionFailedError extends Error {
@@ -60,9 +59,13 @@ export class AnalysisPacksRepository {
         billingAddress: true,
         billingDocNumber: true,
         billingDocTypeId: true,
-        // Ciudad/departamento: los pide la factura electrónica (domicilio fiscal).
-        billingCity: true,
-        billingState: true,
+        billingCityCode: true,
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingRegimeTypeId: true,
+        billingFiscalResponsibilities: true,
+        billingDocType: { select: { code: true } },
         nit: true,
       },
     });

@@ -7,6 +7,38 @@ datasource db {
   provider = "postgresql"
 }
 
+model DaneRegion {
+  code      String   @id @db.VarChar(2) // '11'
+  name      String   @db.VarChar(150) // 'Bogotá'
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cities DaneCity[]
+
+  @@map("dane_regions")
+}
+
+model DaneCity {
+  code       String @id @db.VarChar(5) // '11001'
+  regionCode String @map("region_code") @db.VarChar(2)
+  name       String @db.VarChar(150)
+  dianName   String @map("dian_name") @db.VarChar(150)
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  region DaneRegion @relation(fields: [regionCode], references: [code])
+
+  companies        Company[]  @relation("CompanyCity")
+  billingCompanies Company[]  @relation("CompanyBillingCity")
+  customers        Customer[] @relation("CustomerCity")
+
+  @@index([regionCode, name]) // desplegable de ciudades por departamento
+  @@map("dane_cities")
+}
+
 // ─── Tabla maestra de parámetros (llave-valor) ─────────────
 
 model Parameter {
@@ -39,6 +71,7 @@ model Parameter {
   companiesByAccountType                Company[]             @relation("CompanyAccountType")
   companiesByAccountBank                Company[]             @relation("CompanyAccountBank")
   companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
+  companiesByBillingRegimeType          Company[]             @relation("CompanyBillingRegimeType")
   promissoryNotesByStatus               PromissoryNote[]      @relation("PromissoryNoteStatus")
   notificationsByType                   Notification[]        @relation("NotificationType")
   packOfferingsByDiscountType           PackOffering[]        @relation("PackOfferingDiscountType")
@@ -56,6 +89,7 @@ model Parameter {
   supportTicketsByStatus                SupportTicket[]       @relation("SupportTicketStatus")
   blogPostsByCategory                   BlogPost[]            @relation("BlogPostCategory")
   blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
+  electronicInvoicesByStatus            ElectronicInvoice[]   @relation("ElectronicInvoiceStatus")
   contractSignaturesByStatus            ContractSignature[]   @relation("ContractSignatureStatus")
   scoringConfigurationsByPersonType     ScoringConfiguration[] @relation("ScoringConfigurationPersonType")
   customerAuthorizationsByStatus        CustomerAuthorization[] @relation("CustomerAuthorizationStatus")
@@ -147,8 +181,7 @@ model Company {
   name             String   @db.VarChar(255)
   nit              String   @unique @db.VarChar(50)
   sectorId         Int      @map("sector_id")
-  state            String   @db.VarChar(150)
-  city             String   @db.VarChar(150)
+  cityCode         String   @map("city_code") @db.VarChar(5)
   address          String   @db.VarChar(255)
   accountTypeId    Int?     @map("account_type_id")
   accountBankId    Int?     @map("account_bank_id")
@@ -161,9 +194,10 @@ model Company {
   billingDocNumber String?  @map("billing_doc_number") @db.VarChar(50)
   billingEmail     String?  @map("billing_email") @db.VarChar(255)
   billingAddress   String?  @map("billing_address") @db.VarChar(255)
-  billingState     String?  @map("billing_state") @db.VarChar(150)
-  billingCity      String?  @map("billing_city") @db.VarChar(150)
+  billingCityCode  String?  @map("billing_city_code") @db.VarChar(5) // domicilio fiscal
   billingPhone     String?  @map("billing_phone") @db.VarChar(50)
+  billingRegimeTypeId Int?  @map("billing_regime_type_id")
+  billingFiscalResponsibilities String[] @default([]) @map("billing_fiscal_responsibilities")
   providerCustomerId String? @map("provider_customer_id") @db.VarChar(100) // id de cliente en el proveedor de pagos (hoy ePayco)
   isActive         Boolean  @default(true) @map("is_active")
   isOnboardingReady Boolean @default(false) @map("is_onboarding_ready")
@@ -174,6 +208,9 @@ model Company {
   accountType          Parameter?            @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
   accountBank          Parameter?            @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
   billingDocType       Parameter?            @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
+  billingRegimeType    Parameter?            @relation("CompanyBillingRegimeType", fields: [billingRegimeTypeId], references: [id])
+  daneCity             DaneCity              @relation("CompanyCity", fields: [cityCode], references: [code])
+  billingDaneCity      DaneCity?             @relation("CompanyBillingCity", fields: [billingCityCode], references: [code])
   userCompanies        UserCompany[]
   invitations          Invitation[]
   customers            Customer[]
@@ -194,6 +231,7 @@ model Company {
   financialAnalyses    FinancialAnalysis[]
   scoringConfigurations ScoringConfiguration[]
   customerAuthorizations CustomerAuthorization[]
+  electronicInvoices     ElectronicInvoice[]
 
   @@map("companies")
 }
@@ -420,6 +458,7 @@ model AnalysisPack {
   paymentAlerts     PaymentAlert[]
   paymentEvents     PaymentEvent[]
   promoRedemptions  PromoCodeRedemption[]
+  electronicInvoices ElectronicInvoice[]
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
   @@index([statusId, paidAt]) // métricas de venta por fecha (admin-stats)
@@ -503,9 +542,9 @@ model Customer {
   // ── Contacto (datosContacto PJ; PN puede ir null) ─────
   email   String? @db.VarChar(255)
   phone   String? @db.VarChar(50)
-  city    String? @db.VarChar(150)
-  state   String? @db.VarChar(150)
   address String? @db.VarChar(255)
+  cityCode String? @map("city_code") @db.VarChar(5)
+  bureauCity String? @map("bureau_city") @db.VarChar(150)
 
   // ── Información demográfica (solo PN; en PJ va null) ───
   birthDate      DateTime? @map("birth_date") @db.Date
@@ -543,6 +582,7 @@ model Customer {
   identificationType Parameter?                  @relation("CustomerIdentificationType", fields: [identificationTypeId], references: [id])
   legalRepIdentificationType Parameter?          @relation("CustomerLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
   economicActivity   Parameter?                  @relation("CustomerEconomicActivity", fields: [economicActivityId], references: [id])
+  daneCity           DaneCity?                   @relation("CustomerCity", fields: [cityCode], references: [code])
   createdByUser      Profile                     @relation("CustomerCreatedBy", fields: [createdBy], references: [id])
   updatedByUser      Profile                     @relation("CustomerUpdatedBy", fields: [updatedBy], references: [id])
   creditStudies      CreditStudy[]
@@ -1536,4 +1576,95 @@ model BlogPost {
   @@index([statusId, publishedAt]) // listado público (published, orden por publishedAt desc)
   @@index([categoryId])
   @@map("blog_posts")
+}
+
+// ─── Facturación electrónica ──────────────────────────────────────────────
+// Con la API de integradores el proveedor NO lleva la numeración: la resolución
+// de la DIAN y el consecutivo son nuestros. Por eso viven aquí.
+//
+// Una fila por resolución vigente. nextConsecutive se reserva de forma ATÓMICA
+// (UPDATE … RETURNING acotado por rangeFinal): dos emisiones simultáneas no
+// pueden tomar el mismo número, que ante la DIAN sería un documento duplicado.
+
+model EInvoiceResolution {
+  id            String @id @default(uuid()) @db.Uuid
+  // Ambiente en el que aplica: una resolución de producción no sirve en pruebas.
+  environment   String @db.VarChar(20) // test | habilitation | production
+  // Clave técnica que entrega la DIAN junto con la resolución.
+  key           String @db.VarChar(200)
+  prefix        String @db.VarChar(10)
+  // Número de la RESOLUCIÓN (no del documento). Excede int4.
+  number        BigInt
+  rangeInitial  Int    @map("range_initial")
+  rangeFinal    Int    @map("range_final")
+  // Siguiente consecutivo a usar. Arranca en rangeInitial y solo sube.
+  nextConsecutive Int  @map("next_consecutive")
+
+  validFrom DateTime @map("valid_from") @db.Date
+  validUntil DateTime @map("valid_until") @db.Date
+
+  // Una sola vigente por ambiente. Retirarla (false) no borra el histórico.
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  invoices ElectronicInvoice[]
+
+  @@index([environment, isActive])
+  @@map("einvoice_resolutions")
+}
+
+// Un documento fiscal emitido (o intentado). Guarda el snapshot CONGELADO de lo
+// facturado: la empresa puede cambiar sus datos después y la factura emitida no.
+
+model ElectronicInvoice {
+  id             String  @id @default(uuid()) @db.Uuid
+  companyId      String  @map("company_id") @db.Uuid
+  analysisPackId String? @map("analysis_pack_id") @db.Uuid
+
+  provider     String @default("aliaddo") @db.VarChar(50)
+  environment  String @db.VarChar(20)
+  statusId     Int    @map("status_id") // Parameter 'einvoice_status'
+  resolutionId String? @map("resolution_id") @db.Uuid
+  prefix      String?  @db.VarChar(10)
+  consecutive Int?
+  number      String?  @db.VarChar(50) // 'SETP994121930'
+  issueDate   DateTime @map("issue_date") @db.Date
+  dueDate     DateTime @map("due_date") @db.Date
+
+  // Snapshot de lo facturado.
+  customerSnapshot Json   @map("customer_snapshot") @db.JsonB
+  linesSnapshot    Json   @map("lines_snapshot") @db.JsonB
+  currencyCode     String @default("COP") @map("currency_code") @db.VarChar(10)
+  taxBase          Float  @map("tax_base")
+  taxAmount        Float  @map("tax_amount")
+  total            Float
+
+  // Resultado ante la DIAN.
+  providerDocumentId String? @map("provider_document_id") @db.VarChar(100)
+  cufe               String? @db.VarChar(200)
+  qrData             String? @map("qr_data")
+  pdfUrl             String? @map("pdf_url")
+  xmlUrl             String? @map("xml_url")
+  statusReasons      Json?   @map("status_reasons") @db.JsonB
+
+  // Operación.
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.VarChar(500)
+  sentAt      DateTime? @map("sent_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  rawRequest  Json?     @map("raw_request") @db.JsonB
+  rawResponse Json?     @map("raw_response") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company      Company             @relation(fields: [companyId], references: [id])
+  analysisPack AnalysisPack?       @relation(fields: [analysisPackId], references: [id])
+  status       Parameter           @relation("ElectronicInvoiceStatus", fields: [statusId], references: [id])
+  resolution   EInvoiceResolution? @relation(fields: [resolutionId], references: [id])
+
+  @@index([statusId, createdAt]) // cola de pendientes/rechazadas
+  @@index([companyId, createdAt])
+  @@map("electronic_invoices")
 }

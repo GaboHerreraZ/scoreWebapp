@@ -298,8 +298,18 @@ export class CreditStudiesService {
     // Separamos el último snapshot de riesgo del customer: NO se devuelve crudo
     // (array anidado) sino transformado en el bloque `centralRisk`. El resto del
     // customer se expone tal cual (null si el estudio no tiene customer).
-    const { riskSnapshots, ...customerRest } = study.customer ?? {};
-    const customer = study.customer ? customerRest : null;
+    // daneCity/bureauCity son detalle de almacenamiento: el front sigue viendo
+    // city/state resueltos (el código elegido manda; si no hay, el texto que
+    // reportó la central).
+    const { riskSnapshots, daneCity, bureauCity, ...customerRest } =
+      study.customer ?? {};
+    const customer = study.customer
+      ? {
+          ...customerRest,
+          city: daneCity?.name ?? bureauCity ?? null,
+          state: daneCity?.region.name ?? null,
+        }
+      : null;
     const centralRisk = buildCentralRisk(riskSnapshots?.[0] ?? null);
 
     // step2: estados financieros por fuente (pdf_upload / datacredito). Cada
@@ -401,7 +411,9 @@ export class CreditStudiesService {
 
     const viewModel = buildReportViewModel(
       steps as unknown as StepsData,
-      company ?? { name: null, nit: null, city: null },
+      company
+        ? { name: company.name, nit: company.nit, city: company.daneCity.name }
+        : { name: null, nit: null, city: null },
       generatedAt,
     );
     const html = renderReportHtml(viewModel);

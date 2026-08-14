@@ -46,7 +46,7 @@ export class ProfilesRepository {
             },
             company: {
               select: {
-                city: true,
+                daneCity: { select: { name: true } },
                 nit: true,
                 name: true,
                 isOnboardingReady: true,

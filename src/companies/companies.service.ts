@@ -9,6 +9,7 @@ import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
 
 const LOGO_BUCKET = 'company-logos';
 
@@ -17,6 +18,7 @@ export class CompaniesService {
   constructor(
     private readonly repository: CompaniesRepository,
     private readonly supabaseService: SupabaseService,
+    private readonly fiscalProfileValidator: FiscalProfileValidator,
   ) {}
 
   async findAll(filters: FilterCompanyDto) {
@@ -104,12 +106,18 @@ export class CompaniesService {
       }
     }
 
+    // Perfil fiscal: los parámetros enviados deben existir y ser del tipo
+    // correcto (undefined = no se toca).
+    await this.fiscalProfileValidator.validateSelection({
+      billingRegimeTypeId: dto.billingRegimeTypeId,
+      billingFiscalResponsibilities: dto.billingFiscalResponsibilities,
+    });
+
     return this.repository.update(id, {
       name: dto.name,
       nit: dto.nit,
       sectorId: dto.sectorId,
-      state: dto.state,
-      city: dto.city,
+      cityCode: dto.cityCode,
       address: dto.address,
       accountTypeId: dto.accountTypeId,
       accountBankId: dto.accountBankId,
@@ -121,8 +129,9 @@ export class CompaniesService {
       billingDocNumber: dto.billingDocNumber,
       billingEmail: dto.billingEmail,
       billingAddress: dto.billingAddress,
-      billingState: dto.billingState,
-      billingCity: dto.billingCity,
+      billingCityCode: dto.billingCityCode,
+      billingRegimeTypeId: dto.billingRegimeTypeId,
+      billingFiscalResponsibilities: dto.billingFiscalResponsibilities,
       billingPhone: dto.billingPhone,
       isActive: dto.isActive,
     });

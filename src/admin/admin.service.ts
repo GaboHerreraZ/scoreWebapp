@@ -59,7 +59,7 @@ const BASE_SCREENS = [
   'contact-requests',
   'support-tickets',
   'pdf-extraction-test',
-  'einvoices'
+  'einvoices',
 ];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
@@ -428,6 +428,13 @@ export class AdminService {
         accountType: { select: { code: true, label: true } },
         accountBank: { select: { code: true, label: true } },
         billingDocType: { select: { code: true, label: true } },
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingRegimeType: { select: { code: true, label: true } },
         contractSignature: {
           select: {
             status: { select: { code: true, label: true } },
@@ -481,8 +488,9 @@ export class AdminService {
         isOnboardingReady: company.isOnboardingReady,
         sector: company.sector.label,
         location: {
-          state: company.state,
-          city: company.city,
+          state: company.daneCity.region.name,
+          city: company.daneCity.name,
+          cityCode: company.cityCode,
           address: company.address,
         },
         logoUrl: company.logoUrl,
@@ -502,8 +510,12 @@ export class AdminService {
           email: company.billingEmail,
           phone: company.billingPhone,
           address: company.billingAddress,
-          state: company.billingState,
-          city: company.billingCity,
+          state: company.billingDaneCity?.region.name ?? null,
+          city: company.billingDaneCity?.name ?? null,
+          cityCode: company.billingCityCode,
+          regimeCode: company.billingRegimeType?.code ?? null,
+          regimeType: company.billingRegimeType?.label ?? null,
+          fiscalResponsibilities: company.billingFiscalResponsibilities,
         },
         providerCustomerId: company.providerCustomerId,
       },
@@ -1290,6 +1302,32 @@ export class AdminService {
           packOffering: { select: { name: true } },
           status: { select: { code: true, label: true } },
           einvoiceMarkedByAdmin: { select: { name: true, email: true } },
+          electronicInvoices: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              environment: true,
+              provider: true,
+              prefix: true,
+              consecutive: true,
+              number: true,
+              cufe: true,
+              pdfUrl: true,
+              xmlUrl: true,
+              attempts: true,
+              lastError: true,
+              statusReasons: true,
+              sentAt: true,
+              acceptedAt: true,
+              createdAt: true,
+              taxBase: true,
+              taxAmount: true,
+              total: true,
+              status: { select: { code: true, label: true } },
+              resolution: { select: { prefix: true, number: true } },
+            },
+          },
           company: {
             select: {
               id: true,
@@ -1303,8 +1341,12 @@ export class AdminService {
               billingEmail: true,
               billingPhone: true,
               billingAddress: true,
-              billingCity: true,
-              billingState: true,
+              billingCityCode: true,
+              billingDaneCity: {
+                select: { name: true, region: { select: { name: true } } },
+              },
+              billingFiscalResponsibilities: true,
+              billingRegimeType: { select: { code: true, label: true } },
             },
           },
         },
@@ -1320,6 +1362,7 @@ export class AdminService {
 
     const data = rows.map((p) => {
       const c = p.company;
+      const doc = p.electronicInvoices[0] ?? null;
       // Nombre fiscal: razón social (jurídica) → nombre+apellido (natural) →
       // nombre comercial de la cuenta.
       const billingName =
@@ -1341,8 +1384,11 @@ export class AdminService {
           billingEmail: c.billingEmail,
           billingPhone: c.billingPhone,
           billingAddress: c.billingAddress,
-          billingCity: c.billingCity,
-          billingState: c.billingState,
+          billingCityCode: c.billingCityCode,
+          billingCity: c.billingDaneCity?.name ?? null,
+          billingState: c.billingDaneCity?.region.name ?? null,
+          billingRegimeCode: c.billingRegimeType?.code ?? null,
+          billingFiscalResponsibilities: c.billingFiscalResponsibilities,
         },
         // Concepto.
         item: {
@@ -1375,6 +1421,35 @@ export class AdminService {
             p.einvoiceMarkedByAdmin?.email ??
             null,
         },
+        document: doc
+          ? {
+              id: doc.id,
+              statusCode: doc.status.code,
+              statusLabel: doc.status.label,
+              provider: doc.provider,
+              environment: doc.environment,
+              prefix: doc.prefix,
+              consecutive: doc.consecutive,
+              number: doc.number,
+              cufe: doc.cufe,
+              pdfUrl: doc.pdfUrl,
+              xmlUrl: doc.xmlUrl,
+              attempts: doc.attempts,
+              lastError: doc.lastError,
+              reasons: Array.isArray(doc.statusReasons)
+                ? (doc.statusReasons as string[])
+                : [],
+              resolutionPrefix: doc.resolution?.prefix ?? null,
+              // BigInt no se serializa a JSON.
+              resolutionNumber: doc.resolution?.number.toString() ?? null,
+              taxBase: doc.taxBase,
+              taxAmount: doc.taxAmount,
+              total: doc.total,
+              sentAt: doc.sentAt,
+              acceptedAt: doc.acceptedAt,
+              createdAt: doc.createdAt,
+            }
+          : null,
         packStatus: p.status.code,
       };
     });

@@ -24,7 +24,16 @@ export class CompaniesRepository {
         take,
         where,
         orderBy,
-        include: { ...this.subscriptionInclude, sector: true },
+        include: {
+          ...this.subscriptionInclude,
+          sector: true,
+          daneCity: {
+            select: { name: true, region: { select: { name: true } } },
+          },
+          billingDaneCity: {
+            select: { name: true, region: { select: { name: true } } },
+          },
+        },
       }),
       this.prisma.company.count({ where }),
     ]);
@@ -35,7 +44,16 @@ export class CompaniesRepository {
   async findById(id: string) {
     return this.prisma.company.findUnique({
       where: { id },
-      include: { ...this.subscriptionInclude, sector: true },
+      include: {
+        ...this.subscriptionInclude,
+        sector: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+      },
     });
   }
 
@@ -45,6 +63,12 @@ export class CompaniesRepository {
       include: {
         ...this.subscriptionInclude,
         sector: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
         userCompanies: {
           include: {
             role: true,
@@ -71,6 +95,12 @@ export class CompaniesRepository {
       include: {
         ...this.subscriptionInclude,
         sector: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
         userCompanies: {
           include: {
             role: true,
@@ -97,7 +127,16 @@ export class CompaniesRepository {
     return this.prisma.company.update({
       where: { id },
       data,
-      include: { ...this.subscriptionInclude, sector: true },
+      include: {
+        ...this.subscriptionInclude,
+        sector: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+      },
     });
   }
 
@@ -105,7 +144,16 @@ export class CompaniesRepository {
     return this.prisma.company.update({
       where: { id },
       data: { logoUrl },
-      include: { ...this.subscriptionInclude, sector: true },
+      include: {
+        ...this.subscriptionInclude,
+        sector: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+        billingDaneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
+      },
     });
   }
 

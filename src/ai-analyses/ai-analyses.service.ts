@@ -207,7 +207,8 @@ export class AiAnalysesService {
 
     const promptInput: CreditStudyPromptInput = {
       customerName: customer.businessName,
-      customerCity: customer.city ?? 'No especificada',
+      customerCity:
+        customer.daneCity?.name ?? customer.bureauCity ?? 'No especificada',
       isLegalEntity,
       personTypeLabel:
         customer.personType?.description ??

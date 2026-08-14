@@ -6,6 +6,8 @@ import {
   MaxLength,
   ValidateNested,
   IsObject,
+  IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -67,15 +69,14 @@ class OnboardingCompanyDto {
   @IsInt()
   sectorId: number;
 
-  @ApiProperty({ example: 'Antioquia', maxLength: 150 })
+  @ApiProperty({
+    example: '05001',
+    description: 'Código DANE del municipio (dane_cities)',
+    maxLength: 5,
+  })
   @IsString()
-  @MaxLength(150)
-  state: string;
-
-  @ApiProperty({ example: 'Medellín', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  city: string;
+  @MaxLength(5)
+  cityCode: string;
 
   @ApiProperty({ example: 'Calle 1 #2-3', maxLength: 255 })
   @IsString()
@@ -139,15 +140,34 @@ class OnboardingBillingDto {
   @MaxLength(255)
   billingAddress: string;
 
-  @ApiProperty({ example: 'Antioquia', maxLength: 150 })
+  @ApiProperty({
+    example: '05001',
+    description: 'Código DANE del municipio de facturación (domicilio fiscal)',
+    maxLength: 5,
+  })
   @IsString()
-  @MaxLength(150)
-  billingState: string;
+  @MaxLength(5)
+  billingCityCode: string;
 
-  @ApiProperty({ example: 'Medellín', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  billingCity: string;
+  @ApiProperty({
+    example: 104,
+    description: "Régimen frente al IVA: id de un Parameter tipo 'tax_regime'",
+  })
+  @Type(() => Number)
+  @IsInt()
+  billingRegimeTypeId: number;
+
+  @ApiProperty({
+    example: ['R-99-PN'],
+    isArray: true,
+    description:
+      "Responsabilidades fiscales: codes de Parameter tipo 'fiscal_responsibility' (son los códigos DIAN). Al menos una.",
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @MaxLength(20, { each: true })
+  billingFiscalResponsibilities: string[];
 }
 
 export class OnboardingDto {

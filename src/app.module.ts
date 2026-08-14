@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { SupabaseAuthGuard } from './auth/guards/supabase-auth.guard.js';
 import { ParametersModule } from './parameters/parameters.module.js';
+import { LocationsModule } from './locations/locations.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { CreditStudiesModule } from './credit-studies/credit-studies.module.js';
@@ -53,6 +54,7 @@ import { HealthController } from './common/health/health.controller.js';
     AuthModule,
     AuthorizationModule,
     ParametersModule,
+    LocationsModule,
     CompaniesModule,
     CustomersModule,
     CreditStudiesModule,

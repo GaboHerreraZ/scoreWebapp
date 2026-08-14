@@ -34,26 +34,15 @@ export class UpdateCustomerDto {
   phone?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Ciudad',
-    example: 'Barranquilla',
-    maxLength: 150,
+    description: 'Código DANE del municipio (dane_cities)',
+    example: '08001',
+    maxLength: 5,
     nullable: true,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(150)
-  city?: string | null;
-
-  @ApiPropertyOptional({
-    description: 'Departamento',
-    example: 'Atlántico',
-    maxLength: 150,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(150)
-  state?: string | null;
+  @MaxLength(5)
+  cityCode?: string | null;
 
   @ApiPropertyOptional({
     description: 'Dirección',

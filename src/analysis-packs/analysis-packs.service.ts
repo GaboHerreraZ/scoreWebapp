@@ -20,6 +20,7 @@ import { PaymentAlertsService } from '../payment-alerts/payment-alerts.service.j
 import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { MacroContractService } from '../documents/macro-contract/macro-contract.service.js';
+import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -63,6 +64,7 @@ export class AnalysisPacksService {
     private readonly promoCodesService: PromoCodesService,
     private readonly mailService: MailService,
     private readonly macroContractService: MacroContractService,
+    private readonly fiscalProfileValidator: FiscalProfileValidator,
   ) {}
 
   /**
@@ -199,6 +201,11 @@ export class AnalysisPacksService {
     if (!company) {
       throw new NotFoundException('Empresa no encontrada');
     }
+
+    this.fiscalProfileValidator.assertReadyToInvoice(
+      company,
+      company.billingDocType?.code ?? null,
+    );
 
     const paymentToken = randomBytes(32).toString('hex');
 
@@ -1276,7 +1283,7 @@ export class AnalysisPacksService {
             billingDocNumber: billing?.billingDocNumber ?? '—',
             billingEmail: billing?.billingEmail ?? '—',
             billingAddress: billing?.billingAddress ?? '—',
-            billingCity: billing?.billingCity ?? '—',
+            billingCity: billing?.billingDaneCity?.name ?? '—',
             planName,
             quantity: String(pack.quantityPurchased),
             taxBase: money(taxBase),

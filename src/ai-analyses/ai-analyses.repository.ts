@@ -113,6 +113,7 @@ export class AiAnalysesRepository {
             personType: {
               select: { id: true, code: true, label: true, description: true },
             },
+            daneCity: { select: { name: true } },
           },
         },
         status: true,

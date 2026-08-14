@@ -11,12 +11,14 @@ import {
   defaultWeightsFor,
   type PersonTypeCode,
 } from '../scoring/scoring.constants.js';
+import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
 
 @Injectable()
 export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parametersRepository: ParametersRepository,
+    private readonly fiscalProfileValidator: FiscalProfileValidator,
   ) {}
 
   /**
@@ -51,6 +53,13 @@ export class OnboardingService {
         `Ya existe una empresa con el NIT ${dto.company.nit}`,
       );
     }
+
+    // Perfil fiscal: los parámetros enviados deben existir y ser del tipo
+    // correcto. Sin esto, la factura electrónica la rechaza la DIAN después.
+    await this.fiscalProfileValidator.validateSelection({
+      billingRegimeTypeId: dto.billing.billingRegimeTypeId,
+      billingFiscalResponsibilities: dto.billing.billingFiscalResponsibilities,
+    });
 
     const adminRole = await this.parametersRepository.findByTypeAndCode(
       'user_company_role',
@@ -109,8 +118,7 @@ export class OnboardingService {
           name: dto.company.name,
           nit: dto.company.nit,
           sectorId: dto.company.sectorId,
-          state: dto.company.state,
-          city: dto.company.city,
+          cityCode: dto.company.cityCode,
           address: dto.company.address,
           billingName: dto.billing.billingName,
           billingLastName: dto.billing.billingLastName,
@@ -120,8 +128,10 @@ export class OnboardingService {
           billingEmail: dto.billing.billingEmail,
           billingPhone: dto.billing.billingPhone,
           billingAddress: dto.billing.billingAddress,
-          billingState: dto.billing.billingState,
-          billingCity: dto.billing.billingCity,
+          billingCityCode: dto.billing.billingCityCode,
+          billingRegimeTypeId: dto.billing.billingRegimeTypeId,
+          billingFiscalResponsibilities:
+            dto.billing.billingFiscalResponsibilities,
         },
       });
 
@@ -200,7 +210,18 @@ export class OnboardingService {
           where: { isActive: true },
           orderBy: { joinedAt: 'asc' },
           take: 1,
-          include: { company: true },
+          include: {
+            company: {
+              include: {
+                daneCity: {
+                  select: { name: true, region: { select: { name: true } } },
+                },
+                billingDaneCity: {
+                  select: { name: true, region: { select: { name: true } } },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -231,8 +252,10 @@ export class OnboardingService {
         name: company.name,
         nit: company.nit,
         sectorId: company.sectorId,
-        state: company.state,
-        city: company.city,
+        cityCode: company.cityCode,
+        // Resueltos para pintar el resumen sin que el front vuelva al catálogo.
+        city: company.daneCity.name,
+        state: company.daneCity.region.name,
         address: company.address,
       },
       billing: {
@@ -244,8 +267,11 @@ export class OnboardingService {
         billingEmail: company.billingEmail,
         billingPhone: company.billingPhone,
         billingAddress: company.billingAddress,
-        billingState: company.billingState,
-        billingCity: company.billingCity,
+        billingCityCode: company.billingCityCode,
+        billingRegimeTypeId: company.billingRegimeTypeId,
+        billingFiscalResponsibilities: company.billingFiscalResponsibilities,
+        billingCity: company.billingDaneCity?.name ?? null,
+        billingState: company.billingDaneCity?.region.name ?? null,
       },
     };
   }

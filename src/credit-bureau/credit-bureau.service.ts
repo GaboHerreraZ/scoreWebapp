@@ -173,10 +173,13 @@ export class CreditBureauService {
       customer.id,
     );
 
+    // Mismo shape que la ruta de caché: city/state resueltos. Un Customer recién
+    // creado por la central solo tiene bureauCity (sin departamento).
+    const { bureauCity, ...customerData } = customer;
     return {
       fromCache: false,
       consultationId: consultation.id,
-      customer,
+      customer: { ...customerData, city: bureauCity ?? null, state: null },
     };
   }
 
@@ -201,12 +204,23 @@ export class CreditBureauService {
 
     // Devolvemos solo los campos del Customer (sin la relación cargada), para
     // que el shape coincida con el de una consulta fresca.
-    const { bureauConsultations: _omit, ...customerData } = customer;
+    const {
+      bureauConsultations: _omit,
+      daneCity,
+      bureauCity,
+      ...customerData
+    } = customer;
     void _omit;
     return {
       fromCache: true,
       consultationId: last.id,
-      customer: customerData,
+      // city/state resueltos, igual que en el resto de la API: el municipio
+      // elegido manda y, si no hay, el texto que reportó la central.
+      customer: {
+        ...customerData,
+        city: daneCity?.name ?? bureauCity ?? null,
+        state: daneCity?.region.name ?? null,
+      },
     };
   }
 

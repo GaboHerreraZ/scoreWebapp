@@ -280,9 +280,14 @@ export class CustomerDetailResponseDto {
   @ApiProperty({ nullable: true })
   phone!: string | null;
 
+  @ApiProperty({ nullable: true, description: 'Código DANE del municipio' })
+  cityCode!: string | null;
+
+  /** Nombre del municipio; cae al texto de la central si aún no hay código. */
   @ApiProperty({ nullable: true })
   city!: string | null;
 
+  /** Departamento derivado del código; null si la ciudad viene de la central. */
   @ApiProperty({ nullable: true })
   state!: string | null;
 

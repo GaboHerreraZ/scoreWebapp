@@ -147,6 +147,9 @@ export class MacroContractService {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       include: {
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
         userCompanies: {
           where: { isActive: true },
           orderBy: { joinedAt: 'asc' },
@@ -173,8 +176,8 @@ export class MacroContractService {
       // Cliente
       CLIENTE_RAZON_SOCIAL: company.name,
       CLIENTE_NIT: company.nit,
-      CLIENTE_CIUDAD: company.city,
-      CLIENTE_DEPARTAMENTO: company.state,
+      CLIENTE_CIUDAD: company.daneCity.name,
+      CLIENTE_DEPARTAMENTO: company.daneCity.region.name,
       CLIENTE_DIRECCION: company.address,
       CLIENTE_REPRESENTANTE: signerName,
       CLIENTE_TIPO_DOC: admin.identificationType?.label ?? '',

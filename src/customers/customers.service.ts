@@ -40,6 +40,7 @@ type CustomerWithRelations = Prisma.CustomerGetPayload<{
     economicActivity: true;
     identificationType: true;
     legalRepIdentificationType: true;
+    daneCity: { select: { name: true; region: { select: { name: true } } } };
   };
 }>;
 
@@ -149,8 +150,7 @@ export class CustomersService {
     const updated = await this.repository.update(id, {
       email: dto.email,
       phone: dto.phone,
-      city: dto.city,
-      state: dto.state,
+      cityCode: dto.cityCode,
       address: dto.address,
       economicActivityId: dto.economicActivityId,
       legalRepName: dto.legalRepName,
@@ -227,8 +227,9 @@ export class CustomersService {
         : null,
       email: c.email,
       phone: c.phone,
-      city: c.city,
-      state: c.state,
+      cityCode: c.cityCode,
+      city: c.daneCity?.name ?? c.bureauCity,
+      state: c.daneCity?.region.name ?? null,
       address: c.address,
       legalRep: hasLegalRep
         ? {
@@ -477,8 +478,8 @@ export class CustomersService {
       economicActivity: c.economicActivity?.label ?? null,
       email: c.email,
       phone: c.phone,
-      city: c.city,
-      state: c.state,
+      city: c.daneCity?.name ?? c.bureauCity,
+      state: c.daneCity?.region.name ?? null,
       address: c.address,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,

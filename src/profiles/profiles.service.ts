@@ -171,7 +171,7 @@ export class ProfilesService {
       isUserActiveInCompany: company.isActive,
       companyId: company.companyId,
       companyName: company.company.name,
-      companyCity: company.company.city,
+      companyCity: company.company.daneCity.name,
       companyNit: company.company.nit,
       isOnboardingReady: company.company.isOnboardingReady,
       onboardingStatus,

@@ -141,7 +141,15 @@ export class PromissoryNotesService {
             legalRepIdentificationType: true,
           },
         },
-        company: { include: { accountType: true, accountBank: true } },
+        company: {
+          include: {
+            accountType: true,
+            accountBank: true,
+            daneCity: {
+              select: { name: true, region: { select: { name: true } } },
+            },
+          },
+        },
       },
     });
     if (!study) {
@@ -330,7 +338,7 @@ export class PromissoryNotesService {
         name: string;
         nit: string;
         address: string;
-        city: string;
+        daneCity: { name: string };
         accountNumber: string | null;
         accountType: { label: string } | null;
         accountBank: { label: string } | null;
@@ -374,7 +382,7 @@ export class PromissoryNotesService {
       ACREEDOR_RAZON_SOCIAL: company.name,
       ACREEDOR_NIT: company.nit,
       ACREEDOR_DIRECCION: company.address,
-      ACREEDOR_CIUDAD: company.city,
+      ACREEDOR_CIUDAD: company.daneCity.name,
       ACREEDOR_TIPO_CUENTA: company.accountType?.label ?? '',
       ACREEDOR_NUM_CUENTA: company.accountNumber ?? '',
       ACREEDOR_BANCO: company.accountBank?.label ?? '',
@@ -384,7 +392,7 @@ export class PromissoryNotesService {
       PAGO_DIA: String(pago.day),
       PAGO_MES: pago.monthName,
       PAGO_ANIO: String(pago.year),
-      FIRMA_CIUDAD: company.city,
+      FIRMA_CIUDAD: company.daneCity.name,
       FIRMA_DIA: String(firma.day),
       FIRMA_MES: firma.monthName,
       FIRMA_ANIO: String(firma.year),
@@ -463,7 +471,7 @@ export class PromissoryNotesService {
           amountInWords,
           termDays: dto.termDays,
           dueDate,
-          signCity: company.city,
+          signCity: company.daneCity.name,
           creditorAddress: company.address,
           creditorAccountType: company.accountType?.label ?? null,
           creditorAccountNumber: company.accountNumber,
