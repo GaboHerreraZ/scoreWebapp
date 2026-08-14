@@ -24,15 +24,15 @@ export class CreateCompanyDto {
   @IsInt()
   sectorId: number;
 
-  @ApiProperty({ example: 'Cundinamarca', maxLength: 150 })
+  @ApiProperty({
+    example: '11001',
+    description:
+      'Código DANE del municipio (dane_cities). El departamento son los 2 primeros dígitos.',
+    maxLength: 5,
+  })
   @IsString()
-  @MaxLength(150)
-  state: string;
-
-  @ApiProperty({ example: 'Bogotá', maxLength: 150 })
-  @IsString()
-  @MaxLength(150)
-  city: string;
+  @MaxLength(5)
+  cityCode: string;
 
   @ApiProperty({ example: 'Calle 100 #15-20', maxLength: 255 })
   @IsString()

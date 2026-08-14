@@ -5,6 +5,8 @@ import {
   IsString,
   MaxLength,
   Matches,
+  IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateCompanyDto } from './create-company.dto.js';
@@ -90,21 +92,41 @@ export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {
   @MaxLength(255)
   billingAddress?: string;
 
-  @ApiPropertyOptional({ example: 'Cundinamarca', maxLength: 150 })
+  @ApiPropertyOptional({
+    example: '11001',
+    description: 'Código DANE del municipio de facturación (domicilio fiscal)',
+    maxLength: 5,
+  })
   @IsOptional()
   @IsString()
-  @MaxLength(150)
-  billingState?: string;
-
-  @ApiPropertyOptional({ example: 'Bogotá', maxLength: 150 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(150)
-  billingCity?: string;
+  @MaxLength(5)
+  billingCityCode?: string;
 
   @ApiPropertyOptional({ example: '3001234567', maxLength: 50 })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   billingPhone?: string;
+
+  @ApiPropertyOptional({
+    example: 104,
+    description: "Régimen frente al IVA: id de un Parameter tipo 'tax_regime'",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  billingRegimeTypeId?: number;
+
+  @ApiPropertyOptional({
+    example: ['R-99-PN'],
+    isArray: true,
+    description:
+      "Responsabilidades fiscales: codes de Parameter tipo 'fiscal_responsibility'",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @MaxLength(20, { each: true })
+  billingFiscalResponsibilities?: string[];
 }

@@ -184,7 +184,7 @@ export class CreditBureauRepository {
         updatedBy: userId,
         email: params.contactEmail,
         phone: params.contactSeed.phone,
-        city: params.contactSeed.city,
+        bureauCity: params.contactSeed.city,
         address: params.contactSeed.address,
         economicActivityId: params.contactSeed.economicActivityId,
         legalRepName: params.legalRepSeed?.name ?? null,
@@ -249,6 +249,9 @@ export class CreditBureauRepository {
         companyId_identificationNumber: { companyId, identificationNumber },
       },
       include: {
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
         bureauConsultations: {
           orderBy: { consultaAt: 'desc' },
           take: 1,

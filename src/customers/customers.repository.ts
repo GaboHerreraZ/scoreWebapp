@@ -41,6 +41,9 @@ export class CustomersRepository {
         economicActivity: true,
         identificationType: true,
         legalRepIdentificationType: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
       },
     });
   }
@@ -55,6 +58,9 @@ export class CustomersRepository {
         economicActivity: true,
         identificationType: true,
         legalRepIdentificationType: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
       },
     });
   }
@@ -81,6 +87,9 @@ export class CustomersRepository {
         personType: true,
         identificationType: true,
         economicActivity: true,
+        daneCity: {
+          select: { name: true, region: { select: { name: true } } },
+        },
       },
       // El export solo usa identidad + contacto + labels de los parámetros;
       // sin esto, cada fila arrastra el perfil completo del bureau.

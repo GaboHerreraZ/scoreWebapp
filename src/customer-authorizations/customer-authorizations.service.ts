@@ -156,7 +156,8 @@ export class CustomerAuthorizationsService {
     const existingCustomer = await this.prisma.customer.findFirst({
       where: { companyId, identificationNumber: dto.identificationNumber },
       select: {
-        city: true,
+        daneCity: { select: { name: true } },
+        bureauCity: true,
         legalRepName: true,
         legalRepIdentificationNumber: true,
         legalRepIdentificationType: { select: { label: true } },
@@ -170,7 +171,11 @@ export class CustomerAuthorizationsService {
       LOGO_URL: this.logoUrl,
       PROVEEDOR_NIT: this.creditia.nit,
       PROVEEDOR_CIUDAD: this.creditia.city,
-      TITULAR_CIUDAD: dto.titularCity ?? existingCustomer?.city ?? '',
+      TITULAR_CIUDAD:
+        dto.titularCity ??
+        existingCustomer?.daneCity?.name ??
+        existingCustomer?.bureauCity ??
+        '',
       TITULAR_EMAIL: dto.titularEmail,
       EMPRESA_RAZON_SOCIAL: company.name,
       EMPRESA_NIT: company.nit,

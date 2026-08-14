@@ -161,8 +161,11 @@ export class CreditStudiesRepository {
             secondLastName: true,
             email: true,
             phone: true,
-            city: true,
-            state: true,
+            cityCode: true,
+            daneCity: {
+              select: { name: true, region: { select: { name: true } } },
+            },
+            bureauCity: true,
             address: true,
             birthDate: true,
             birthCity: true,
@@ -369,7 +372,7 @@ export class CreditStudiesRepository {
   async findCompanyHeader(companyId: string) {
     return this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { name: true, nit: true, city: true },
+      select: { name: true, nit: true, daneCity: { select: { name: true } } },
     });
   }
 
