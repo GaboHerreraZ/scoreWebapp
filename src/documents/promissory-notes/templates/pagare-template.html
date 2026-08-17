@@ -12,8 +12,9 @@
 
   El ACREEDOR es la EMPRESA cliente de Creditia (no Creditia): sus datos van en
   variables ACREEDOR_*. El consecutivo {{NOTE_NUMBER}} es único por empresa y lo
-  asigna el backend. Monto y plazo son editables al emitir (monto ≤ cupo
-  solicitado del estudio); la fecha de pago es emisión + plazo en días.
+  asigna el backend. Es un PAGARÉ EN BLANCO: el monto y la fecha de pago NO se
+  imprimen (van en línea de guiones) y los llena el acreedor según la Sección 2;
+  monto y plazo se siguen guardando en promissory_notes como referencia interna.
 
   FUENTE ÚNICA con doble uso (por eso vive en src/ y se copia al build como
   asset, no en docs/):
@@ -53,6 +54,8 @@
   .titular { background: #f8fafc; border-left: 3px solid var(--brand); padding: 12px 16px; border-radius: 0 6px 6px 0; }
   .clause-title { font-weight: bold; color: var(--brand-dark); }
   .fill { font-weight: bold; color: var(--ink); }
+  /* Espacio en blanco: lo llena el acreedor al hacer exigible el pagaré (art. 622). */
+  .blank { color: var(--ink); letter-spacing: -1px; }
   ol { margin: 6px 0 6px 4px; padding-left: 18px; }
   li { margin: 4px 0; text-align: justify; }
   .page-break { page-break-before: always; }
@@ -92,13 +95,13 @@ por medio del presente escrito manifiesto lo siguiente:</p>
 <p><span class="clause-title">Primero:</span> que debo y pagaré, incondicionalmente
 a la orden de <span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span>, identificado(a)
 con NIT <span class="fill">{{ACREEDOR_NIT}}</span>, la suma cierta de
-<span class="fill">{{MONTO_LETRAS}}</span> pesos
-(<span class="fill">{{MONTO_NUMERO}}</span>) moneda legal colombiana.</p>
+<span class="blank">_________________________________</span> pesos
+(<span class="blank">_____________________</span>) moneda legal colombiana.</p>
 
 <p><span class="clause-title">Segundo:</span> que el pago total de la mencionada
 obligación se efectuará en <span class="fill">{{FORMA_PAGO}}</span>, el
-<span class="fill">{{PAGO_DIA}}</span> de <span class="fill">{{PAGO_MES}}</span> de
-<span class="fill">{{PAGO_ANIO}}</span> en las dependencias de
+<span class="blank">_______</span> de <span class="blank">_____________</span> de
+<span class="blank">_________</span> en las dependencias de
 <span class="fill">{{ACREEDOR_RAZON_SOCIAL}}</span>, ubicado(a) en
 <span class="fill">{{ACREEDOR_DIRECCION}}</span> en la ciudad de
 <span class="fill">{{ACREEDOR_CIUDAD}}</span>, o en su cuenta

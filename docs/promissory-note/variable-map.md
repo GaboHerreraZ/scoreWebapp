@@ -69,13 +69,18 @@ datos después, el pagaré emitido no cambia).
 
 ## LA OBLIGACIÓN (snapshot editable al emitir)
 
+Es un **pagaré en blanco**: el documento **no imprime el monto ni la fecha de
+pago** (van en línea de guiones, los llena el acreedor conforme a la Sección 2, art.
+622 C.Co.). `amount`, `amount_in_words`, `term_days` y `due_date` se siguen
+guardando en `promissory_notes` (referencia interna, recordatorio de pago y
+tope vs. el cupo del estudio), pero **ya no se envían a la plantilla**: las
+variables `{{MONTO_LETRAS}}`, `{{MONTO_NUMERO}}`, `{{PAGO_DIA}}`,
+`{{PAGO_MES}}` y `{{PAGO_ANIO}}` fueron eliminadas del mapeo.
+
 | Variable            | Origen                                                | Notas |
 |---------------------|--------------------------------------------------------|-------|
 | `{{NOTE_NUMBER}}`   | `promissory_notes.note_number`                         | consecutivo por empresa; aparece 4 veces en el texto |
-| `{{MONTO_LETRAS}}`  | `numberToSpanishWords(amount)` → `amount_in_words`     | sin la palabra "pesos" (la pone la plantilla) |
-| `{{MONTO_NUMERO}}`  | `formatCOP(amount)`                                    | ej: `$ 20.500.000` |
 | `{{FORMA_PAGO}}`    | fijo: `un solo pago`                                   | |
-| `{{PAGO_DIA/MES/ANIO}}`  | `due_date` = emisión + `term_days` (TZ Bogotá)    | mes en letras |
 | `{{FIRMA_CIUDAD}}`  | `Company.city`                                         | = `sign_city` |
 | `{{FIRMA_DIA/MES/ANIO}}` | fecha de emisión (TZ Bogotá)                      | mes en letras |
 
