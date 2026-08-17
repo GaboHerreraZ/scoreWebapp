@@ -353,15 +353,11 @@ export class PromissoryNotesService {
         lineaRepresentante: string;
       };
       issuedAt: Date;
-      dueDate: Date;
-      amount: number;
-      amountInWords: string;
     },
     noteNumber: number,
   ): Record<string, string> {
-    const { customer, company, signerEmail, firmante, issuedAt, dueDate } = ctx;
+    const { customer, company, signerEmail, firmante, issuedAt } = ctx;
     const firma = bogotaDateParts(issuedAt);
-    const pago = bogotaDateParts(dueDate);
     return {
       LOGO_URL: this.logoUrl,
       NOTE_NUMBER: String(noteNumber),
@@ -386,12 +382,7 @@ export class PromissoryNotesService {
       ACREEDOR_TIPO_CUENTA: company.accountType?.label ?? '',
       ACREEDOR_NUM_CUENTA: company.accountNumber ?? '',
       ACREEDOR_BANCO: company.accountBank?.label ?? '',
-      MONTO_LETRAS: ctx.amountInWords,
-      MONTO_NUMERO: formatCOP(ctx.amount),
       FORMA_PAGO: 'un solo pago',
-      PAGO_DIA: String(pago.day),
-      PAGO_MES: pago.monthName,
-      PAGO_ANIO: String(pago.year),
       FIRMA_CIUDAD: company.daneCity.name,
       FIRMA_DIA: String(firma.day),
       FIRMA_MES: firma.monthName,
@@ -500,16 +491,7 @@ export class PromissoryNotesService {
         signerName,
         signerEmail,
         data: this.buildTemplateData(
-          {
-            customer,
-            company,
-            signerEmail,
-            firmante,
-            issuedAt,
-            dueDate,
-            amount,
-            amountInWords,
-          },
+          { customer, company, signerEmail, firmante, issuedAt },
           created.noteNumber,
         ),
       });
