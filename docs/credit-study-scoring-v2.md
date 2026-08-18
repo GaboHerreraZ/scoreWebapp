@@ -642,17 +642,32 @@ En la respuesta de MiDecisor conviven **dos escalas**: `ingreso` y
 `porcentajeCuotaVsIngreso` que la propia central reporta; solo cuadra si la
 cuota son $2.053.000.
 
-La normalización vive en **un único punto**: el mapper de Experian
-(`thousandsToPesos` en `experian.mapper.ts`) multiplica ×1000 al mapear
-`saldoActual`/`saldoMora` (escalares del snapshot y por sector), de modo que
-todo el dominio —snapshot, steps, motor, front— habla en pesos completos. Las
-red flags de `saldoMora > 0` nunca dependieron de la escala (cero es cero), pero
-cualquier display o cálculo futuro sobre esos saldos ya no arrastra el error
-×1000.
+La normalización vive en la **frontera ACL**: `thousandsToPesos` (exportada de
+`experian.mapper.ts`) multiplica ×1000 al mapear `saldoActual`/`saldoMora`
+(escalares del snapshot y por sector), de modo que todo el dominio —snapshot,
+steps, motor, front— habla en pesos completos. Las red flags de `saldoMora > 0`
+nunca dependieron de la escala (cero es cero), pero cualquier display o cálculo
+futuro sobre esos saldos ya no arrastra el error ×1000.
 
-> ⚠️ Los snapshots consultados **antes** de esta regla quedaron guardados en
-> miles; se corrigen solos en la siguiente consulta del cliente (regla de
-> frescura). No se hizo backfill.
+**Los EEFF de la central también vienen en MILES (fix 2026-08-16).** El bloque
+`estadosFinancieros` (que alimenta el análisis `source='datacredito'` vía
+`experian.financials.mapper.ts`) llegaba SIN escalar: los períodos quedaban en
+miles mientras el PDF está en pesos. Prueba con caso real: "Total pasivo"
+`17016` de la central vs `$17.015.977` del PDF del mismo período — la misma
+cifra redondeada a miles (y utilidad neta `113164` = $113.164.000 en otro caso
+PJ). El impacto era triple: (1) el step2 mostraba la fuente DataCrédito 1.000×
+más pequeña; (2) los indicadores del análisis DC (EBITDA, capacidad) salían en
+milésimas → estudios PJ rechazados injustamente cuando la central era la fuente
+del cálculo; (3) la **Veracidad (Dim 6) contrastaba pesos contra miles** →
+`manipulated` con danger FALSO siempre que había ambas fuentes del mismo año.
+Ahora el pivot del financials mapper aplica `thousandsToPesos` a todas las
+cuentas de `ACCOUNT_MAP` (todas monetarias; la categoría "Indicadores" — ratios
+sin escalar — ya se ignoraba por diseño).
+
+> ⚠️ Los snapshots y análisis `datacredito` creados **antes** de estas reglas
+> quedaron guardados en miles; se corrigen solos en la siguiente consulta
+> (frescura) o al re-cargar el PDF del estudio (que regenera el análisis DC).
+> No se hizo backfill.
 
 ---
 

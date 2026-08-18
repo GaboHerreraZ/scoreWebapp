@@ -458,9 +458,12 @@ function mapCreditSectors(
 // MILES de pesos, mientras `ingreso` y `montoSugerido` vienen en pesos completos
 // (verificado con caso real: cuota "2053" / ingreso 6.964.000 = 29,5% = el
 // porcentajeCuotaVsIngreso que la propia central reporta — solo cuadra si la
-// cuota está en miles). Se normaliza AQUÍ, en el único punto de entrada, para
-// que todo el dominio hable en pesos completos.
-function thousandsToPesos(
+// cuota está en miles). Los EEFF (`estadosFinancieros`) también vienen en miles
+// (verificado: "Total pasivo" 17016 de la central vs $17.015.977 del PDF del
+// mismo período — la misma cifra redondeada a miles). Se normaliza en la
+// frontera ACL — aquí y en experian.financials.mapper — para que todo el
+// dominio hable en pesos completos. Exportada: la usan ambos mappers.
+export function thousandsToPesos(
   value: string | number | null | undefined,
 ): number | null {
   const n = toNumber(value);

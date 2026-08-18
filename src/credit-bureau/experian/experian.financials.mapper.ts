@@ -3,12 +3,15 @@ import type {
   ExperianEstadosFinancieros,
   ExperianEstadoFinancieroGrupo,
 } from './experian.types.js';
+import { thousandsToPesos } from './experian.mapper.js';
 
 // ─── MAPPER DE ESTADOS FINANCIEROS (PJ) ─────────────────────────────────────
 // Traduce el bloque `estadosFinancieros` de MiDecisor (matriz cuenta × año, en
 // español, con nombres de Experian) a las cifras crudas por año que usa el
 // dominio (columnas de FinancialStatementPeriod). Es la frontera ACL para EEFF:
-// rawResponse sigue puro; aquí se produce el modelo neutro.
+// rawResponse sigue puro; aquí se produce el modelo neutro. Las cifras de la
+// central vienen en MILES de pesos: se normalizan a pesos completos AQUÍ
+// (thousandsToPesos), igual que los saldos del snapshot de riesgo.
 //
 // Forma cruda: detalle[] agrupa por categoría (Activos, Pasivos, Patrimonio,
 // Estado de Resultados, Indicadores). Cada grupo trae `anio: number[]` y
@@ -177,7 +180,7 @@ function pivotByColumn(eeff: ExperianEstadosFinancieros): FinancialColumn[] {
   // Fuente por columna (elemento aparte `nombre:"fuentes"`, sin anio/datos).
   const fuentesEl = groups.find((g) => normalize(g.nombre) === 'fuentes');
   const sources = asArray<unknown>(fuentesEl?.fuente).map((s) =>
-    normalize(typeof s === 'string' ? s : String(s ?? '')),
+    normalize(typeof s === 'string' ? s : ''),
   );
 
   // Años canónicos: los comparten todos los grupos de cifras; tomo el primero.
@@ -197,7 +200,10 @@ function pivotByColumn(eeff: ExperianEstadosFinancieros): FinancialColumn[] {
       const valores = asArray<unknown>(cuenta.valores);
       valores.forEach((value, i) => {
         const bucket = byColumn.get(i) ?? {};
-        bucket[column] = toNumber(value);
+        // Todas las cuentas de ACCOUNT_MAP son monetarias y la central las
+        // entrega en MILES; la categoría "Indicadores" (ratios, sin escalar)
+        // ya quedó excluida por FIGURE_CATEGORIES.
+        bucket[column] = thousandsToPesos(toNumber(value));
         byColumn.set(i, bucket);
       });
     }
