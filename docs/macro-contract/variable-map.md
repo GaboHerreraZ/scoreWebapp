@@ -3,21 +3,28 @@
 Cada variable `{{...}}` de la plantilla cargada en Zapsign se rellena vía API con el
 array `data[]` que enviamos (`{ "de": "{{VARIABLE}}", "para": "valor" }`).
 
-## EL CLIENTE (empresa que firma) — se rellena desde `Company` / `Profile`
+## EL CLIENTE (empresa que firma) — se rellena desde `Company`
 
-| Variable en el contrato        | Fuente en la BD                                   | Notas |
-|--------------------------------|---------------------------------------------------|-------|
-| `{{CLIENTE_RAZON_SOCIAL}}`     | `Company.name`                                    | |
-| `{{CLIENTE_NIT}}`              | `Company.nit`                                     | |
-| `{{CLIENTE_CIUDAD}}`           | `Company.city`                                    | |
-| `{{CLIENTE_DEPARTAMENTO}}`     | `Company.state`                                   | |
-| `{{CLIENTE_DIRECCION}}`        | `Company.address`                                 | |
-| `{{CLIENTE_REPRESENTANTE}}`    | `Profile.name + ' ' + Profile.lastName`           | admin dueño (UserCompany rol administrator) |
-| `{{CLIENTE_TIPO_DOC}}`         | `Parameter(Profile.identificationTypeId).label`   | ej. "Cédula de ciudadanía" |
-| `{{CLIENTE_NUM_DOC}}`          | `Profile.identificationNumber`                    | |
+| Variable en el contrato        | Fuente en la BD                                            | Notas |
+|--------------------------------|------------------------------------------------------------|-------|
+| `{{CLIENTE_RAZON_SOCIAL}}`     | `Company.name`                                             | |
+| `{{CLIENTE_NIT}}`              | `Company.nit`                                              | |
+| `{{CLIENTE_CIUDAD}}`           | `Company.daneCity.name`                                    | |
+| `{{CLIENTE_DEPARTAMENTO}}`     | `Company.daneCity.region.name`                             | |
+| `{{CLIENTE_DIRECCION}}`        | `Company.address`                                          | |
+| `{{CLIENTE_REPRESENTANTE}}`    | `Company.legalRepName`                                     | representante legal |
+| `{{CLIENTE_TIPO_DOC}}`         | `Parameter(Company.legalRepIdentificationTypeId).label`    | ej. "Cédula de ciudadanía" |
+| `{{CLIENTE_NUM_DOC}}`          | `Company.legalRepIdentificationNumber`                     | |
 
-El firmante (signer_email / signer_name) del CLIENTE = el email y nombre del
-`Profile` administrador de la empresa (el mismo dueño que hizo el onboarding).
+El firmante (signer_email / signer_name) del CLIENTE = `Company.legalRepEmail` y
+`Company.legalRepName`: quien tiene facultad para obligar a la sociedad, **no** el
+usuario que se registró en la plataforma (pueden ser personas distintas). Estos
+datos se piden en el onboarding (bloque `legalRep`) y se corrigen con
+`PATCH /companies/:id`.
+
+Si la empresa no los tiene (creada antes de que se pidieran), el envío falla con
+400 en vez de caer al admin de la cuenta: hay que completarlos y reintentar con
+`POST /companies/:companyId/contract/resend`.
 
 ## EL PROVEEDOR — valores FIJOS en código, no en variables de entorno
 

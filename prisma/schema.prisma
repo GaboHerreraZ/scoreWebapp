@@ -68,6 +68,7 @@ model Parameter {
   invitationsByStatus                   Invitation[]          @relation("InvitationStatus")
   customersByIdentificationType         Customer[]            @relation("CustomerIdentificationType")
   customersByLegalRepIdentificationType Customer[]            @relation("CustomerLegalRepIdentificationType")
+  companiesByLegalRepIdentificationType  Company[]            @relation("CompanyLegalRepIdentificationType")
   companiesByAccountType                Company[]             @relation("CompanyAccountType")
   companiesByAccountBank                Company[]             @relation("CompanyAccountBank")
   companiesByBillingDocType             Company[]             @relation("CompanyBillingDocType")
@@ -187,6 +188,14 @@ model Company {
   accountBankId    Int?     @map("account_bank_id")
   accountNumber    String?  @map("account_number") @db.VarChar(50)
   logoUrl          String?  @map("logo_url") @db.VarChar(500)
+  // ── Representante legal (quien obliga a la empresa) ──
+  // Es el FIRMANTE del contrato macro, NO el usuario que se registró: se piden
+  // en el onboarding. Nullable por las empresas creadas antes de esta columna.
+  legalRepName                 String? @map("legal_rep_name") @db.VarChar(255)
+  legalRepIdentificationTypeId Int?    @map("legal_rep_identification_type_id")
+  legalRepIdentificationNumber String? @map("legal_rep_identification_number") @db.VarChar(50)
+  legalRepEmail                String? @map("legal_rep_email") @db.VarChar(255)
+  legalRepPhone                String? @map("legal_rep_phone") @db.VarChar(50)
   billingName      String?  @map("billing_name") @db.VarChar(150)
   billingLastName  String?  @map("billing_last_name") @db.VarChar(150)
   billingBusinessName String? @map("billing_business_name") @db.VarChar(255)
@@ -208,6 +217,7 @@ model Company {
   accountType          Parameter?            @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
   accountBank          Parameter?            @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
   billingDocType       Parameter?            @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
+  legalRepIdentificationType Parameter?      @relation("CompanyLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
   billingRegimeType    Parameter?            @relation("CompanyBillingRegimeType", fields: [billingRegimeTypeId], references: [id])
   daneCity             DaneCity              @relation("CompanyCity", fields: [cityCode], references: [code])
   billingDaneCity      DaneCity?             @relation("CompanyBillingCity", fields: [billingCityCode], references: [code])
