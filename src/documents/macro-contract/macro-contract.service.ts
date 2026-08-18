@@ -143,34 +143,33 @@ export class MacroContractService {
       throw new BadRequestException('ZAPSIGN_MACRO_TEMPLATE_ID no configurado');
     }
 
-    // Datos de la empresa + su admin (dueño que hizo el onboarding) = firmante.
+    // Datos de la empresa; el firmante es su REPRESENTANTE LEGAL (el único con
+    // facultad para obligarla), no el usuario que hizo el onboarding.
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       include: {
         daneCity: {
           select: { name: true, region: { select: { name: true } } },
         },
-        userCompanies: {
-          where: { isActive: true },
-          orderBy: { joinedAt: 'asc' },
-          take: 1,
-          include: {
-            user: { include: { identificationType: true } },
-          },
-        },
+        legalRepIdentificationType: true,
       },
     });
     if (!company) {
       throw new BadRequestException(`Empresa ${companyId} no encontrada`);
     }
-    const admin = company.userCompanies[0]?.user;
-    if (!admin?.email) {
+    // Empresas creadas antes de que se pidiera el representante legal en el
+    // onboarding: se exige completarlo (PATCH /companies/:id) y reintentar el
+    // envío. Antes se caía al admin de la cuenta y el contrato le llegaba a
+    // quien no puede firmarlo.
+    if (!company.legalRepName || !company.legalRepEmail) {
       throw new BadRequestException(
-        `La empresa ${companyId} no tiene un administrador con email para firmar`,
+        `La empresa ${companyId} no tiene representante legal (nombre y correo) registrado; ` +
+          'complételo antes de enviar el contrato macro',
       );
     }
 
-    const signerName = [admin.name, admin.lastName].filter(Boolean).join(' ');
+    const signerName = company.legalRepName;
+    const signerEmail = company.legalRepEmail;
     const data: Record<string, string> = {
       LOGO_URL: this.logoUrl,
       // Cliente
@@ -180,19 +179,19 @@ export class MacroContractService {
       CLIENTE_DEPARTAMENTO: company.daneCity.region.name,
       CLIENTE_DIRECCION: company.address,
       CLIENTE_REPRESENTANTE: signerName,
-      CLIENTE_TIPO_DOC: admin.identificationType?.label ?? '',
-      CLIENTE_NUM_DOC: admin.identificationNumber ?? '',
+      CLIENTE_TIPO_DOC: company.legalRepIdentificationType?.label ?? '',
+      CLIENTE_NUM_DOC: company.legalRepIdentificationNumber ?? '',
       // Proveedor — valor fijo. Razón social, NIT y representante van escritos
       // en el texto de la plantilla, no como variables: solo queda la ciudad.
       PROVEEDOR_CIUDAD: this.creditia.city,
     };
 
     // 1. Crear el documento desde la plantilla (Zapsign envía la solicitud al
-    //    cliente automáticamente).
+    //    representante legal automáticamente).
     const doc = await this.zapsign.createDocFromTemplate({
       templateId: this.templateId,
       signerName,
-      signerEmail: admin.email,
+      signerEmail,
       data,
     });
 
@@ -200,7 +199,7 @@ export class MacroContractService {
     //    admite ese endpoint).
     const clientSigner =
       doc.signers.find(
-        (s) => s.email?.toLowerCase() === admin.email.toLowerCase(),
+        (s) => s.email?.toLowerCase() === signerEmail.toLowerCase(),
       ) ?? doc.signers[0];
 
     // 3. Firma de Creditia por API (si está habilitada). Best-effort a propósito:
@@ -247,7 +246,7 @@ export class MacroContractService {
       creditiaSignerToken,
       signUrl: clientSigner?.sign_url ?? null,
       signerName,
-      signerEmail: admin.email,
+      signerEmail,
       sentAt: new Date(),
     };
 
@@ -268,7 +267,8 @@ export class MacroContractService {
     }
 
     this.logger.log(
-      `Contrato macro ${existing ? 'reenviado' : 'enviado'} a la empresa ${companyId} (doc=${doc.docToken})`,
+      `Contrato macro ${existing ? 'reenviado' : 'enviado'} a la empresa ${companyId} ` +
+        `(doc=${doc.docToken}, firmante=${signerEmail})`,
     );
   }
 

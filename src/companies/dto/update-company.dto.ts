@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsInt,
   IsString,
+  IsEmail,
   MaxLength,
   Matches,
   IsArray,
@@ -40,6 +41,45 @@ export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {
   @MaxLength(50)
   @Matches(/^\d+$/, { message: 'accountNumber must contain only digits' })
   accountNumber?: string;
+
+  // ─── Representante legal (firmante del contrato macro) ────
+
+  @ApiPropertyOptional({ example: 'María Gómez Rojas', maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  legalRepName?: string;
+
+  @ApiPropertyOptional({
+    example: 104,
+    description: 'Parameter ID tipo de documento del representante legal',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  legalRepIdentificationTypeId?: number;
+
+  @ApiPropertyOptional({ example: '1035851234', maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepIdentificationNumber?: string;
+
+  @ApiPropertyOptional({
+    example: 'maria.gomez@acme.com',
+    maxLength: 255,
+    description: 'A este correo llega la solicitud de firma del contrato macro',
+  })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(255)
+  legalRepEmail?: string;
+
+  @ApiPropertyOptional({ example: '+573001234567', maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepPhone?: string;
 
   // ─── Billing fields ───────────────────────────────────────
 

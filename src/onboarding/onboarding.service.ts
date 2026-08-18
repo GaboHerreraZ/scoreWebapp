@@ -23,8 +23,10 @@ export class OnboardingService {
 
   /**
    * Alta de un cliente que se autorregistra: crea Profile (ligado al usuario de
-   * Supabase ya autenticado) + Company (con facturación) + UserCompany (rol
-   * administrator), todo en una transacción. NO toca ePayco: el pago es un paso
+   * Supabase ya autenticado) + Company (con facturación y representante legal)
+   * + UserCompany (rol administrator), todo en una transacción. El representante
+   * legal se pide aparte porque es quien firma el contrato macro y no tiene por
+   * qué ser el usuario que se registra. NO toca ePayco: el pago es un paso
    * posterior (POST companies/:id/analysis-packs/purchase con el packOfferingId).
    *
    * @param userId id del usuario en Supabase (del token) → PK del Profile.
@@ -120,6 +122,13 @@ export class OnboardingService {
           sectorId: dto.company.sectorId,
           cityCode: dto.company.cityCode,
           address: dto.company.address,
+          legalRepName: dto.legalRep.legalRepName,
+          legalRepIdentificationTypeId:
+            dto.legalRep.legalRepIdentificationTypeId,
+          legalRepIdentificationNumber:
+            dto.legalRep.legalRepIdentificationNumber,
+          legalRepEmail: dto.legalRep.legalRepEmail,
+          legalRepPhone: dto.legalRep.legalRepPhone,
           billingName: dto.billing.billingName,
           billingLastName: dto.billing.billingLastName,
           billingBusinessName: dto.billing.billingBusinessName,
@@ -257,6 +266,13 @@ export class OnboardingService {
         city: company.daneCity.name,
         state: company.daneCity.region.name,
         address: company.address,
+      },
+      legalRep: {
+        legalRepName: company.legalRepName,
+        legalRepIdentificationTypeId: company.legalRepIdentificationTypeId,
+        legalRepIdentificationNumber: company.legalRepIdentificationNumber,
+        legalRepEmail: company.legalRepEmail,
+        legalRepPhone: company.legalRepPhone,
       },
       billing: {
         billingName: company.billingName,

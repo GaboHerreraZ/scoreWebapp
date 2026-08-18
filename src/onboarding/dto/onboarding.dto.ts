@@ -84,6 +84,43 @@ class OnboardingCompanyDto {
   address: string;
 }
 
+/**
+ * Representante legal de la empresa: quien tiene facultad para obligarla y por
+ * tanto FIRMA el contrato macro. Puede no ser el usuario que se registra, por
+ * eso se piden aparte del profile.
+ */
+class OnboardingLegalRepDto {
+  @ApiProperty({ example: 'María Gómez Rojas', maxLength: 255 })
+  @IsString()
+  @MaxLength(255)
+  legalRepName: string;
+
+  @ApiProperty({ example: 104, description: 'Parameter ID tipo de documento' })
+  @Type(() => Number)
+  @IsInt()
+  legalRepIdentificationTypeId: number;
+
+  @ApiProperty({ example: '1035851234', maxLength: 50 })
+  @IsString()
+  @MaxLength(50)
+  legalRepIdentificationNumber: string;
+
+  @ApiProperty({
+    example: 'maria.gomez@acme.com',
+    maxLength: 255,
+    description: 'A este correo llega la solicitud de firma del contrato macro',
+  })
+  @IsEmail()
+  @MaxLength(255)
+  legalRepEmail: string;
+
+  @ApiPropertyOptional({ example: '+573001234567', maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  legalRepPhone?: string;
+}
+
 class OnboardingBillingDto {
   @ApiPropertyOptional({
     example: 'Gabriel',
@@ -182,6 +219,12 @@ export class OnboardingDto {
   @ValidateNested()
   @Type(() => OnboardingCompanyDto)
   company: OnboardingCompanyDto;
+
+  @ApiProperty({ type: OnboardingLegalRepDto })
+  @IsObject()
+  @ValidateNested()
+  @Type(() => OnboardingLegalRepDto)
+  legalRep: OnboardingLegalRepDto;
 
   @ApiProperty({ type: OnboardingBillingDto })
   @IsObject()
