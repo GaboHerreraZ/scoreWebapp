@@ -10,6 +10,7 @@ import { UpdateBlogPostDto } from './dto/update-blog-post.dto.js';
 import { FilterBlogPostDto } from './dto/filter-blog-post.dto.js';
 import { SupabaseService } from '../auth/supabase.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { resolveAvatarUrl } from '../common/utils/avatar.js';
 
 const BLOG_CATEGORY_TYPE = 'blog_category';
 const BLOG_STATUS_TYPE = 'blog_status';
@@ -379,7 +380,7 @@ export class BlogService {
     return {
       name: post.author.name,
       role: post.author.role?.label ?? null,
-      avatarUrl: post.author.avatarUrl ?? null,
+      avatarUrl: resolveAvatarUrl(this.supabaseService, post.author.avatarUrl),
     };
   }
 

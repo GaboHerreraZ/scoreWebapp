@@ -18,6 +18,8 @@ import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
+import { PLATFORM_ADMIN_AVATAR_BUCKET } from '../common/constants/storage-buckets.js';
+import { normalizeAvatar, resolveAvatarUrl } from '../common/utils/avatar.js';
 
 /**
  * Pantallas del panel admin habilitadas por rol (hardcode por ahora; sin tabla
@@ -48,9 +50,6 @@ const ALL_SCREENS = [
   'pdf-extraction-test',
   'datacredito-connection',
 ] as const;
-
-// Bucket de Supabase Storage para las fotos de los usuarios del portal.
-const PLATFORM_ADMIN_AVATAR_BUCKET = 'platform-admin-avatars';
 
 // Pantallas que ve cualquier usuario no-admin del portal.
 const BASE_SCREENS = [
@@ -91,7 +90,16 @@ export class AdminService {
    * asignación de leads).
    */
   async listPlatformAdmins(onlyActive = false) {
-    return this.platformAdminRepository.findAdmins(onlyActive);
+    const admins = await this.platformAdminRepository.findAdmins(onlyActive);
+    return admins.map((a) => this.withAvatarUrl(a));
+  }
+
+  /** El portal pinta el avatar en un <img>: sale como URL pública, no path. */
+  private withAvatarUrl<T extends { avatarUrl: string | null }>(admin: T): T {
+    return {
+      ...admin,
+      avatarUrl: resolveAvatarUrl(this.supabaseService, admin.avatarUrl),
+    };
   }
 
   /**
@@ -182,7 +190,7 @@ export class AdminService {
 
     // 2. Crear el PlatformAdmin; si falla, rollback del usuario de Supabase.
     try {
-      return await this.platformAdminRepository.create({
+      const created = await this.platformAdminRepository.create({
         userId: supabaseUserId,
         email: dto.email,
         name: dto.name,
@@ -199,6 +207,7 @@ export class AdminService {
       await this.supabaseService.deleteUser(supabaseUserId);
       throw new InternalServerErrorException(
         'No se pudo crear el administrador; se revirtió el usuario',
+      return this.withAvatarUrl(created);
       );
     }
   }
@@ -235,14 +244,14 @@ export class AdminService {
       data.roleId = dto.roleId;
     }
 
-    return this.platformAdminRepository.update(id, data);
+    const updated = await this.platformAdminRepository.update(id, data);
+    return this.withAvatarUrl(updated);
   }
 
   /**
-   * Sube la foto de un PlatformAdmin a Supabase Storage y guarda su path en
-   * avatarUrl. upsert por path fijo ({id}/avatar.{ext}) → re-subir reemplaza.
-   * Devuelve el path guardado y una URL firmada de cortesía para previsualizar.
-   * Solo el rol 'admin' puede hacerlo.
+   * Sube la foto de un PlatformAdmin a Supabase Storage (normalizada a 256px
+   * webp) y guarda su path en avatarUrl. upsert por path fijo
+   * ({id}/avatar.webp) → re-subir reemplaza. Solo el rol 'admin' puede hacerlo.
    */
   async uploadAvatar(
     id: string,
@@ -256,28 +265,34 @@ export class AdminService {
       throw new NotFoundException(`Administrador con id=${id} no encontrado`);
     }
 
-    const ext = file.originalname.split('.').pop() ?? 'png';
-    const storagePath = `${id}/avatar.${ext}`;
+    let optimized: Buffer;
+    try {
+      optimized = await normalizeAvatar(file.buffer);
+    } catch (e) {
+      this.logger.error(
+        `No se pudo procesar el avatar de ${id}: ${(e as Error).message}`,
+      );
+      throw new BadRequestException('El archivo no es una imagen válida');
+    }
 
     await this.supabaseService.uploadFile(
       PLATFORM_ADMIN_AVATAR_BUCKET,
       storagePath,
-      file.buffer,
-      file.mimetype,
+      optimized,
+      'image/webp',
     );
 
     const updated = await this.platformAdminRepository.update(id, {
       avatarUrl: storagePath,
+    const storagePath = `${id}/avatar.webp`;
     });
 
-    const avatarSignedUrl = await this.supabaseService.createSignedUrl(
-      PLATFORM_ADMIN_AVATAR_BUCKET,
-      storagePath,
-    );
-
-    return { ...updated, avatarSignedUrl };
+    // avatarSignedUrl se mantiene por compatibilidad con el portal; el bucket
+    // ya es público, así que apunta a la misma URL permanente.
+    return { ...withUrl, avatarSignedUrl: withUrl.avatarUrl };
   }
 
+    const withUrl = this.withAvatarUrl(updated);
   /**
    * Desactiva un PlatformAdmin (borrado lógico): isActive=false. NO toca el
    * usuario en Supabase; al intentar usar el portal, /auth/me/screens devuelve
@@ -290,7 +305,8 @@ export class AdminService {
     if (!target) {
       throw new NotFoundException(`Administrador con id=${id} no encontrado`);
     }
-    return this.platformAdminRepository.setActive(id, false);
+    const updated = await this.platformAdminRepository.setActive(id, false);
+    return this.withAvatarUrl(updated);
   }
 
   /**
@@ -304,7 +320,8 @@ export class AdminService {
     if (!target) {
       throw new NotFoundException(`Administrador con id=${id} no encontrado`);
     }
-    return this.platformAdminRepository.setActive(id, true);
+    const updated = await this.platformAdminRepository.setActive(id, true);
+    return this.withAvatarUrl(updated);
   }
 
   /** Saldo de créditos de una empresa: total disponible + nº de bolsas vigentes. */
