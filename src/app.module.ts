@@ -20,6 +20,7 @@ import { PackOfferingsModule } from './pack-offerings/pack-offerings.module.js';
 import { AnalysisPacksModule } from './analysis-packs/analysis-packs.module.js';
 import { PaymentAlertsModule } from './payment-alerts/payment-alerts.module.js';
 import { PromoCodesModule } from './promo-codes/promo-codes.module.js';
+import { SalesModule } from './sales/sales.module.js';
 import { AdminStatsModule } from './admin-stats/admin-stats.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -67,6 +68,7 @@ import { HealthController } from './common/health/health.controller.js';
     AnalysisPacksModule,
     PaymentAlertsModule,
     PromoCodesModule,
+    SalesModule,
     AdminStatsModule,
     OnboardingModule,
     ScoringModule,

@@ -231,4 +231,16 @@ export class OnboardingDto {
   @ValidateNested()
   @Type(() => OnboardingBillingDto)
   billing: OnboardingBillingDto;
+
+  @ApiPropertyOptional({
+    example: 'JPEREZ',
+    maxLength: 30,
+    description:
+      'Código de quien recomendó Creditia. Opcional. Si no existe se rechaza ' +
+      'el registro con un mensaje claro, en vez de ignorarlo en silencio.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  salesRepCode?: string;
 }

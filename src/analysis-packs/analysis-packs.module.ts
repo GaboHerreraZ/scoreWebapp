@@ -12,6 +12,7 @@ import { PromoCodesModule } from '../promo-codes/promo-codes.module.js';
 import { MailModule } from '../mail/mail.module.js';
 import { EInvoicingModule } from '../e-invoicing/e-invoicing.module.js';
 import { MacroContractModule } from '../documents/macro-contract/macro-contract.module.js';
+import { SalesModule } from '../sales/sales.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { MacroContractModule } from '../documents/macro-contract/macro-contract.
     MailModule,
     MacroContractModule,
     EInvoicingModule,
+    SalesModule, // comisión del vendedor al confirmarse el pago
   ],
   controllers: [
     AnalysisPacksController,

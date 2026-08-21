@@ -12,6 +12,7 @@ import {
   type PersonTypeCode,
 } from '../scoring/scoring.constants.js';
 import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
+import { SalesService } from '../sales/sales.service.js';
 
 @Injectable()
 export class OnboardingService {
@@ -19,6 +20,7 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly parametersRepository: ParametersRepository,
     private readonly fiscalProfileValidator: FiscalProfileValidator,
+    private readonly salesService: SalesService,
   ) {}
 
   /**
@@ -87,6 +89,13 @@ export class OnboardingService {
       );
     }
 
+    // Vendedor que recomendó Creditia (opcional). Se resuelve ANTES de la
+    // transacción: si el código está mal, el cliente lo corrige en el formulario
+    // en lugar de quedarse creyendo que le dio el crédito a su referidor.
+    const referral = dto.salesRepCode?.trim()
+      ? await this.salesService.resolveCodeForOnboarding(dto.salesRepCode)
+      : null;
+
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. Profile (upsert: el usuario de Supabase ya existe; si ya tenía
       //    Profile se actualizan sus datos, si no se crea).
@@ -143,6 +152,22 @@ export class OnboardingService {
             dto.billing.billingFiscalResponsibilities,
         },
       });
+
+      // 2b. Vinculación con el vendedor, con los % del plan congelados. Va
+      //     dentro de la transacción: si el alta falla, no queda una empresa
+      //     fantasma atribuida a nadie.
+      if (referral) {
+        await tx.companyReferral.create({
+          data: {
+            companyId: company.id,
+            salesRepId: referral.salesRepId,
+            commissionPlanId: referral.commissionPlanId,
+            newCustomerPercent: referral.newCustomerPercent,
+            recurringPercent: referral.recurringPercent,
+            notes: 'Código ingresado por el cliente en el registro',
+          },
+        });
+      }
 
       // 3. UserCompany: el usuario es administrator (dueño) de su empresa.
       const userCompany = await tx.userCompany.create({
