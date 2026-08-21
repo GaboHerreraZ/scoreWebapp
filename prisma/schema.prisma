@@ -96,6 +96,7 @@ model Parameter {
   customerAuthorizationsByStatus        CustomerAuthorization[] @relation("CustomerAuthorizationStatus")
   customerAuthorizationsByType          CustomerAuthorization[] @relation("CustomerAuthorizationType")
   customerAuthorizationsByIdentType     CustomerAuthorization[] @relation("CustomerAuthorizationIdentType")
+  salesCommissionsByStatus              SalesCommission[]     @relation("SalesCommissionStatus")
 
   @@unique([type, code])
   @@map("parameters")
@@ -242,6 +243,8 @@ model Company {
   scoringConfigurations ScoringConfiguration[]
   customerAuthorizations CustomerAuthorization[]
   electronicInvoices     ElectronicInvoice[]
+  referral               CompanyReferral? // vendedor que la recomendó (si aplica)
+  salesCommissions       SalesCommission[]
 
   @@map("companies")
 }
@@ -345,6 +348,12 @@ model PlatformAdmin {
   assignedSupportTickets    SupportTicket[]     @relation("SupportTicketAssignedTo")
   blogPosts                 BlogPost[]          @relation("BlogPostAuthor")
   einvoicedPacks            AnalysisPack[]      @relation("AnalysisPackEinvoiceMarkedBy")
+  // Programa de referidos: su ficha de vendedor (solo rol 'sales') y su rastro
+  // de gestión (planes creados, empresas vinculadas, comisiones liquidadas).
+  salesRep                  SalesRep?           @relation("SalesRepPlatformAdmin")
+  createdCommissionPlans    CommissionPlan[]    @relation("CommissionPlanCreatedBy")
+  assignedReferrals         CompanyReferral[]   @relation("CompanyReferralAssignedBy")
+  paidSalesCommissions      SalesCommission[]   @relation("SalesCommissionPaidBy")
 
   @@map("platform_admins")
 }
@@ -469,6 +478,7 @@ model AnalysisPack {
   paymentEvents     PaymentEvent[]
   promoRedemptions  PromoCodeRedemption[]
   electronicInvoices ElectronicInvoice[]
+  salesCommission   SalesCommission? // comisión causada por esta venta
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
   @@index([statusId, paidAt]) // métricas de venta por fecha (admin-stats)
@@ -1434,6 +1444,147 @@ model PromoCodeRedemption {
   @@unique([promoCodeId, companyId]) // una empresa canjea un código solo 1 vez
   @@index([promoCodeId, redeemedAt])
   @@map("promo_code_redemptions")
+}
+
+// ─── Programa de referidos (vendedores y comisiones) ───────────────────
+// Una persona externa recomienda Creditia; cuando la empresa recomendada compra,
+// esa persona gana un % de lo facturado. Cuatro piezas:
+//   CommissionPlan  → los dos porcentajes vigentes (nuevo vs recompra)
+//   SalesRep        → el vendedor y su CÓDIGO
+//   CompanyReferral → qué vendedor trajo qué empresa (+ % congelados)
+//   SalesCommission → ledger: una fila por bolsa pagada de una empresa referida
+
+// Plan de comisiones VIGENTE. Versionado igual que ConsultationPrice: cambiar
+// los porcentajes NO edita el plan, crea uno nuevo y desactiva el anterior. Las
+// vinculaciones y comisiones ya causadas apuntan a su plan y guardan su propio
+// %, así que un cambio de tarifa nunca reescribe el pasado.
+model CommissionPlan {
+  id   String @id @default(uuid()) @db.Uuid
+  name String @db.VarChar(150) // "Plan 2026" — etiqueta de la versión
+
+  // % sobre la PRIMERA compra facturada de una empresa referida (el 30%).
+  newCustomerPercent Decimal @map("new_customer_percent") @db.Decimal(5, 2)
+  // % sobre TODA recompra posterior, sin fecha de caducidad (el 10%).
+  recurringPercent   Decimal @map("recurring_percent") @db.Decimal(5, 2)
+
+  isActive  Boolean  @default(true) @map("is_active") // solo uno vigente
+  notes     String?  @db.VarChar(500)
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdByAdmin PlatformAdmin?    @relation("CommissionPlanCreatedBy", fields: [createdBy], references: [id])
+  referrals      CompanyReferral[]
+  commissions    SalesCommission[]
+
+  @@index([isActive])
+  @@map("commission_plans")
+}
+
+// Vendedor del programa. 1:1 con su cuenta del portal (PlatformAdmin con rol
+// 'sales'): entra al panel con su usuario y ve SUS ganancias mes a mes. El
+// `code` es lo que se teclea al vincular una empresa. Sin borrado físico:
+// isActive=false lo retira sin tocar sus comisiones históricas.
+model SalesRep {
+  id              String @id @default(uuid()) @db.Uuid
+  platformAdminId String @unique @map("platform_admin_id") @db.Uuid
+  code            String @unique @db.VarChar(30) // normalizado a UPPERCASE
+
+  isActive  Boolean  @default(true) @map("is_active")
+  notes     String?  @db.VarChar(500) // nota interna (acuerdo, contacto…)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  platformAdmin PlatformAdmin     @relation("SalesRepPlatformAdmin", fields: [platformAdminId], references: [id])
+  referrals     CompanyReferral[]
+  commissions   SalesCommission[]
+
+  @@map("sales_reps")
+}
+
+// Vinculación empresa ↔ vendedor. companyId es @unique: una empresa la trae UN
+// solo vendedor (si se corrige, se reasigna la misma fila). Congela los % que
+// regían al vincular, de modo que la empresa mantiene las condiciones con las
+// que se cerró aunque después cambie el plan global.
+model CompanyReferral {
+  companyId        String @id @map("company_id") @db.Uuid
+  salesRepId       String @map("sales_rep_id") @db.Uuid
+  commissionPlanId String @map("commission_plan_id") @db.Uuid
+
+  // Snapshot de los % del plan al momento de vincular.
+  newCustomerPercent Decimal @map("new_customer_percent") @db.Decimal(5, 2)
+  recurringPercent   Decimal @map("recurring_percent") @db.Decimal(5, 2)
+
+  assignedBy String?  @map("assigned_by") @db.Uuid // PlatformAdmin que la vinculó
+  notes      String?  @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  company        Company        @relation(fields: [companyId], references: [id])
+  salesRep       SalesRep       @relation(fields: [salesRepId], references: [id])
+  commissionPlan CommissionPlan @relation(fields: [commissionPlanId], references: [id])
+  assignedByAdmin PlatformAdmin? @relation("CompanyReferralAssignedBy", fields: [assignedBy], references: [id])
+
+  commissions SalesCommission[]
+
+  @@index([salesRepId])
+  @@map("company_referrals")
+}
+
+// Ledger de comisiones (append-only). Una fila por bolsa pagada de una empresa
+// referida; analysisPackId es @unique → una venta jamás comisiona dos veces,
+// aunque el webhook de pago llegue repetido.
+//
+// El monto se calcula sobre taxBase (la base gravable congelada de la bolsa):
+// el IVA no es ingreso de Creditia y el descuento promo ya viene aplicado. Las
+// bolsas sin costo (código del 100%) NO generan fila: no hay nada que comisionar.
+model SalesCommission {
+  id                String @id @default(uuid()) @db.Uuid
+  analysisPackId    String @unique @map("analysis_pack_id") @db.Uuid
+  salesRepId        String @map("sales_rep_id") @db.Uuid
+  companyId         String @map("company_id") @db.Uuid
+  companyReferralId String @map("company_referral_id") @db.Uuid
+  commissionPlanId  String @map("commission_plan_id") @db.Uuid
+
+  // 'new' = primera compra FACTURADA de la empresa | 'recurring' = recompra.
+  // Clasificación calculada, no un catálogo que el admin edite → VarChar.
+  kind String @db.VarChar(20)
+
+  // Todo congelado al causar: si mañana cambia el plan, esta fila no se mueve.
+  percentApplied   Decimal @map("percent_applied") @db.Decimal(5, 2)
+  baseAmount       Float   @map("base_amount") // taxBase de la bolsa
+  commissionAmount Float   @map("commission_amount")
+  currencyCode     String  @default("COP") @map("currency_code") @db.VarChar(10)
+
+  // Mes de causación 'YYYY-MM' precalculado en hora de Colombia. Se guarda
+  // resuelto (y no se deriva en cada query) para que agrupar por mes no dependa
+  // del huso del servidor: una venta del 31 a las 8pm es de ESE mes, no del
+  // siguiente en UTC.
+  accrualMonth String   @map("accrual_month") @db.VarChar(7)
+  accruedAt    DateTime @default(now()) @map("accrued_at")
+
+  statusId Int @map("status_id") // Parameter 'sales_commission_status'
+
+  // Liquidación: cuándo se le pagó al vendedor y quién lo marcó.
+  paidAt      DateTime? @map("paid_at")
+  paidBy      String?   @map("paid_by") @db.Uuid
+  payoutNotes String?   @map("payout_notes") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  analysisPack    AnalysisPack    @relation(fields: [analysisPackId], references: [id])
+  salesRep        SalesRep        @relation(fields: [salesRepId], references: [id])
+  company         Company         @relation(fields: [companyId], references: [id])
+  companyReferral CompanyReferral @relation(fields: [companyReferralId], references: [companyId])
+  commissionPlan  CommissionPlan  @relation(fields: [commissionPlanId], references: [id])
+  status          Parameter       @relation("SalesCommissionStatus", fields: [statusId], references: [id])
+  paidByAdmin     PlatformAdmin?  @relation("SalesCommissionPaidBy", fields: [paidBy], references: [id])
+
+  @@index([salesRepId, accrualMonth]) // "mis ganancias del mes"
+  @@index([accrualMonth]) // consolidado global mes a mes
+  @@index([statusId, accrualMonth]) // cola de pendientes por liquidar
+  @@map("sales_commissions")
 }
 
 // ─── Contacto comercial (leads del formulario público) ─────────────────

@@ -14,6 +14,18 @@ export const MESES_ES = [
   'diciembre',
 ];
 
+/**
+ * Mes 'YYYY-MM' de una fecha visto desde Colombia. Necesario para agrupar por
+ * mes sin que el huso del servidor mueva las ventas de fin de mes: un pago del
+ * 31 a las 8pm en Bogotá es de ESE mes, aunque en UTC ya sea el día 1.
+ */
+export function bogotaAccrualMonth(date: Date): string {
+  // en-CA da ISO (YYYY-MM-DD); nos quedamos con año-mes.
+  return date
+    .toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+    .slice(0, 7);
+}
+
 /** Día/mes/año de una fecha vistos desde Colombia (el server puede estar en UTC). */
 export function bogotaDateParts(date: Date): {
   day: number;

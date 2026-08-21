@@ -26,9 +26,9 @@ import { normalizeAvatar, resolveAvatarUrl } from '../common/utils/avatar.js';
  * de permisos). Cuando se necesite granularidad real, esto pasa a BD.
  *
  * - 'admin' ve TODO (ALL_SCREENS).
- * - el resto parte de un set base común y suma extras según su rol:
- *     · 'support' suma 'support-tickets' (gestiona el soporte).
- *     · 'sales' y sin rol solo el base.
+ * - 'sales' ve SOLO lo suyo (SALES_SCREENS): son referidores externos, no
+ *   personal de Creditia; no deben ver la cartera de clientes ni la operación.
+ * - 'support' y sin rol parten del set base común.
  */
 const ALL_SCREENS = [
   'dashboard',
@@ -49,6 +49,8 @@ const ALL_SCREENS = [
   'credit-study-resets',
   'pdf-extraction-test',
   'datacredito-connection',
+  'sales-reps', // programa de referidos: vendedores y plan de comisiones
+  'sales-commissions', // ganancias mes a mes
 ] as const;
 
 // Pantallas que ve cualquier usuario no-admin del portal.
@@ -60,6 +62,9 @@ const BASE_SCREENS = [
   'pdf-extraction-test',
   'einvoices',
 ];
+
+// Un vendedor entra solo a ver sus ganancias. Nada de datos de clientes.
+const SALES_SCREENS = ['sales-commissions'];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
 const EXPIRY_RISK_DAYS = 30;
@@ -125,9 +130,13 @@ export class AdminService {
       );
     }
 
-    // admin ve todo; el resto (support/sales/sin rol) ve el set base.
+    // admin ve todo, sales solo sus comisiones, el resto el set base.
     const allowedScreens =
-      admin.role?.code === 'admin' ? [...ALL_SCREENS] : [...BASE_SCREENS];
+      admin.role?.code === 'admin'
+        ? [...ALL_SCREENS]
+        : admin.role?.code === 'sales'
+          ? [...SALES_SCREENS]
+          : [...BASE_SCREENS];
 
     return {
       admin: {

@@ -21,6 +21,7 @@ import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { MacroContractService } from '../documents/macro-contract/macro-contract.service.js';
 import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
+import { SalesCommissionsService } from '../sales/sales-commissions.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
 import { PackConfirmationDto } from './dto/pack-confirmation.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
@@ -65,6 +66,7 @@ export class AnalysisPacksService {
     private readonly mailService: MailService,
     private readonly macroContractService: MacroContractService,
     private readonly fiscalProfileValidator: FiscalProfileValidator,
+    private readonly salesCommissionsService: SalesCommissionsService,
   ) {}
 
   /**
@@ -1011,6 +1013,13 @@ export class AnalysisPacksService {
         await this.notifyPurchasePaid(pack, dto.x_ref_payco ?? null);
       }
 
+      // Comisión del vendedor que recomendó a la empresa. Solo si esta
+      // confirmación activó la bolsa. Es best-effort e idempotente por dentro:
+      // si la empresa no tiene vendedor o la bolsa fue sin costo, no hace nada.
+      if (activated) {
+        await this.salesCommissionsService.accrueForPack(pack.id);
+      }
+
       // Canje del código promocional: SOLO si esta confirmación fue la que
       // activó la bolsa (activated=true evita canjear dos veces en webhooks
       // concurrentes) y la bolsa traía un código congelado. El canje es atómico
@@ -1184,6 +1193,13 @@ export class AnalysisPacksService {
           );
         }
       }
+
+      // La comisión del vendedor se anula: la venta no quedó firme. Si ya se le
+      // había pagado, no se toca y queda un warning para conciliar a mano.
+      await this.salesCommissionsService.cancelForPack(
+        pack.id,
+        `Pago reversado (ref=${dto.x_ref_payco ?? 'sin referencia'})`,
+      );
 
       // Correos best-effort (cliente + admins). No bloquean el webhook.
       await this.notifyReversal(pack, consumed);
