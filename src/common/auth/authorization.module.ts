@@ -4,7 +4,7 @@ import { AdminGuard } from './admin.guard.js';
 import { PlatformAdminRepository } from './platform-admin.repository.js';
 import { CompanyAccessGuard } from './company-access.guard.js';
 import { CompanyAccessRepository } from './company-access.repository.js';
-import { ContractSignedGuard } from './contract-signed.guard.js';
+import { StagingOnlyGuard } from './staging-only.guard.js';
 
 /**
  * Módulo de autorización compartido y global.
@@ -14,6 +14,7 @@ import { ContractSignedGuard } from './contract-signed.guard.js';
  *    portal, vía @AdminOnly() / @UseGuards(AdminGuard).
  *  - CompanyAccessGuard (+ CompanyAccessRepository): autorización por empresa,
  *    vía @CompanyScoped(), para los endpoints `/companies/:companyId/*`.
+ *  - StagingOnlyGuard: endpoints que solo existen en staging.
  *
  * Es @Global() para que cualquier controller pueda usar los decoradores sin
  * importar este módulo.
@@ -26,14 +27,14 @@ import { ContractSignedGuard } from './contract-signed.guard.js';
     PlatformAdminRepository,
     CompanyAccessGuard,
     CompanyAccessRepository,
-    ContractSignedGuard,
+    StagingOnlyGuard,
   ],
   exports: [
     AdminGuard,
     PlatformAdminRepository,
     CompanyAccessGuard,
     CompanyAccessRepository,
-    ContractSignedGuard,
+    StagingOnlyGuard,
   ],
 })
 export class AuthorizationModule {}

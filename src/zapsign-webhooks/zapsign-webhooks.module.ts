@@ -6,9 +6,9 @@ import { CustomerAuthorizationsModule } from '../customer-authorizations/custome
 /**
  * Punto único de entrada de los webhooks de Zapsign. Zapsign manda todos los
  * eventos de la cuenta a una sola URL, así que aquí vive el despachador que los
- * enruta por token al contrato macro o a la autorización del titular. Importa
- * ambos features por sus services exportados (DocumentsModule reexporta
- * MacroContractModule; CustomerAuthorizationsModule exporta el suyo).
+ * enruta por token al pagaré o a la autorización del titular. Importa ambos
+ * features por sus services exportados (DocumentsModule reexporta
+ * PromissoryNotesModule; CustomerAuthorizationsModule exporta el suyo).
  */
 @Module({
   imports: [DocumentsModule, CustomerAuthorizationsModule],

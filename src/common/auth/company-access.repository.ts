@@ -13,17 +13,4 @@ export class CompanyAccessRepository {
     });
     return !!membership && membership.isActive;
   }
-
-  /**
-   * True si la empresa firmó su contrato macro. Estado DERIVADO del
-   * ContractSignature (uno-a-uno por companyId único): no hay flag duplicado en
-   * Company, la fuente de verdad es signedAt. Un join barato por índice único.
-   */
-  async hasSignedContract(companyId: string): Promise<boolean> {
-    const contract = await this.prisma.contractSignature.findUnique({
-      where: { companyId },
-      select: { signedAt: true },
-    });
-    return !!contract?.signedAt;
-  }
 }
