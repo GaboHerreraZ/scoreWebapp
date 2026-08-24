@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { FinancialStatementRawFigures } from './financial-indicators.js';
+import { parseDateOnly } from '../../common/utils/date-only.js';
 
 /**
  * Normalización de los períodos que devuelve la extracción IA del PDF. Lógica
@@ -120,10 +121,10 @@ export function normalizeExtractedPeriod(
   p: ExtractedPeriod,
   fallbackFiscalYear?: number | null,
 ): NormalizedPeriod {
-  const balanceSheetDate =
-    typeof p.balanceSheetDate === 'string' && p.balanceSheetDate
-      ? new Date(p.balanceSheetDate)
-      : undefined;
+  // Fecha de CALENDARIO: se arma en UTC a partir del YYYY-MM-DD. Con new Date()
+  // directo, una variante sin zona ('2025-12-31T00:00:00') se leería como
+  // medianoche local y en un server al oeste de UTC caería en el día anterior.
+  const balanceSheetDate = parseDateOnly(p.balanceSheetDate);
 
   const fiscalYear =
     (typeof p.fiscalYear === 'number' ? p.fiscalYear : null) ??

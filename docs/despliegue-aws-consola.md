@@ -514,7 +514,6 @@ AI_EXTRACTION_MODEL                       gemini-2.5-pro
 GEMINI_MODEL                              gemini-2.5-pro
 ANTHROPIC_MODEL                           claude-haiku-4-5-20251001
 SUPABASE_URL                              https://bjawxcnsjjobweucxfpf.supabase.co
-SUPABASE_STORAGE_BUCKET_CONTRACTS         macro-contracts
 SUPABASE_STORAGE_BUCKET_AUTHORIZATIONS    customer-authorizations
 SUPABASE_STORAGE_BUCKET_PROMISSORY_NOTES  promissory-notes
 EXPERIAN_BASE_URL                         https://uat-api.datacredito.com.co
@@ -524,7 +523,6 @@ LOGO_URL                                  https://bjawxcnsjjobweucxfpf.supabase.
 SUPPORT_EMAIL                             soporte@creditia.co
 EPAYCO_TEST                               true
 ZAPSIGN_SANDBOX                           true
-ZAPSIGN_MACRO_TEMPLATE_ID                 9d8942ff-e42d-4b2d-8ab5-1d5857009f98
 ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PN      186c0137-b0e5-4f90-a3b4-5d48044d2399
 ZAPSIGN_CUSTOMER_AUTH_TEMPLATE_ID_PJ      e93a0fb4-15de-4ad6-a769-12a6f5665a2e
 ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID       cd10b4fb-b124-4c39-a4ec-eb0ccaf0154e

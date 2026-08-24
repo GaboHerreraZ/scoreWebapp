@@ -5,7 +5,7 @@
   Documento ÚNICO que se firma cuando el estudio resulta viable o viable con
   condiciones. Firmante (variables FIRMANTE_*): PN el propio consultado; PJ su
   representante legal (sin sus datos la emisión retorna 400). Reúne, en un solo
-  acto y una sola firma:
+  acto de firma estampado en ambas secciones:
 
     SECCIÓN 1 — Pagaré No. {{NOTE_NUMBER}} (título valor, art. 621 y ss. C.Co.)
     SECCIÓN 2 — Autorización para llenar espacios en blanco (art. 622 C.Co.)
@@ -24,6 +24,11 @@
        su representante legal en PJ).
     2. PREVIEW en runtime: POST .../promissory-notes/preview la devuelve
        rellenada (sin emitir nada) para que el front la muestre tal cual.
+
+  FIRMA: el ancla <<FIRMA_DEUDOR>> va DOS veces (una por sección) en color
+  blanco. Zapsign estampa la firma en todas sus ocurrencias y NO borra el texto
+  del ancla; por eso va invisible. Env: ZAPSIGN_PROMISSORY_NOTE_SIGNATURE_ANCHOR.
+
   Mapa de variables: docs/promissory-note/variable-map.md.
 -->
 <!DOCTYPE html>
@@ -61,7 +66,9 @@
   .page-break { page-break-before: always; }
   .signatures { margin-top: 50px; }
   .sign-box { width: 55%; }
-  .sign-line { border-top: 1.5px solid var(--ink); margin-top: 46px; padding-top: 8px; font-size: 9pt; line-height: 1.5; }
+  /* Ancla de Zapsign: en blanco para que no se vea. Zapsign NO borra el texto. */
+  .sign-anchor { padding-top: 46px; color: #ffffff; font-size: 9pt; line-height: 1; }
+  .sign-line { border-top: 1.5px solid var(--ink); padding-top: 8px; font-size: 9pt; line-height: 1.5; }
   .sign-box strong { color: var(--brand-dark); font-size: 9.5pt; }
   .footer { margin-top: 42px; padding-top: 14px; border-top: 2px solid var(--line); font-size: 8pt; color: var(--muted); text-align: center; line-height: 1.6; }
   .footer .brand { font-weight: bold; color: var(--brand); }
@@ -132,9 +139,10 @@ razón.</p>
 reconozco como válida y vinculante conforme a la Ley 527 de 1999 y el Decreto
 2364 de 2012.</p>
 
-<!-- FIRMA: en Zapsign, coloca el campo de FIRMA del deudor sobre esta línea. -->
+<!-- FIRMA sección 1: Zapsign estampa aquí la firma del deudor (ancla invisible). -->
 <div class="signatures">
   <div class="sign-box">
+    <div class="sign-anchor">&lt;&lt;FIRMA_DEUDOR&gt;&gt;</div>
     <div class="sign-line">
       <strong>EL DEUDOR</strong><br />
       {{DEUDOR_NOMBRE}}<br />
@@ -192,9 +200,10 @@ ciudad de <span class="fill">{{FIRMA_CIUDAD}}</span> a los
 reconozco como válida y vinculante conforme a la Ley 527 de 1999 y el Decreto
 2364 de 2012.</p>
 
-<!-- FIRMA: en Zapsign, coloca un segundo campo de FIRMA del deudor sobre esta línea. -->
+<!-- FIRMA sección 2: MISMA ancla que la sección 1 → Zapsign la estampa también aquí. -->
 <div class="signatures">
   <div class="sign-box">
+    <div class="sign-anchor">&lt;&lt;FIRMA_DEUDOR&gt;&gt;</div>
     <div class="sign-line">
       <strong>EL DEUDOR</strong><br />
       {{DEUDOR_NOMBRE}}<br />

@@ -5,7 +5,7 @@ condiciones** (nunca "no viable"). Quién firma depende del tipo de persona del
 deudor: **PN** firma el propio consultado; **PJ** firma su **representante
 legal** (columnas editables `legal_rep_*` del Customer — sin nombre, tipo,
 número o correo del representante la emisión retorna 400). Reúne en un solo
-acto y una sola firma:
+acto de firma, estampado en ambas secciones:
 
 1. **Pagaré No. N** — título valor (art. 621 y ss. C.Co.)
 2. **Autorización para llenar espacios en blanco** (art. 622 C.Co.)
@@ -19,8 +19,9 @@ La plantilla HTML vive en
 es fuente única tanto del modelo DOCX que se sube a Zapsign como del **preview**
 en runtime (`POST .../promissory-notes/preview` la devuelve rellenada). El
 backend rellena las variables al crear el documento (`createDocFromTemplate`),
-igual que el contrato macro y la autorización del titular.
-Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`.
+igual que la autorización del titular.
+Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`,
+`ZAPSIGN_PROMISSORY_NOTE_SIGNATURE_ANCHOR`.
 
 ## Reglas de emisión (las valida `PromissoryNotesService.issue`)
 
@@ -96,6 +97,28 @@ Un solo firmante (`{{DEUDOR_EMAIL}}`): el deudor en PN, o el **representante
 legal** de la sociedad deudora en PJ (Zapsign recibe su nombre y su correo). La
 firma electrónica cubre las dos secciones (pagaré + autorización de espacios en
 blanco). El acreedor no firma: emite el documento.
+
+### Posicionamiento (firma visible en las dos páginas)
+
+`issue()` envía `signature_placement` a `/models/create-doc/` con el valor de
+`ZAPSIGN_PROMISSORY_NOTE_SIGNATURE_ANCHOR` (recomendado: `<<FIRMA_DEUDOR>>`).
+El ancla aparece **dos veces** en la plantilla —encima de la línea de firma de
+cada sección— y **Zapsign estampa la firma en todas las ocurrencias**, así que
+sale en el pagaré y en la autorización.
+
+Sigue siendo **un solo acto de firma**: un `doc_signed`, un certificado de
+finalización y un hash que cubren el PDF completo (Ley 527/1999, Decreto
+2364/2012). Lo que cambia es dónde se ve la firma, no cuántas hay.
+
+Detalles operativos:
+
+- Zapsign **no borra** el texto del ancla: va en color blanco (`.sign-anchor`)
+  para que no se vea ni en el PDF ni en el preview.
+- El ancla usa `<<...>>`; las variables de plantilla usan `{{...}}`. No chocan.
+- Al armar el DOCX, escribir `<<FIRMA_DEUDOR>>` de un tirón: si Word lo parte en
+  *runs* distintos (autocorrección, formato mixto), Zapsign no lo encuentra.
+- Sin la env configurada, el comportamiento es el histórico: Zapsign coloca la
+  firma solo al final del documento.
 
 ## Ciclo de vida y webhook
 
