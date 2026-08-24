@@ -42,7 +42,7 @@ export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {
   @Matches(/^\d+$/, { message: 'accountNumber must contain only digits' })
   accountNumber?: string;
 
-  // ─── Representante legal (firmante del contrato macro) ────
+  // ─── Representante legal (quien obliga a la empresa) ────
 
   @ApiPropertyOptional({ example: 'María Gómez Rojas', maxLength: 255 })
   @IsOptional()
@@ -68,7 +68,7 @@ export class UpdateCompanyDto extends PartialType(CreateCompanyDto) {
   @ApiPropertyOptional({
     example: 'maria.gomez@acme.com',
     maxLength: 255,
-    description: 'A este correo llega la solicitud de firma del contrato macro',
+    description: 'Correo de contacto del representante legal',
   })
   @IsOptional()
   @IsEmail()
