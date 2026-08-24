@@ -15,7 +15,7 @@ import {
   ZapsignWebhookPayload,
   extractDocToken,
 } from '../documents/signing/dto/zapsign-webhook.dto.js';
-import { CREDITIA_PARTY } from '../documents/macro-contract/creditia.constants.js';
+import { CREDITIA_PARTY } from '../common/constants/creditia.constants.js';
 
 /**
  * Orquesta la autorización del TITULAR CONSULTADO (documento único: tratamiento
