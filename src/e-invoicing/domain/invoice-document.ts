@@ -58,23 +58,11 @@ export interface InvoiceLine {
   unitPrice: number;
   unitMeasurementCode: string; // '94' unidad
   taxes: InvoiceTax[];
-}
 
-/**
- * Resolución de facturación de la DIAN. La emite la DIAN al obligado y define
- * el prefijo, el rango de numeración autorizado y su vigencia. Con esta API el
- * consecutivo lo llevamos nosotros, así que va aquí y no lo pone el proveedor.
- */
-export interface InvoiceResolution {
-  /** Clave técnica que entrega la DIAN junto con la resolución. */
-  key: string;
-  prefix: string;
-  /** Número de la resolución (no del documento). */
-  number: number;
-  rangeInitial: number;
-  rangeFinal: number;
-  validFrom: Date;
-  validUntil: Date;
+  /** Ref del producto en el catálogo del facturador. */
+  itemRef: string;
+  /** Refs de los impuestos que aplican allá. Vacío = línea sin IVA. */
+  taxRefs: string[];
 }
 
 export type InvoicePaymentForm = 'cash' | 'credit';
@@ -89,14 +77,26 @@ export interface InvoiceTotals {
 }
 
 /**
- * El documento no lleva emisor: lo aporta el proveedor desde la empresa que
- * tiene configurada. Si algún día Creditia factura a nombre de sus clientes,
- * vuelve a entrar aquí como `issuer: InvoiceParty`.
+ * El documento no lleva emisor ni numeración: los aporta el facturador desde la
+ * empresa y la resolución que tiene configuradas. Si algún día Creditia factura
+ * a nombre de sus clientes, vuelve a entrar aquí como `issuer: InvoiceParty`.
  */
 export interface InvoiceDocument {
-  /** Consecutivo YA asignado (reservado de forma atómica antes de emitir). */
-  consecutive: number;
-  resolution: InvoiceResolution;
+  /** Ref del tercero en el facturador. Ya resuelto: el adaptador no lo busca. */
+  contactRef: string;
+  /** Sucursal desde la que se emite. null = la que el facturador tenga por defecto. */
+  branchRef: string | null;
+  /**
+   * Cuenta contable del recaudo. Si viene, la factura nace PAGADA en vez de
+   * quedar como cartera abierta — que es lo correcto aquí: el cliente ya pagó
+   * antes de que existiera la factura.
+   */
+  paymentAccountCode: string | null;
+
+  /**
+   * Adquirente. NO viaja al facturador (allá va `contactRef`): es el snapshot
+   * congelado de a quién se le facturó, que la empresa puede cambiar después.
+   */
   customer: InvoiceParty;
 
   issueDate: Date;
@@ -109,6 +109,11 @@ export interface InvoiceDocument {
   termDays: number;
 
   lines: InvoiceLine[];
+  /**
+   * Totales esperados. NO se envían — con esta API los calcula el facturador —
+   * pero se conservan para contrastarlos contra los que devuelva: si no casan,
+   * la factura salió por otro valor y hay que enterarse.
+   */
   totals: InvoiceTotals;
 
   /** Observaciones que van al pie del documento. */
@@ -118,9 +123,13 @@ export interface InvoiceDocument {
 }
 
 /**
- * Ambiente de emisión ante la DIAN. Es un concepto del DOMINIO, no del
- * proveedor: los tres existen en cualquier proveedor colombiano, y el adaptador
- * los traduce a su propio enum.
+ * Ambiente de emisión ante la DIAN.
+ *
+ * ⚠️ Con la API contable esto NO viaja en el payload: el ambiente real es una
+ * propiedad de la CUENTA del facturador a la que pertenece el token. Aquí es una
+ * etiqueta declarada: se archiva con el documento y alimenta las advertencias del
+ * panel, pero no puede forzar nada. Un token de producción factura en producción
+ * aunque esto diga 'test' — por eso hay que declararlo bien.
  *
  *   test         — documentos SIN efectos legales. Para probar la integración.
  *   habilitation — validaciones previas a producción (set de pruebas de la DIAN).

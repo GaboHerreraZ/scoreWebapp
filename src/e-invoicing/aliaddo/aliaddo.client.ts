@@ -9,25 +9,24 @@ import {
   parseInvoiceEnvironment,
   type InvoiceEnvironment,
 } from '../domain/invoice-document.js';
-import type {
-  AliaddoInvoiceRequest,
-  AliaddoInvoiceResponse,
-} from './aliaddo.types.js';
 
 export interface AliaddoCallResult {
   httpStatus: number;
-  /** Cuerpo tal como llegó (objeto si era JSON; string si no). */
+  /** Cuerpo tal como llegó (objeto o arreglo si era JSON; string si no). */
   raw: unknown;
-  /** El cuerpo tipado cuando la llamada fue 2xx. */
-  body: AliaddoInvoiceResponse | null;
+  ok: boolean;
 }
 
 /** Timeout de la llamada. La DIAN puede tardar: no conviene apretarlo mucho. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
+/** Tope de espera tras un 429. Más allá de esto es mejor fallar y reintentar. */
+const MAX_RATE_LIMIT_WAIT_MS = 15_000;
+
 /**
- * HTTP puro contra Aliaddo. No sabe de dominio ni de negocio: recibe el payload
- * ya armado, lo envía y devuelve el crudo. Traducir es trabajo del mapper.
+ * HTTP puro contra Aliaddo. No sabe de dominio ni de negocio: recibe la ruta y
+ * el payload ya armados, los envía y devuelve el crudo. Traducir es trabajo del
+ * mapper.
  *
  * El token no expira de forma documentada (se genera y revoca desde el portal),
  * así que no hay ciclo de refresh como en Experian.
@@ -38,9 +37,13 @@ export class AliaddoClient {
 
   private readonly baseUrl: string;
   private readonly token: string;
-  /** Ambiente en términos del dominio; el mapper lo traduce al `mode` de Aliaddo. */
+  /**
+   * Ambiente DECLARADO. Con esta API no viaja en el payload: el ambiente real lo
+   * define la cuenta a la que pertenece el token. Sirve para etiquetar y advertir.
+   */
   readonly environment: InvoiceEnvironment;
-  readonly testSetId: string | null;
+  /** Sucursal configurada a mano. Si falta, se resuelve la que Aliaddo marque. */
+  readonly configuredBranchId: string | null;
 
   constructor(private readonly configService: ConfigService) {
     this.baseUrl = (
@@ -52,11 +55,11 @@ export class AliaddoClient {
     this.environment = parseInvoiceEnvironment(
       this.configService.get<string>('EINVOICE_ENVIRONMENT'),
     );
-    this.testSetId =
-      this.configService.get<string>('ALIADDO_TEST_SET_ID') || null;
+    this.configuredBranchId =
+      this.configService.get<string>('ALIADDO_BRANCH_ID') || null;
 
     this.logger.log(
-      `Facturación electrónica en ambiente '${this.environment}' (${this.baseUrl})`,
+      `Facturación electrónica en ambiente declarado '${this.environment}' (${this.baseUrl})`,
     );
   }
 
@@ -65,43 +68,36 @@ export class AliaddoClient {
     return this.token.length > 0;
   }
 
-  async createInvoice(
-    payload: AliaddoInvoiceRequest,
-  ): Promise<AliaddoCallResult> {
-    return this.post('/v2/documents/invoices', payload);
+  get(path: string, query?: Record<string, string | undefined>) {
+    return this.request(`${path}${toQueryString(query)}`, { method: 'GET' });
   }
 
-  /** Consulta un documento por prefijo + consecutivo (para los 'pending'). */
-  async findInvoiceByPrefixAndConsecutive(
-    prefix: string,
-    consecutive: number,
-  ): Promise<AliaddoCallResult> {
-    const query = new URLSearchParams({
-      prefix,
-      consecutive: String(consecutive),
-    });
-    return this.get(
-      `/v2/documents/invoices/find-by-prefix-and-consecutive?${query.toString()}`,
-    );
-  }
-
-  private async post(
-    path: string,
-    payload: unknown,
-  ): Promise<AliaddoCallResult> {
+  post(path: string, payload: unknown) {
     return this.request(path, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
-  private async get(path: string): Promise<AliaddoCallResult> {
-    return this.request(path, { method: 'GET' });
+  put(path: string, payload: unknown) {
+    return this.request(path, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  patch(path: string, query?: Record<string, string | undefined>) {
+    return this.request(`${path}${toQueryString(query)}`, { method: 'PATCH' });
+  }
+
+  delete(path: string) {
+    return this.request(path, { method: 'DELETE' });
   }
 
   private async request(
     path: string,
     init: { method: string; body?: string },
+    isRetry = false,
   ): Promise<AliaddoCallResult> {
     if (!this.isConfigured) {
       throw new InternalServerErrorException(
@@ -132,8 +128,6 @@ export class AliaddoClient {
       );
     }
 
-    const raw = await this.readBody(response);
-
     // 401/403 son de configuración, no del documento: hay que enterarse fuerte.
     if (response.status === 401 || response.status === 403) {
       this.logger.error(
@@ -144,14 +138,30 @@ export class AliaddoClient {
       );
     }
 
+    // Rate limit: la ventana es de un minuto y la cabecera dice cuánto falta.
+    // Un solo reintento — si vuelve a chocar, el problema no es de temporización.
+    if (response.status === 429 && !isRetry) {
+      const waitMs = this.rateLimitWaitMs(response);
+      this.logger.warn(
+        `Aliaddo devolvió 429 en ${init.method} ${path}; reintentando en ${waitMs} ms`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      return this.request(path, init, true);
+    }
+
+    const raw = await this.readBody(response);
+
     // 4xx de datos (400/422) NO son excepción: el documento fue rechazado y el
     // motivo hay que guardarlo y mostrarlo. Los 5xx tampoco cortan aquí: el
     // service decide si reintentar. Ambos vuelven como resultado.
-    return {
-      httpStatus: response.status,
-      raw,
-      body: response.ok ? (raw as AliaddoInvoiceResponse) : null,
-    };
+    return { httpStatus: response.status, raw, ok: response.ok };
+  }
+
+  /** Segundos que faltan para que se abra la ventana, acotados. */
+  private rateLimitWaitMs(response: Response): number {
+    const reset = Number(response.headers.get('X-Rate-Limit-Reset'));
+    const waitMs = Number.isFinite(reset) && reset > 0 ? reset * 1000 : 5_000;
+    return Math.min(waitMs, MAX_RATE_LIMIT_WAIT_MS);
   }
 
   private async readBody(response: Response): Promise<unknown> {
@@ -164,4 +174,15 @@ export class AliaddoClient {
       return text;
     }
   }
+}
+
+/** Query string omitiendo los parámetros sin valor. */
+function toQueryString(query?: Record<string, string | undefined>): string {
+  if (!query) return '';
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.append(key, value);
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
 }

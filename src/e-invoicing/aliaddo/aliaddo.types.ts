@@ -1,107 +1,228 @@
 /**
- * Tipos CRUDOS de la API de Aliaddo (POST /v2/documents/invoices).
+ * Tipos CRUDOS de la API contable de Aliaddo (nitro.aliaddo.net).
+ *
  * Nada de esto sale de la carpeta `aliaddo/`: el mapper traduce desde y hacia
  * los tipos de dominio.
+ *
+ * Ojo con dos cosas al leer los payloads:
+ *   - La respuesta es camelCase (la otra API de Aliaddo devolvía PascalCase).
+ *   - En `details` los importes viajan como STRING, no como número. Es como lo
+ *     documenta el endpoint y no hay que "arreglarlo".
  */
 
-export type AliaddoMode = 'Test' | 'Habilitation' | 'Production';
+// ── Terceros (/people) ────────────────────────────────────────────────────
 
-export interface AliaddoAddress {
+export type AliaddoPersonKind = 'Person' | 'Company';
+
+export interface AliaddoPersonEmail {
+  email: string;
+  isValid?: string; // 'Valido' | …
+  isMain?: boolean;
+}
+
+export interface AliaddoPersonAddress {
+  name: string;
   address: string;
-  countryCode: string;
-  countryName: string;
-  regionCode: string;
-  regionName: string;
-  cityCode: string;
-  cityName: string;
+  countryCode: string; // ISO 3166-1 alfa-2
+  /** En Colombia: el CÓDIGO del departamento. Fuera: el nombre. */
+  region: string;
+  /** En Colombia: el CÓDIGO del municipio. Fuera: el nombre. */
+  city: string;
+  postalCode?: string;
+  neighborhood?: string;
   phone?: string;
+  isForBilling?: boolean;
+  isForShipping?: boolean;
+  isDefault?: boolean;
 }
 
-export interface AliaddoResolution {
-  key: string;
-  prefix: string;
-  number: number;
-  rangeInitial: number;
-  rangeFinal: number;
-  validFrom: string; // YYYY-MM-DD
-  validUntil: string;
-}
-
-export interface AliaddoCustomer {
-  companyName: string;
-  personType: string; // '1' jurídica | '2' natural
-  regimeType: string; // '48' | '49'
-  firstName: string;
-  lastName: string;
+export interface AliaddoPerson {
+  id: string;
+  kind: AliaddoPersonKind;
+  identificationType: string; // código DIAN
   identification: string;
-  digitCheck: string;
-  identificationTypeCode: string;
-  email?: string;
-  phone?: string;
-  responsibleFor?: string; // '01' IVA | '04' INC | 'ZA' | 'ZZ'
-  responsibilities: string; // 'O-13', 'R-99-PN'…
-  BillingAddress: AliaddoAddress;
+  firstName?: string;
+  secondName?: string;
+  firstSurname?: string;
+  secondSurname?: string;
+  companyName?: string;
+  phoneMobile?: string;
+  phoneWork?: string;
+  isCustomer?: boolean;
+  isSupplier?: boolean;
+  isEmployee?: boolean;
+  isSeller?: boolean;
+  emails?: AliaddoPersonEmail[];
 }
+
+export interface AliaddoPersonRequest {
+  kind: AliaddoPersonKind;
+  identificationType: string;
+  identification: string;
+  identificationCheck?: string; // DV del NIT
+  firstName?: string;
+  secondName?: string;
+  firstSurname?: string;
+  secondSurname?: string;
+  companyName?: string;
+  phoneMobile?: string;
+  phoneWork?: string;
+  isCustomer?: boolean;
+  isSupplier?: boolean;
+  emails?: { email: string; isMain?: boolean }[];
+  addresses?: AliaddoPersonAddress[];
+}
+
+/** POST /people y POST|PUT /items responden solo con el id y el nombre. */
+export interface AliaddoCreatedRef {
+  id: string;
+  name?: string;
+}
+
+// ── Impuestos (/taxes) ────────────────────────────────────────────────────
+
+/** 'Porcentaje' es el único que sirve para IVA; los otros son valores fijos. */
+export type AliaddoRateKind = 'Porcentaje' | 'ValorFijo' | 'PorMil';
 
 export interface AliaddoTax {
+  id: string;
   name: string;
-  code: string;
-  type: string; // 'P' porcentaje | 'F' fijo
+  categoryCode: string; // '01' IVA
+  categoryName: string;
   rate: number;
-  amount: number;
-  base: number;
+  rateKind: AliaddoRateKind;
+  includedInPrice: boolean;
 }
 
-export interface AliaddoLine {
+// ── Productos (/items) ────────────────────────────────────────────────────
+
+export interface AliaddoItem {
+  id: string;
   code: string;
   name: string;
   description?: string;
-  unitMeasurementCode: string;
-  price: number;
-  quantity: number;
-  taxes: AliaddoTax[];
+  categoryId?: string;
+  unitMeasurementId?: string;
+  taxes?: AliaddoTax[];
+  withholdings?: AliaddoTax[];
+  isForBuy?: boolean;
+  isForSell?: boolean;
+  cost?: number;
+  priceBuy?: number;
+  priceSell?: number;
+  hasInventoryControl?: boolean;
+  stock?: number;
 }
 
-export interface AliaddoTotals {
-  amount: number;
-  prepaymentAmount: number;
-  taxesAmount: number;
-  withholdingAmount: number;
-  discountsAmount: number;
-  chargesAmount: number;
+export interface AliaddoItemRequest {
+  code: string;
+  name: string;
+  description?: string;
+  categoryId?: string;
+  unitMeasurementId?: string;
+  taxes?: { id: string }[];
+  withholdings?: { id: string }[];
+  isForBuy?: boolean;
+  isForSell?: boolean;
+  priceSell?: number;
+  hasInventoryControl?: boolean;
+}
+
+// ── Catálogos de apoyo ────────────────────────────────────────────────────
+
+export interface AliaddoBranch {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  status?: string; // 'Enabled' | …
+}
+
+export interface AliaddoItemCategory {
+  id: string;
+  name: string;
+  image?: string | null;
+  enabled?: boolean;
+}
+
+export interface AliaddoMeasuringUnit {
+  id: string;
+  code: string;
+  name: string;
+  category?: string;
+  enabled?: boolean;
+}
+
+export interface AliaddoChartAccount {
+  id?: string;
+  code: string;
+  name: string;
+}
+
+// ── Facturas (/invoices) ──────────────────────────────────────────────────
+
+export interface AliaddoInvoiceDetail {
+  /** Precio unitario ANTES de impuestos. String, no número. */
+  unitValueBeforeTax: string;
+  itemCode: string;
+  quantity: string;
+  warehouseId?: string;
+  description?: string;
+  discountAmount?: number;
+  discountIsPercent?: boolean;
+  taxes?: { id: string }[];
+  withholdings?: { id: string }[];
 }
 
 export interface AliaddoInvoiceRequest {
-  code: string; // '01' factura de venta nacional
-  typeOperation: string; // '10' estándar
-  mode: AliaddoMode;
-  /** Plantilla visual del PDF ('Standard', 'Minimalist', 'PosX80mm'…). */
-  format: string;
-  testSetId?: string;
-  prefix: string;
-  consecutive: number;
-  currencyCode: string;
-  dueAt: string; // YYYY-MM-DD
+  personId: string;
+  branchId: string;
+  date: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  /** 'CN' contado | 'CR' crédito. */
+  paymentFormCode: string;
+  /** Código DIAN del medio de pago ('10' efectivo, '48' tarjeta…). */
   paymentMeanCode: string;
-  termDay?: number;
-  orderReference?: string;
-  resolution: AliaddoResolution;
-  // `branch` es opcional y no se envía: Aliaddo la toma de la empresa.
-  customer: AliaddoCustomer;
-  lines: AliaddoLine[];
-  totals: AliaddoTotals;
-  notes?: string[];
-  remark?: string;
+  currencyCode?: string;
+  exchangeRate?: number;
+  /** Cuenta contable del recaudo: con esto la factura nace pagada. */
+  accountCodePayment?: string;
+  purchaseOrderNumber?: string;
+  costCenterId?: string;
+  personIdSeller?: string;
+  observation?: string;
+  customerNote?: string;
+  termsAndConditions?: string;
+  details: AliaddoInvoiceDetail[];
 }
 
-/** Respuesta 200. Ojo con el PascalCase: es como lo devuelve Aliaddo. */
+/**
+ * Respuesta de POST /invoices y GET /invoices/{id}. Los dos endpoints devuelven
+ * formas distintas del mismo documento (el GET trae más), así que va todo
+ * opcional y el mapper toma lo que haya.
+ */
 export interface AliaddoInvoiceResponse {
-  Id?: string;
-  Cufe?: string;
-  Sequence?: string;
-  Qr?: string;
-  Status?: string; // 'Aprobada' | 'Rechazada'…
-  StatusReasons?: string[];
-  UrlPdf?: string;
-  UrlXml?: string;
+  id?: string;
+  consecutive?: string;
+  createdAt?: string;
+  /** Estado contable: 'Vigente' | 'Pagada' | 'PagoParcial' | 'Invalida' | … */
+  status?: string;
+  /** Etapa ante la DIAN: 'Emision' | 'Anulacion' | … */
+  statusDian?: string;
+  /** Veredicto de la DIAN: 'Valida' | 'Invalida' | … */
+  stateDian?: string;
+  stateDianReason?: string[];
+  stateDianDate?: string;
+  cufe?: string;
+  qr?: string;
+  urlPdf?: string;
+  urlXml?: string;
+
+  // Solo en GET /invoices/{id}.
+  personId?: string;
+  personName?: string;
+  branchId?: string;
+  subtotalAmount?: number;
+  taxAmount?: number;
+  totalAmount?: number;
+  balanceAmount?: number;
 }

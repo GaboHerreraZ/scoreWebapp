@@ -1,120 +1,125 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import type { InvoiceEnvironment } from './domain/invoice-document.js';
 
 @Injectable()
 export class EInvoicingRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Resolución vigente del ambiente. null si no hay ninguna configurada. */
-  async findActiveResolution(environment: InvoiceEnvironment) {
-    return this.prisma.eInvoiceResolution.findFirst({
-      where: { environment, isActive: true },
-      orderBy: { createdAt: 'desc' },
+  // ── Catálogo de ítems facturables ─────────────────────────────────────
+
+  /** Todo el catálogo, con cuántas ofertas se facturan con cada ítem. */
+  async listItems(provider: string) {
+    return this.prisma.eInvoiceItem.findMany({
+      where: { provider },
+      orderBy: [{ isActive: 'desc' }, { code: 'asc' }],
+      include: {
+        _count: { select: { packOfferings: true } },
+        packOfferings: {
+          select: { id: true, name: true, isActive: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
     });
   }
 
-  /**
-   * Reserva el siguiente consecutivo de forma ATÓMICA.
-   *
-   * Un solo UPDATE hace el claim: el `next_consecutive <= range_final` en el
-   * WHERE impide pasarse del rango autorizado, y el RETURNING devuelve el
-   * número que quedó tomado. Dos peticiones simultáneas se serializan en el
-   * lock de fila de Postgres, así que jamás obtienen el mismo valor.
-   *
-   * Leer y luego escribir sería una condición de carrera, y el resultado sería
-   * un consecutivo duplicado ante la DIAN — que solo se corrige con nota
-   * crédito.
-   *
-   * @returns el consecutivo reservado, o null si el rango se agotó.
-   */
-  async reserveConsecutive(resolutionId: string): Promise<number | null> {
-    const rows = await this.prisma.$queryRaw<{ consecutive: number }[]>`
-      UPDATE "einvoice_resolutions"
-      SET "next_consecutive" = "next_consecutive" + 1,
-          "updated_at" = NOW()
-      WHERE "id" = ${resolutionId}::uuid
-        AND "next_consecutive" <= "range_final"
-      RETURNING "next_consecutive" - 1 AS "consecutive"
-    `;
-    return rows[0]?.consecutive ?? null;
-  }
-
-  /** Todas las resoluciones, con cuántas facturas las usaron. */
-  async listResolutions() {
-    return this.prisma.eInvoiceResolution.findMany({
-      orderBy: [{ environment: 'asc' }, { createdAt: 'desc' }],
-      include: { _count: { select: { invoices: true } } },
-    });
-  }
-
-  async findResolutionById(id: string) {
-    return this.prisma.eInvoiceResolution.findUnique({
+  async findItemById(id: string) {
+    return this.prisma.eInvoiceItem.findUnique({
       where: { id },
-      include: { _count: { select: { invoices: true } } },
+      include: { _count: { select: { packOfferings: true } } },
+    });
+  }
+
+  async findItemByCode(code: string) {
+    return this.prisma.eInvoiceItem.findUnique({ where: { code } });
+  }
+
+  async createItem(data: Prisma.EInvoiceItemUncheckedCreateInput) {
+    return this.prisma.eInvoiceItem.create({ data });
+  }
+
+  async updateItem(id: string, data: Prisma.EInvoiceItemUncheckedUpdateInput) {
+    return this.prisma.eInvoiceItem.update({ where: { id }, data });
+  }
+
+  async deleteItem(id: string) {
+    return this.prisma.eInvoiceItem.delete({ where: { id } });
+  }
+
+  /** Ofertas del catálogo que se facturan con este ítem (bloquean el borrado). */
+  async countOfferingsUsingItem(itemId: string): Promise<number> {
+    return this.prisma.packOffering.count({
+      where: { einvoiceItemId: itemId },
+    });
+  }
+
+  /** Enlaza una oferta del catálogo con el ítem con el que se factura. */
+  async setOfferingItem(offeringId: string, itemId: string | null) {
+    return this.prisma.packOffering.update({
+      where: { id: offeringId },
+      data: { einvoiceItemId: itemId },
+      select: { id: true, name: true, einvoiceItemId: true },
+    });
+  }
+
+  async findOfferingById(id: string) {
+    return this.prisma.packOffering.findUnique({
+      where: { id },
+      select: { id: true, name: true, einvoiceItemId: true },
+    });
+  }
+
+  // ── Vínculo con el tercero del facturador ─────────────────────────────
+
+  async findContactRef(provider: string, companyId: string) {
+    return this.prisma.eInvoiceContactRef.findUnique({
+      where: { provider_companyId: { provider, companyId } },
     });
   }
 
   /**
-   * Crea la resolución y, si nace activa, retira las demás del mismo ambiente
-   * en la MISMA transacción: dos activas harían que `findActiveResolution`
-   * eligiera por fecha de creación, que es una forma silenciosa de facturar con
-   * el rango equivocado.
+   * Guarda el vínculo. Es un upsert porque revincular es normal: la empresa pudo
+   * cambiar de documento, o el financiero pudo elegir mal la primera vez.
    */
-  async createResolution(data: Prisma.EInvoiceResolutionUncheckedCreateInput) {
-    return this.prisma.$transaction(async (tx) => {
-      if (data.isActive !== false) {
-        await tx.eInvoiceResolution.updateMany({
-          where: { environment: data.environment, isActive: true },
-          data: { isActive: false },
-        });
-      }
-      return tx.eInvoiceResolution.create({ data });
+  async upsertContactRef(data: {
+    provider: string;
+    companyId: string;
+    providerContactId: string;
+    identification: string;
+    displayName: string | null;
+    linkedBy: string | null;
+  }) {
+    const { provider, companyId, ...rest } = data;
+    return this.prisma.eInvoiceContactRef.upsert({
+      where: { provider_companyId: { provider, companyId } },
+      create: { provider, companyId, ...rest },
+      update: { ...rest, linkedAt: new Date() },
     });
-  }
-
-  /** Activa o retira una resolución. Activar retira las otras del ambiente. */
-  async setResolutionActive(
-    id: string,
-    environment: string,
-    isActive: boolean,
-  ) {
-    return this.prisma.$transaction(async (tx) => {
-      if (isActive) {
-        await tx.eInvoiceResolution.updateMany({
-          where: { environment, isActive: true, id: { not: id } },
-          data: { isActive: false },
-        });
-      }
-      return tx.eInvoiceResolution.update({
-        where: { id },
-        data: { isActive },
-      });
-    });
-  }
-
-  async deleteResolution(id: string) {
-    return this.prisma.eInvoiceResolution.delete({ where: { id } });
-  }
-
-  /** Cuántos números quedan en la resolución (para alertar antes de agotarla). */
-  async remainingRange(resolutionId: string): Promise<number | null> {
-    const resolution = await this.prisma.eInvoiceResolution.findUnique({
-      where: { id: resolutionId },
-      select: { rangeFinal: true, nextConsecutive: true },
-    });
-    if (!resolution) return null;
-    return Math.max(0, resolution.rangeFinal - resolution.nextConsecutive + 1);
   }
 
   // ── Documentos ────────────────────────────────────────────────────────
 
-  /** findFirst y no findUnique: el único de analysis_pack_id es PARCIAL (vive
-   *  en el SQL de la migración, Prisma no sabe declararlo). */
+  /**
+   * La factura VIVA de una venta: la que no está anulada.
+   *
+   * findFirst y no findUnique porque el único de analysis_pack_id es PARCIAL
+   * (vive en el SQL de la migración, Prisma no sabe declararlo). El filtro por
+   * `voidedAt: null` es el mismo del índice: las anuladas se conservan como
+   * histórico y no compiten por el lugar.
+   */
   async findByAnalysisPack(analysisPackId: string) {
     return this.prisma.electronicInvoice.findFirst({
+      where: { analysisPackId, voidedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: { status: { select: { code: true, label: true } } },
+    });
+  }
+
+  /** Histórico completo de una venta, anuladas incluidas. */
+  async listByAnalysisPack(analysisPackId: string) {
+    return this.prisma.electronicInvoice.findMany({
       where: { analysisPackId },
+      orderBy: { createdAt: 'desc' },
       include: { status: { select: { code: true, label: true } } },
     });
   }
@@ -122,10 +127,7 @@ export class EInvoicingRepository {
   async findById(id: string) {
     return this.prisma.electronicInvoice.findUnique({
       where: { id },
-      include: {
-        status: { select: { code: true, label: true } },
-        resolution: { select: { prefix: true } },
-      },
+      include: { status: { select: { code: true, label: true } } },
     });
   }
 
@@ -155,8 +157,16 @@ export class EInvoicingRepository {
         // Cómo pagó: determina el medio de pago DIAN de la factura.
         providerFranchise: true,
         isTest: true, // el preview avisa si el cobro fue de prueba
-        packOffering: { select: { name: true, description: true } },
         status: { select: { code: true } },
+        packOffering: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            // Con qué ítem del catálogo facturable se emite esta oferta.
+            einvoiceItem: true,
+          },
+        },
         company: {
           select: {
             id: true,
@@ -197,6 +207,18 @@ export class EInvoicingRepository {
         einvoiceSent: true,
         einvoiceSentAt: new Date(),
         einvoiceNumber: number,
+      },
+    });
+  }
+
+  /** Devuelve la venta a la cola de pendientes (factura anulada). */
+  async unmarkPackInvoiced(analysisPackId: string) {
+    return this.prisma.analysisPack.update({
+      where: { id: analysisPackId },
+      data: {
+        einvoiceSent: false,
+        einvoiceSentAt: null,
+        einvoiceNumber: null,
       },
     });
   }
