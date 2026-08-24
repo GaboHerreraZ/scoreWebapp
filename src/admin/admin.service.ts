@@ -8,13 +8,16 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
+import { isStagingEnv } from '../common/auth/staging-only.guard.js';
 import { AnalysisPacksRepository } from '../analysis-packs/analysis-packs.repository.js';
 import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
 import { SupabaseService } from '../auth/supabase.service.js';
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
+import { PlatformAdminProfileDto } from './dto/platform-admin-profile.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
@@ -49,22 +52,28 @@ const ALL_SCREENS = [
   'credit-study-resets',
   'pdf-extraction-test',
   'datacredito-connection',
+  'branches',
   'sales-reps', // programa de referidos: vendedores y plan de comisiones
   'sales-commissions', // ganancias mes a mes
+  'sales-promo-codes', // códigos de descuento propios (un admin también vende)
 ] as const;
 
 // Pantallas que ve cualquier usuario no-admin del portal.
 const BASE_SCREENS = [
+  'dashboard',
   'companies',
   'payment-alerts',
   'contact-requests',
   'support-tickets',
   'pdf-extraction-test',
   'einvoices',
+  'branches',
 ];
 
-// Un vendedor entra solo a ver sus ganancias. Nada de datos de clientes.
-const SALES_SCREENS = ['sales-commissions'];
+// Un vendedor entra solo a ver sus ganancias y a emitir sus propios códigos de
+// descuento. NADA más: ni el dashboard (son métricas del negocio), ni sucursales,
+// ni datos de clientes. Es un referidor externo, no personal de Creditia.
+const SALES_SCREENS = ['sales-commissions', 'sales-promo-codes'];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
 const EXPIRY_RISK_DAYS = 30;
@@ -87,6 +96,7 @@ export class AdminService {
     private readonly analysisPacksRepository: AnalysisPacksRepository,
     private readonly platformAdminRepository: PlatformAdminRepository,
     private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -130,21 +140,37 @@ export class AdminService {
       );
     }
 
-    // admin ve todo, sales solo sus comisiones, el resto el set base.
-    const allowedScreens =
+    // admin ve todo, sales solo lo suyo, el resto el set base.
+    const allowedScreens: string[] =
       admin.role?.code === 'admin'
         ? [...ALL_SCREENS]
         : admin.role?.code === 'sales'
           ? [...SALES_SCREENS]
           : [...BASE_SCREENS];
 
+    // La purga de empresas es destructiva e irreversible: solo existe en
+    // staging (el endpoint responde 404 fuera de él) y solo para rol admin.
+    if (
+      admin.role?.code === 'admin' &&
+      isStagingEnv(this.configService) &&
+      !allowedScreens.includes('company-purge')
+    ) {
+      allowedScreens.push('company-purge');
+    }
+
     return {
       admin: {
         id: admin.id,
         name: admin.name,
+        lastName: admin.lastName,
         email: admin.email,
         phone: admin.phone,
+        // URL pública, para que el portal pinte la foto en el perfil.
+        avatarUrl: resolveAvatarUrl(this.supabaseService, admin.avatarUrl),
         role: admin.role,
+        // null si no está en el programa de referidos. Con ficha, el portal le
+        // muestra sus códigos y le deja filtrar sus propias comisiones.
+        salesRep: admin.salesRep,
       },
       allowedScreens,
     };
@@ -166,6 +192,41 @@ export class AdminService {
     }
   }
 
+  /** Ficha completa de un usuario del portal, con la foto como URL pública. */
+  async findPlatformAdmin(id: string) {
+    const admin = await this.platformAdminRepository.findById(id);
+    if (!admin) {
+      throw new NotFoundException(`Administrador con id=${id} no encontrado`);
+    }
+    return this.withAvatarUrl(admin);
+  }
+
+  /**
+   * Valida los campos de ficha que apuntan a catálogos: el tipo de documento
+   * debe ser un Parameter 'identification_type' y el municipio debe existir en
+   * DIVIPOLA. Sin esto entrarían ids sueltos que después rompen los joins.
+   */
+  private async assertProfileFieldsAreValid(dto: PlatformAdminProfileDto) {
+    const type = await this.platformAdminRepository.findParameterById(
+      dto.identificationTypeId,
+    );
+    if (!type || type.type !== 'identification_type') {
+      throw new BadRequestException(
+        'identificationTypeId inválido (no es un tipo de documento)',
+      );
+    }
+
+    const city = await this.prisma.daneCity.findUnique({
+      where: { code: dto.cityCode },
+      select: { code: true },
+    });
+    if (!city) {
+      throw new BadRequestException(
+        `El municipio con código DANE ${dto.cityCode} no existe`,
+      );
+    }
+  }
+
   /**
    * Crea un usuario del portal: primero en Supabase Auth (email + password,
    * correo dado por confirmado) y luego el PlatformAdmin con sus datos + rol.
@@ -182,6 +243,8 @@ export class AdminService {
     if (!role || role.type !== 'platform_admin_role') {
       throw new BadRequestException('roleId inválido (no es un rol de portal)');
     }
+
+    await this.assertProfileFieldsAreValid(dto);
 
     // No duplicar un admin con el mismo correo.
     const existing = await this.platformAdminRepository.findByEmail(dto.email);
@@ -203,10 +266,16 @@ export class AdminService {
         userId: supabaseUserId,
         email: dto.email,
         name: dto.name,
-        phone: dto.phone ?? null,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        identificationTypeId: dto.identificationTypeId,
+        identificationNumber: dto.identificationNumber,
+        address: dto.address,
+        cityCode: dto.cityCode,
         roleId: dto.roleId,
         isActive: true,
       });
+      return this.withAvatarUrl(created);
     } catch (e) {
       this.logger.error(
         `Fallo al crear PlatformAdmin para ${dto.email}; revirtiendo usuario de Supabase ${supabaseUserId}: ${
@@ -216,7 +285,6 @@ export class AdminService {
       await this.supabaseService.deleteUser(supabaseUserId);
       throw new InternalServerErrorException(
         'No se pudo crear el administrador; se revirtió el usuario',
-      return this.withAvatarUrl(created);
       );
     }
   }
@@ -238,20 +306,26 @@ export class AdminService {
       throw new NotFoundException(`Administrador con id=${id} no encontrado`);
     }
 
-    const data: Record<string, unknown> = {};
-    if (dto.name !== undefined) data.name = dto.name;
-    if (dto.phone !== undefined) data.phone = dto.phone;
-    if (dto.roleId !== undefined) {
-      const role = await this.platformAdminRepository.findParameterById(
-        dto.roleId,
-      );
-      if (!role || role.type !== 'platform_admin_role') {
-        throw new BadRequestException(
-          'roleId inválido (no es un rol de portal)',
-        );
-      }
-      data.roleId = dto.roleId;
+    await this.assertProfileFieldsAreValid(dto);
+
+    const role = await this.platformAdminRepository.findParameterById(
+      dto.roleId,
+    );
+    if (!role || role.type !== 'platform_admin_role') {
+      throw new BadRequestException('roleId inválido (no es un rol de portal)');
     }
+
+    // La edición reemplaza la ficha completa (ver UpdatePlatformAdminDto).
+    const data = {
+      name: dto.name,
+      lastName: dto.lastName,
+      phone: dto.phone,
+      identificationTypeId: dto.identificationTypeId,
+      identificationNumber: dto.identificationNumber,
+      address: dto.address,
+      cityCode: dto.cityCode,
+      roleId: dto.roleId,
+    };
 
     const updated = await this.platformAdminRepository.update(id, data);
     return this.withAvatarUrl(updated);
@@ -284,6 +358,7 @@ export class AdminService {
       throw new BadRequestException('El archivo no es una imagen válida');
     }
 
+    const storagePath = `${id}/avatar.webp`;
     await this.supabaseService.uploadFile(
       PLATFORM_ADMIN_AVATAR_BUCKET,
       storagePath,
@@ -293,15 +368,14 @@ export class AdminService {
 
     const updated = await this.platformAdminRepository.update(id, {
       avatarUrl: storagePath,
-    const storagePath = `${id}/avatar.webp`;
     });
+    const withUrl = this.withAvatarUrl(updated);
 
     // avatarSignedUrl se mantiene por compatibilidad con el portal; el bucket
     // ya es público, así que apunta a la misma URL permanente.
     return { ...withUrl, avatarSignedUrl: withUrl.avatarUrl };
   }
 
-    const withUrl = this.withAvatarUrl(updated);
   /**
    * Desactiva un PlatformAdmin (borrado lógico): isActive=false. NO toca el
    * usuario en Supabase; al intentar usar el portal, /auth/me/screens devuelve
@@ -443,8 +517,8 @@ export class AdminService {
 
   /**
    * Detalle de un cliente: ficha general de la empresa (identidad, ubicación,
-   * sector, cuenta bancaria, facturación, contrato macro, configuración de
-   * scoring y semáforo de setup) + saldo de créditos, bolsas y usuarios.
+   * sector, cuenta bancaria, facturación, configuración de scoring y semáforo de
+   * setup) + saldo de créditos, bolsas y usuarios.
    */
   async getClientDetail(companyId: string) {
     const company = await this.prisma.company.findUnique({
@@ -461,20 +535,6 @@ export class AdminService {
           select: { name: true, region: { select: { name: true } } },
         },
         billingRegimeType: { select: { code: true, label: true } },
-        contractSignature: {
-          select: {
-            status: { select: { code: true, label: true } },
-            signerName: true,
-            signerEmail: true,
-            sentAt: true,
-            signedAt: true,
-            refusedAt: true,
-            refusedReason: true,
-            firstViewedAt: true,
-            lastViewedAt: true,
-            viewCount: true,
-          },
-        },
         scoringConfigurations: {
           where: { isActive: true },
           select: {
@@ -502,8 +562,6 @@ export class AdminService {
     // Historial completo de bolsas (todas, incluidas vencidas/agotadas).
     const allPacks =
       await this.analysisPacksRepository.findByCompany(companyId);
-
-    const contract = company.contractSignature;
 
     return {
       company: {
@@ -545,23 +603,6 @@ export class AdminService {
         },
         providerCustomerId: company.providerCustomerId,
       },
-      // Contrato macro (Zapsign): estado, firmante y seguimiento de visualización
-      // ("lo abrió pero no firma" es señal comercial). null = nunca se envió.
-      contract: contract
-        ? {
-            status: contract.status?.label ?? null,
-            statusCode: contract.status?.code ?? null,
-            signerName: contract.signerName,
-            signerEmail: contract.signerEmail,
-            sentAt: contract.sentAt,
-            signedAt: contract.signedAt,
-            refusedAt: contract.refusedAt,
-            refusedReason: contract.refusedReason,
-            firstViewedAt: contract.firstViewedAt,
-            lastViewedAt: contract.lastViewedAt,
-            viewCount: contract.viewCount,
-          }
-        : null,
       // Configs de scoring vigentes (una por tipo de persona) con sus
       // dimensiones HABILITADAS y pesos (suman 100). Una dimensión ausente está
       // deshabilitada. Vacío = la empresa aún no puede correr estudios.
@@ -581,7 +622,6 @@ export class AdminService {
       // Semáforo de setup: lo que le falta a la empresa para operar completa.
       setup: {
         isOnboardingReady: company.isOnboardingReady,
-        contractSigned: Boolean(contract?.signedAt),
         scoringConfigured: company.scoringConfigurations.length > 0,
         hasCredits: credits.availableCredits > 0,
       },
@@ -1350,8 +1390,11 @@ export class AdminService {
               taxBase: true,
               taxAmount: true,
               total: true,
+              // Se toma el MÁS RECIENTE: tras anular, ese es el anulado, y eso es
+              // justo lo que la cola tiene que mostrar hasta que se reemita.
+              voidedAt: true,
+              voidReason: true,
               status: { select: { code: true, label: true } },
-              resolution: { select: { prefix: true, number: true } },
             },
           },
           company: {
@@ -1465,9 +1508,8 @@ export class AdminService {
               reasons: Array.isArray(doc.statusReasons)
                 ? (doc.statusReasons as string[])
                 : [],
-              resolutionPrefix: doc.resolution?.prefix ?? null,
-              // BigInt no se serializa a JSON.
-              resolutionNumber: doc.resolution?.number.toString() ?? null,
+              voidedAt: doc.voidedAt,
+              voidReason: doc.voidReason,
               taxBase: doc.taxBase,
               taxAmount: doc.taxAmount,
               total: doc.total,

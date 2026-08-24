@@ -27,7 +27,9 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
+import { StagingOnlyGuard } from '../common/auth/staging-only.guard.js';
 import { AdminService } from './admin.service.js';
+import { CompanyPurgeService } from './company-purge.service.js';
 import { ScoringService } from '../scoring/scoring.service.js';
 import { CreateScoringDimensionDto } from '../scoring/dto/create-scoring-dimension.dto.js';
 import { UpdateScoringDimensionDto } from '../scoring/dto/update-scoring-dimension.dto.js';
@@ -35,10 +37,8 @@ import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto.js';
 import { UpdatePlatformAdminDto } from './dto/update-platform-admin.dto.js';
 import { CycleActivityDto } from './dto/cycle-activity.dto.js';
 import { MarkEinvoiceDto } from './dto/mark-einvoice.dto.js';
-import { EInvoicingService } from '../e-invoicing/e-invoicing.service.js';
-import { CreateResolutionDto } from '../e-invoicing/dto/create-resolution.dto.js';
-import { SetResolutionActiveDto } from '../e-invoicing/dto/set-resolution-active.dto.js';
 import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
+import { PurgeCompanyDto } from './dto/purge-company.dto.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
@@ -58,7 +58,7 @@ export class AdminController {
     private readonly scoringService: ScoringService,
     private readonly pdfExtractionTestService: PdfExtractionTestService,
     private readonly experianClient: ExperianClient,
-    private readonly eInvoicingService: EInvoicingService,
+    private readonly companyPurgeService: CompanyPurgeService,
   ) {}
 
   @Get('datacredito/connection-check')
@@ -97,6 +97,17 @@ export class AdminController {
   })
   listPlatformAdmins(@Query('onlyActive') onlyActive?: string) {
     return this.adminService.listPlatformAdmins(onlyActive === 'true');
+  }
+
+  @Get('platform-admins/:id')
+  @ApiOperation({
+    summary:
+      'Ficha completa de un usuario del portal (para la pantalla de edición)',
+  })
+  @ApiResponse({ status: 200, description: 'PlatformAdmin con ficha y foto' })
+  @ApiResponse({ status: 404, description: 'No encontrado' })
+  findPlatformAdmin(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.findPlatformAdmin(id);
   }
 
   @Post('platform-admins')
@@ -245,7 +256,7 @@ export class AdminController {
   @Get('companies/:companyId')
   @ApiOperation({
     summary:
-      'Ficha completa de una empresa: identidad, ubicación, sector, cuenta bancaria, facturación, contrato macro, scoring configurado, semáforo de setup + créditos, bolsas y usuarios',
+      'Ficha completa de una empresa: identidad, ubicación, sector, cuenta bancaria, facturación, scoring configurado, semáforo de setup + créditos, bolsas y usuarios',
   })
   @ApiResponse({
     status: 200,
@@ -286,6 +297,55 @@ export class AdminController {
     @Query() dto: CycleActivityDto,
   ) {
     return this.adminService.getCycleActivity(companyId, dto.windowDays);
+  }
+
+  // ── Purga de empresa (SOLO STAGING) ───────────────────────────────────────
+
+  @Get('companies/:companyId/purge-preview')
+  @UseGuards(StagingOnlyGuard)
+  @ApiOperation({
+    summary:
+      '[SOLO STAGING] Inventario en seco de lo que borraría la purga de una empresa',
+    description:
+      'Devuelve, tabla por tabla y en el orden real de borrado, cuántas filas se eliminarían, más los usuarios que se borrarían y los que se conservan por pertenecer a otra empresa. No modifica nada. Fuera de staging responde 404.',
+  })
+  @ApiResponse({ status: 200, description: 'company, steps, totalRows, users' })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa no encontrada / no es staging',
+  })
+  previewCompanyPurge(@Param('companyId', ParseUUIDPipe) companyId: string) {
+    return this.companyPurgeService.preview(companyId);
+  }
+
+  @Delete('companies/:companyId/purge')
+  @UseGuards(StagingOnlyGuard)
+  @ApiOperation({
+    summary:
+      '[SOLO STAGING] Eliminar una empresa y TODO su rastro (irreversible)',
+    description:
+      'Borra en una sola transacción los datos de la empresa en las 29 tablas relacionadas (bolsas, pagos, comisiones, estudios, clientes, consultas a la central, financieros, notificaciones, invitaciones) y por último la empresa y los perfiles de sus usuarios. Los usuarios que también pertenecen a otra empresa solo se desvinculan. Exige confirmNit = NIT de la empresa y rol admin. NO toca Supabase Auth, Storage ni los documentos en Zapsign/ePayco/Aliaddo. Fuera de staging responde 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'company, steps (tabla + filas borradas), totalRows, users',
+  })
+  @ApiResponse({ status: 400, description: 'NIT de confirmación no coincide' })
+  @ApiResponse({
+    status: 403,
+    description: 'El usuario del portal no es rol admin',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa no encontrada / no es staging',
+  })
+  purgeCompany(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Body() dto: PurgeCompanyDto,
+    @Req() req: Request,
+  ) {
+    const callerUserId = (req as any).user.id as string;
+    return this.companyPurgeService.purge(companyId, dto, callerUserId);
   }
 
   @Post('credit-studies/:id/reset')
@@ -430,74 +490,6 @@ export class AdminController {
     return this.pdfExtractionTestService.remove(id);
   }
 
-  @Get('einvoices/config')
-  @ApiOperation({
-    summary: 'Cómo está configurado el servidor para facturar',
-    description:
-      'Proveedor, ambiente (test | habilitation | production) y kill switch. El panel lo usa para advertir que los documentos de un ambiente que no sea producción no tienen efectos legales.',
-  })
-  @ApiResponse({ status: 200, description: 'provider, environment, enabled' })
-  getEinvoiceConfig() {
-    return this.eInvoicingService.getConfig();
-  }
-
-  @Get('einvoices/resolutions')
-  @ApiOperation({
-    summary: 'Resoluciones de facturación configuradas',
-    description:
-      'Todas, de todos los ambientes. `isCurrent` marca la que se usaría hoy (activa Y del ambiente configurado en el servidor). La clave técnica va enmascarada: es una credencial.',
-  })
-  @ApiResponse({ status: 200, description: 'Listado de resoluciones' })
-  listResolutions() {
-    return this.eInvoicingService.listResolutions();
-  }
-
-  @Post('einvoices/resolutions')
-  @ApiOperation({
-    summary: 'Registrar una resolución de facturación de la DIAN',
-    description:
-      'Los datos se transcriben del documento que expide la DIAN. Al crearla vigente, la anterior del mismo ambiente se retira automáticamente: dos activas facturarían con el rango equivocado.',
-  })
-  @ApiResponse({ status: 201, description: 'Resolución creada' })
-  @ApiResponse({
-    status: 400,
-    description: 'Rango, vigencia o consecutivo inicial inconsistentes',
-  })
-  createResolution(@Body() dto: CreateResolutionDto) {
-    return this.eInvoicingService.createResolution(dto);
-  }
-
-  @Patch('einvoices/resolutions/:id/active')
-  @ApiOperation({
-    summary: 'Poner vigente o retirar una resolución',
-    description:
-      'Activar retira las demás del mismo ambiente. Retirar no borra el histórico: las facturas ya emitidas conservan su respaldo.',
-  })
-  @ApiResponse({ status: 200, description: 'Estado actualizado' })
-  @ApiResponse({ status: 404, description: 'Resolución no encontrada' })
-  setResolutionActive(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetResolutionActiveDto,
-  ) {
-    return this.eInvoicingService.setResolutionActive(id, dto.isActive);
-  }
-
-  @Delete('einvoices/resolutions/:id')
-  @ApiOperation({
-    summary: 'Borrar una resolución que todavía no ha facturado',
-    description:
-      'Solo si no respalda ninguna factura. Si ya emitió, la DIAN puede pedir años después bajo qué autorización se expidió el documento: en ese caso se retira, no se borra.',
-  })
-  @ApiResponse({ status: 200, description: 'Resolución borrada' })
-  @ApiResponse({
-    status: 409,
-    description: 'Ya respalda facturas emitidas: retírala en su lugar',
-  })
-  @ApiResponse({ status: 404, description: 'Resolución no encontrada' })
-  deleteResolution(@Param('id', ParseUUIDPipe) id: string) {
-    return this.eInvoicingService.deleteResolution(id);
-  }
-
   @Get('einvoices')
   @ApiOperation({
     summary:
@@ -566,58 +558,6 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Bolsa no encontrada' })
   unmarkEinvoice(@Param('packId', ParseUUIDPipe) packId: string) {
     return this.adminService.unmarkEinvoiceSent(packId);
-  }
-
-  @Get('einvoices/:packId/preview')
-  @ApiOperation({
-    summary: 'Ver qué se va a facturar, antes de emitir',
-    description:
-      'Arma el documento con el MISMO código que la emisión, así que lo que se muestra es lo que se envía. No reserva consecutivo: mirar el preview no quema un número. En vez de fallar por datos incompletos los devuelve en `blockers` (canIssue=false); `warnings` trae lo que no impide emitir pero conviene revisar (ambiente de pruebas, kill switch, franquicia sin mapear).',
-  })
-  @ApiResponse({
-    status: 200,
-    description:
-      'canIssue, blockers, warnings, resolución vigente, adquirente, líneas, totales y medio de pago',
-  })
-  @ApiResponse({ status: 404, description: 'Bolsa no encontrada' })
-  previewEinvoice(@Param('packId', ParseUUIDPipe) packId: string) {
-    return this.eInvoicingService.previewForPack(packId);
-  }
-
-  @Post('einvoices/:packId/issue')
-  @ApiOperation({
-    summary: 'Emitir la factura electrónica de una venta (acción manual)',
-    description:
-      'Arma el documento con el desglose CONGELADO al cobrar, reserva el consecutivo de la resolución vigente y lo envía al proveedor. La emisión NO es automática: el webhook de pago solo deja el aviso, esto lo dispara un admin desde el panel. Idempotente: si la venta ya tiene factura aceptada no la reemite; si tiene una rechazada, reintenta sobre el mismo documento.',
-  })
-  @ApiResponse({
-    status: 201,
-    description:
-      'outcome (accepted | rejected | pending | already_invoiced | disabled), invoiceId, number, cufe, pdfUrl, reasons',
-  })
-  @ApiResponse({
-    status: 400,
-    description:
-      'Sin resolución vigente, rango agotado, o datos fiscales incompletos',
-  })
-  @ApiResponse({ status: 404, description: 'Bolsa no encontrada' })
-  issueEinvoice(@Param('packId', ParseUUIDPipe) packId: string) {
-    return this.eInvoicingService.issueForPack(packId);
-  }
-
-  @Post('einvoices/:invoiceId/refresh')
-  @ApiOperation({
-    summary: 'Reconsultar el estado de una factura ante la DIAN',
-    description:
-      'Para documentos que quedaron sin veredicto (enviados pero sin CUFE). Mismo shape que /issue.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'outcome, invoiceId, number, cufe, pdfUrl, reasons',
-  })
-  @ApiResponse({ status: 404, description: 'Factura no encontrada' })
-  refreshEinvoice(@Param('invoiceId', ParseUUIDPipe) invoiceId: string) {
-    return this.eInvoicingService.refreshStatus(invoiceId);
   }
 
   @Get('scoring-dimensions')

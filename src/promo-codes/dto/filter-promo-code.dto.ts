@@ -22,4 +22,21 @@ export class FilterPromoCodeDto extends PaginationDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por tipo de compra al que aplica',
+    enum: ['any', 'first_purchase'],
+  })
+  @IsOptional()
+  @IsIn(['any', 'first_purchase'])
+  appliesTo?: 'any' | 'first_purchase';
+
+  @ApiPropertyOptional({
+    description:
+      'Filtrar por financiador: "creditia" (sin vendedor) o el id de un ' +
+      'vendedor. Solo lo usa un admin: un vendedor siempre ve los suyos.',
+  })
+  @IsOptional()
+  @IsString()
+  fundedBy?: string;
 }

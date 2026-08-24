@@ -19,7 +19,6 @@ import { PlatformAdminRepository } from '../common/auth/platform-admin.repositor
 import { PaymentAlertsService } from '../payment-alerts/payment-alerts.service.js';
 import { PromoCodesService } from '../promo-codes/promo-codes.service.js';
 import { MailService } from '../mail/mail.service.js';
-import { MacroContractService } from '../documents/macro-contract/macro-contract.service.js';
 import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
 import { SalesCommissionsService } from '../sales/sales-commissions.service.js';
 import { PurchasePackDto } from './dto/purchase-pack.dto.js';
@@ -64,7 +63,6 @@ export class AnalysisPacksService {
     private readonly paymentAlertsService: PaymentAlertsService,
     private readonly promoCodesService: PromoCodesService,
     private readonly mailService: MailService,
-    private readonly macroContractService: MacroContractService,
     private readonly fiscalProfileValidator: FiscalProfileValidator,
     private readonly salesCommissionsService: SalesCommissionsService,
   ) {}
@@ -177,6 +175,7 @@ export class AnalysisPacksService {
         activePrice: {
           id: activePrice.id,
           currencyCode: activePrice.currencyCode,
+          taxIncluded: activePrice.taxIncluded,
         },
         pricing,
         promo,
@@ -236,11 +235,25 @@ export class AnalysisPacksService {
     };
 
     // Desglose fiscal congelado: la tarifa puede cambiar el año que viene y la
-    // factura de esta compra debe emitirse con la que rigió hoy.
+    // factura de esta compra debe emitirse con la que rigió hoy. Se congela
+    // también taxIncluded, sin el cual una bolsa vieja no se puede reconstruir
+    // si mañana el catálogo cambia de modo.
+    //
+    // listTaxBase = base gravable ANTES del código promocional. Es la base de la
+    // comisión del vendedor: calculada sobre lo cobrado, un descuento le costaría
+    // solo una fracción de lo que regaló y el resto lo pondría Creditia. Se
+    // resuelve con el mismo calculateTax para que el redondeo sea idéntico.
+    const listTax = calculateTax(
+      pricing.total,
+      Number(activePrice.taxRate),
+      activePrice.taxIncluded,
+    );
     const taxSnapshot = {
       taxRatePaid: new Prisma.Decimal(tax.taxRate),
       taxBase: tax.base,
       taxAmount: tax.taxAmount,
+      taxIncludedPaid: activePrice.taxIncluded,
+      listTaxBase: listTax.base,
     };
 
     const pack = existingPending
@@ -386,7 +399,7 @@ export class AnalysisPacksService {
    * una sola operación lo que en una compra normal reparten el checkout y el
    * webhook: activa la bolsa, canjea el cupo (atómico con la creación, para que
    * un doble click no regale dos bolsas), deja el evento de pago sintético y
-   * dispara los efectos de "primer pack": onboarding listo + contrato macro.
+   * marca el onboarding como listo.
    *
    * NO se emite documento de cobro: no hubo pago, así que no hay nada que
    * facturar (invoice va en null y totalPaid queda en 0).
@@ -395,7 +408,7 @@ export class AnalysisPacksService {
     companyId: string;
     userId?: string;
     offering: { id: string; quantity: number };
-    activePrice: { id: string; currencyCode: string };
+    activePrice: { id: string; currencyCode: string; taxIncluded: boolean };
     pricing: {
       unitPrice: number;
       subtotal: number;
@@ -454,6 +467,7 @@ export class AnalysisPacksService {
           promoDiscountPercent: new Prisma.Decimal(promo.discountPercent),
           promoDiscountAmount: promo.discountAmount,
           promoRedeemedBy: userId ?? null,
+          taxIncludedPaid: activePrice.taxIncluded,
         },
         redeem: (tx, packId) =>
           this.promoCodesService.redeemInTx(tx, {
@@ -486,16 +500,6 @@ export class AnalysisPacksService {
     } catch (e) {
       this.logger.error(
         `No se pudo marcar el onboarding como listo para la empresa ${companyId}: ${
-          (e as Error).message
-        }`,
-      );
-    }
-
-    try {
-      await this.macroContractService.sendContractForCompany(companyId);
-    } catch (e) {
-      this.logger.error(
-        `No se pudo enviar el contrato macro para la empresa ${companyId}: ${
           (e as Error).message
         }`,
       );
@@ -982,23 +986,6 @@ export class AnalysisPacksService {
       } catch (e) {
         this.logger.error(
           `No se pudo marcar el onboarding como listo para la empresa ${pack.companyId}: ${
-            (e as Error).message
-          }`,
-        );
-      }
-
-      // Contrato macro: al confirmarse el pago, la cuenta NO queda activa aún —
-      // se envía el contrato macro para firma (Creditia firma por API y el
-      // cliente recibe el sign_url). La cuenta se activará cuando el webhook de
-      // Zapsign confirme la firma del cliente. sendContractForCompany es
-      // idempotente (uno por empresa): en pagos posteriores no reenvía nada.
-      // Best-effort: un fallo aquí no debe romper el webhook ni la activación
-      // de la bolsa; el contrato queda pendiente y puede reintentarse.
-      try {
-        await this.macroContractService.sendContractForCompany(pack.companyId);
-      } catch (e) {
-        this.logger.error(
-          `No se pudo enviar el contrato macro para la empresa ${pack.companyId}: ${
             (e as Error).message
           }`,
         );

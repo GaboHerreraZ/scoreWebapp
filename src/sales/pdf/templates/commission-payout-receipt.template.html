@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1f2937;
+    font-size: 10.5px;
+    margin: 0;
+    line-height: 1.5;
+  }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #5AB991; padding-bottom: 14px; margin-bottom: 22px; }
+  .brand { font-size: 20px; font-weight: 700; color: #5AB991; letter-spacing: -0.4px; }
+  .brand small { display: block; font-size: 10px; font-weight: 400; color: #6b7280; letter-spacing: 0; margin-top: 2px; }
+  .ref { text-align: right; }
+  .ref .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: #6b7280; }
+  .ref .value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .grid { display: flex; gap: 28px; margin-bottom: 20px; }
+  .grid > div { flex: 1; }
+  .k { font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: #6b7280; margin-bottom: 2px; }
+  .v { font-weight: 600; }
+
+  .total { background: #f0faf5; border: 1px solid #cdeade; border-radius: 8px; padding: 14px 18px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: center; }
+  .total .amount { font-size: 22px; font-weight: 700; color: #2f8c66; font-variant-numeric: tabular-nums; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #d1d5db; padding: 0 6px 6px; font-weight: 600; }
+  td { padding: 7px 6px; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tfoot td { border-top: 1.5px solid #d1d5db; border-bottom: none; font-weight: 700; padding-top: 9px; }
+  .muted { color: #6b7280; }
+
+  .note { margin-top: 22px; padding: 12px 14px; background: #f9fafb; border-left: 3px solid #d1d5db; border-radius: 0 6px 6px 0; }
+  .note .k { margin-bottom: 4px; }
+  .legal { margin-top: 26px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 8.5px; color: #6b7280; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="brand">Creditia<small>Comprobante de liquidación de comisiones</small></div>
+  <div class="ref">
+    <div class="label">Comprobante</div>
+    <div class="value">{{reference}}</div>
+    <div class="muted" style="font-size:9px;">{{paidAt}}</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div>
+    <div class="k">Vendedor</div>
+    <div class="v">{{salesRepName}}</div>
+    <div class="muted">{{salesRepCode}} · {{salesRepEmail}}</div>
+  </div>
+  <div>
+    <div class="k">Periodo liquidado</div>
+    <div class="v">{{period}}</div>
+    <div class="muted">{{commissionCount}} venta(s) comisionada(s)</div>
+  </div>
+</div>
+
+<div class="total">
+  <div>
+    <div class="k">Total girado</div>
+    <div class="muted">{{currencyCode}}</div>
+  </div>
+  <div class="amount">{{totalAmount}}</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Mes</th>
+      <th>Fecha</th>
+      <th>Cliente</th>
+      <th>Tipo</th>
+      <th class="num">Venta base</th>
+      {{#if hasDiscounts}}
+      <th class="num">Comisión bruta</th>
+      <th class="num">Descuento dado</th>
+      {{/if}}
+      <th class="num">Comisión</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each lines}}
+    <tr>
+      <td class="muted">{{this.month}}</td>
+      <td class="muted">{{this.date}}</td>
+      <td>{{this.company}}</td>
+      <td class="muted">{{this.kind}}</td>
+      <td class="num muted">{{this.base}}</td>
+      {{#if ../hasDiscounts}}
+      <td class="num muted">{{this.gross}}</td>
+      <td class="num muted">−{{this.discount}}</td>
+      {{/if}}
+      <td class="num"><strong>{{this.amount}}</strong></td>
+    </tr>
+    {{/each}}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="{{#if hasDiscounts}}6{{else}}4{{/if}}">Total</td>
+      {{#if hasDiscounts}}<td class="num">−{{totalDiscounts}}</td>{{/if}}
+      <td class="num">{{totalAmount}}</td>
+    </tr>
+  </tfoot>
+</table>
+
+{{#if notes}}
+<div class="note">
+  <div class="k">Referencia del giro</div>
+  <div>{{notes}}</div>
+</div>
+{{/if}}
+
+<div class="legal">
+  {{#if hasDiscounts}}
+  La columna «descuento dado» corresponde a los descuentos que otorgaste a tus clientes con tus propios
+  códigos promocionales, y que se financian con tu comisión. La comisión bruta menos ese descuento es lo
+  que efectivamente se liquida.<br /><br />
+  {{/if}}
+  Este documento es un comprobante interno de liquidación del programa de referidos de Creditia. No constituye
+  factura ni documento equivalente para efectos tributarios. Las comisiones aquí relacionadas corresponden a
+  ventas efectivamente pagadas por los clientes que recomendaste.
+</div>
+
+</body>
+</html>

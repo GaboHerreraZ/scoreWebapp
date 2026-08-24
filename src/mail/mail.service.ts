@@ -397,4 +397,54 @@ export class MailService {
       html,
     });
   }
+
+  /**
+   * Le manda al vendedor el comprobante de su liquidación, con el PDF adjunto.
+   * El detalle venta por venta va en el adjunto, no en el cuerpo: el correo solo
+   * tiene que decirle cuánto le llegó y por qué periodo.
+   */
+  async sendCommissionPayoutEmail(params: {
+    to: string;
+    salesRepName: string;
+    reference: string;
+    period: string;
+    commissionCount: number;
+    totalAmount: string;
+    notes: string | null;
+    attachment: { filename: string; content: Buffer };
+  }) {
+    const {
+      to,
+      salesRepName,
+      reference,
+      period,
+      commissionCount,
+      totalAmount,
+      notes,
+      attachment,
+    } = params;
+
+    const html = this.loadTemplate('commission-payout', {
+      salesRepName,
+      reference,
+      period,
+      commissionCount: String(commissionCount),
+      totalAmount,
+      notes: notes ?? '',
+      notesBlock: notes
+        ? `<p style="margin:0 0 8px;color:#6b7280;font-size:13px;">Referencia del giro: ${notes}</p>`
+        : '',
+      logoUrl: this.logoUrl,
+    });
+
+    await this.resend.emails.send({
+      from: 'Creditia <notificaciones@creditia.co>',
+      to,
+      subject: `Liquidación de comisiones ${reference} — ${totalAmount}`,
+      html,
+      attachments: [
+        { filename: attachment.filename, content: attachment.content },
+      ],
+    });
+  }
 }

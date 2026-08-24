@@ -9,10 +9,11 @@ import {
   Param,
   Query,
   Req,
+  Res,
   ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -32,6 +33,7 @@ import {
   FilterCommissionSummaryDto,
 } from './dto/filter-commission.dto.js';
 import { UpdateCommissionStatusDto } from './dto/update-commission-status.dto.js';
+import { CreatePayoutDto, RevertPayoutDto } from './dto/create-payout.dto.js';
 
 /**
  * Programa de referidos. Lo consumen dos perfiles del portal:
@@ -131,6 +133,36 @@ export class SalesController {
     return this.salesService.updateRep(id, dto, await this.caller(req));
   }
 
+  @Get('reps/:id/removal-options')
+  @ApiOperation({
+    summary:
+      'Si el vendedor se puede borrar o solo desactivar, y por qué (solo admin)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ canDelete, blockers, referrals, commissions, promoCodes }',
+  })
+  async getRepRemovalOptions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
+    return this.salesService.getRepRemovalOptions(id, await this.caller(req));
+  }
+
+  @Delete('reps/:id')
+  @ApiOperation({
+    summary:
+      'Retirar del programa: borra si no dejó rastro, si no lo DESACTIVA (solo admin)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ deleted, deactivated, blockers }',
+  })
+  @ApiResponse({ status: 409, description: 'Ya estaba desactivado' })
+  async removeRep(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    return this.salesService.removeRep(id, await this.caller(req));
+  }
+
   @Get('reps/:id/companies')
   @ApiOperation({ summary: 'Empresas que trajo un vendedor (su cartera)' })
   async listRepReferrals(
@@ -169,6 +201,20 @@ export class SalesController {
       companyId,
       await this.caller(req),
     );
+  }
+
+  @Post('referrals/company/:companyId/retry-accrual')
+  @ApiOperation({
+    summary:
+      'Reintentar causar las comisiones pendientes de una empresa ya vinculada (solo admin)',
+  })
+  @ApiResponse({ status: 201, description: '{ count, totalAmount }' })
+  @ApiResponse({ status: 404, description: 'La empresa no tiene vendedor' })
+  async retryAccrual(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Req() req: Request,
+  ) {
+    return this.salesService.retryAccrual(companyId, await this.caller(req));
   }
 
   @Put('referrals/company/:companyId')
@@ -254,6 +300,111 @@ export class SalesController {
     return this.commissionsService.updateStatus(
       id,
       dto,
+      await this.caller(req),
+    );
+  }
+
+  // ── Liquidación de comisiones ─────────────────────────────────────────
+
+  @Get('payouts')
+  @ApiOperation({
+    summary: 'Historial de giros. Un vendedor solo ve los suyos.',
+  })
+  @ApiQuery({ name: 'salesRepId', required: false })
+  async listPayouts(
+    @Req() req: Request,
+    @Query('salesRepId') salesRepId?: string,
+  ) {
+    return this.commissionsService.listPayouts(
+      salesRepId,
+      await this.caller(req),
+    );
+  }
+
+  @Get('payouts/preview')
+  @ApiOperation({
+    summary: 'Qué se le giraría a un vendedor, sin escribir nada (solo admin)',
+  })
+  @ApiQuery({ name: 'salesRepId', required: true })
+  @ApiQuery({ name: 'fromMonth', required: false, example: '2026-08' })
+  @ApiQuery({ name: 'toMonth', required: false, example: '2026-08' })
+  async previewPayout(
+    @Req() req: Request,
+    @Query('salesRepId', ParseUUIDPipe) salesRepId: string,
+    @Query('fromMonth') fromMonth?: string,
+    @Query('toMonth') toMonth?: string,
+  ) {
+    return this.commissionsService.previewPayout(
+      { salesRepId, fromMonth, toMonth },
+      await this.caller(req),
+    );
+  }
+
+  @Post('payouts')
+  @ApiOperation({
+    summary:
+      'Liquidar de una vez las comisiones pendientes de un vendedor (solo admin). ' +
+      'Genera el comprobante y se lo envía por correo.',
+  })
+  @ApiResponse({ status: 201, description: 'Liquidación creada' })
+  @ApiResponse({ status: 409, description: 'No hay nada pendiente en el rango' })
+  async createPayout(@Body() dto: CreatePayoutDto, @Req() req: Request) {
+    return this.commissionsService.createPayout(dto, await this.caller(req));
+  }
+
+  @Get('payouts/:id')
+  @ApiOperation({ summary: 'Detalle de un giro con sus líneas' })
+  async findPayout(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    return this.commissionsService.findPayout(id, await this.caller(req));
+  }
+
+  @Get('payouts/:id/receipt')
+  @ApiOperation({ summary: 'Descargar el comprobante en PDF' })
+  async downloadReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    // Valida el alcance antes de generar nada: un vendedor solo baja los suyos.
+    await this.commissionsService.findPayout(id, await this.caller(req));
+    const { pdf, filename } =
+      await this.commissionsService.buildPayoutReceiptPdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdf.length,
+    });
+    res.end(pdf);
+  }
+
+  @Post('payouts/:id/resend-receipt')
+  @ApiOperation({
+    summary: 'Reenviar el comprobante al correo del vendedor (solo admin)',
+  })
+  async resendReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
+    const caller = await this.caller(req);
+    await this.commissionsService.findPayout(id, caller);
+    const sent = await this.commissionsService.sendPayoutReceipt(id);
+    return { sent };
+  }
+
+  @Post('payouts/:id/revert')
+  @ApiOperation({
+    summary:
+      'Devolver un giro completo: sus comisiones vuelven a pendiente (solo admin)',
+  })
+  @ApiResponse({ status: 409, description: 'El giro ya estaba revertido' })
+  async revertPayout(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RevertPayoutDto,
+    @Req() req: Request,
+  ) {
+    return this.commissionsService.revertPayout(
+      id,
+      dto.reason,
       await this.caller(req),
     );
   }

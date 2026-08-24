@@ -14,6 +14,10 @@ export interface MonthlyCommissionRow {
   commissionAmount: number;
   pendingAmount: number;
   paidAmount: number;
+  /** Comisión antes de restarle los descuentos que él mismo otorgó. */
+  grossCommissionAmount: number;
+  /** Lo que financió de su bolsillo vía sus códigos promocionales. */
+  discountFundedAmount: number;
 }
 
 @Injectable()
@@ -76,6 +80,7 @@ export class SalesRepository {
       select: {
         id: true,
         name: true,
+        lastName: true, // el código sugerido usa nombre + apellido
         email: true,
         isActive: true,
         role: { select: { code: true, label: true } },
@@ -161,6 +166,49 @@ export class SalesRepository {
       data,
       include: this.repInclude,
     });
+  }
+
+  /**
+   * Rastro que deja un vendedor. Decide si se puede borrar de verdad o solo
+   * retirar: empresas vinculadas o comisiones causadas son historia que no se
+   * puede perder, y sus códigos con canjes ya afectaron ventas reales.
+   */
+  async countRepFootprint(salesRepId: string) {
+    const [referrals, commissions, promoCodes, redeemedCodes] =
+      await Promise.all([
+        this.prisma.companyReferral.count({ where: { salesRepId } }),
+        this.prisma.salesCommission.count({ where: { salesRepId } }),
+        this.prisma.promoCode.count({ where: { salesRepId } }),
+        this.prisma.promoCode.count({
+          where: { salesRepId, redemptionsCount: { gt: 0 } },
+        }),
+      ]);
+    return { referrals, commissions, promoCodes, redeemedCodes };
+  }
+
+  /**
+   * Borra el vendedor junto con sus códigos SIN canjear. Solo lo llama el
+   * service tras comprobar que no deja huella; los códigos van en la misma
+   * transacción porque la FK es RESTRICT y si no, el delete rebota.
+   */
+  async deleteRep(salesRepId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.promoCode.deleteMany({ where: { salesRepId } });
+      await tx.salesRep.delete({ where: { id: salesRepId } });
+    });
+  }
+
+  /**
+   * Apaga los códigos activos de un vendedor retirado. Devuelve cuántos. Sin
+   * esto, un cliente podría redimir el descuento de alguien que ya no está en el
+   * programa y la comisión quedaría a nombre de un vendedor inactivo.
+   */
+  async deactivateRepPromoCodes(salesRepId: string): Promise<number> {
+    const result = await this.prisma.promoCode.updateMany({
+      where: { salesRepId, isActive: true },
+      data: { isActive: false },
+    });
+    return result.count;
   }
 
   // ── Vinculación empresa ↔ vendedor ────────────────────────────────────
@@ -253,7 +301,11 @@ export class SalesRepository {
   async findCommissionById(id: string) {
     return this.prisma.salesCommission.findUnique({
       where: { id },
-      include: this.commissionInclude,
+      include: {
+        ...this.commissionInclude,
+        // Para poder decir en qué giro se pagó si se intenta editar suelta.
+        payout: { select: { id: true, reference: true } },
+      },
     });
   }
 
@@ -290,13 +342,20 @@ export class SalesRepository {
   async sumCommissions(where: Prisma.SalesCommissionWhereInput) {
     const result = await this.prisma.salesCommission.aggregate({
       where,
-      _sum: { commissionAmount: true, baseAmount: true },
+      _sum: {
+        commissionAmount: true,
+        baseAmount: true,
+        grossCommissionAmount: true,
+        discountFundedAmount: true,
+      },
       _count: true,
     });
     return {
       count: result._count,
       baseAmount: result._sum.baseAmount ?? 0,
       commissionAmount: result._sum.commissionAmount ?? 0,
+      grossCommissionAmount: result._sum.grossCommissionAmount ?? 0,
+      discountFundedAmount: result._sum.discountFundedAmount ?? 0,
     };
   }
 
@@ -348,9 +407,200 @@ export class SalesRepository {
         companyId: true,
         totalPaid: true,
         taxBase: true,
+        listTaxBase: true,
+        taxRatePaid: true,
+        taxIncludedPaid: true,
         currencyCode: true,
         paidAt: true,
+        // Quién financió el descuento: solo se le resta al vendedor si el
+        // código era SUYO. Uno de Creditia no le toca la comisión.
+        promoDiscountAmount: true,
+        promoCode: { select: { id: true, code: true, salesRepId: true } },
       },
+    });
+  }
+
+  // ── Lotes de liquidación ──────────────────────────────────────────────
+
+  private readonly payoutInclude = {
+    salesRep: {
+      select: {
+        id: true,
+        code: true,
+        platformAdmin: { select: { name: true, lastName: true, email: true } },
+      },
+    },
+    paidByAdmin: { select: { id: true, name: true, email: true } },
+    _count: { select: { commissions: true } },
+  } as const;
+
+  /** Comisiones pendientes de un vendedor en un rango de meses. */
+  async findPayableCommissions(params: {
+    salesRepId: string;
+    pendingStatusId: number;
+    fromMonth?: string | null;
+    toMonth?: string | null;
+  }) {
+    const { salesRepId, pendingStatusId, fromMonth, toMonth } = params;
+    return this.prisma.salesCommission.findMany({
+      where: {
+        salesRepId,
+        statusId: pendingStatusId,
+        payoutId: null,
+        ...(fromMonth || toMonth
+          ? {
+              accrualMonth: {
+                ...(fromMonth ? { gte: fromMonth } : {}),
+                ...(toMonth ? { lte: toMonth } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { accruedAt: 'asc' },
+      include: {
+        company: { select: { name: true, nit: true } },
+        analysisPack: { select: { quantityPurchased: true, paidAt: true } },
+      },
+    });
+  }
+
+  /**
+   * Crea el lote y marca sus comisiones como pagadas en una sola transacción: o
+   * queda todo liquidado con su comprobante, o no queda nada a medias.
+   *
+   * El updateMany vuelve a filtrar por estado pendiente y payoutId nulo, así que
+   * si otra liquidación se le adelantó a alguna comisión, esta no la pisa. Si el
+   * conteo no cuadra con lo previsto, se aborta: el comprobante diría un total
+   * que no corresponde con sus líneas.
+   */
+  async createPayout(params: {
+    reference: string;
+    salesRepId: string;
+    commissionIds: string[];
+    totalAmount: number;
+    currencyCode: string;
+    fromMonth: string | null;
+    toMonth: string | null;
+    notes: string | null;
+    paidBy: string | null;
+    paidStatusId: number;
+    pendingStatusId: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const payout = await tx.commissionPayout.create({
+        data: {
+          reference: params.reference,
+          salesRepId: params.salesRepId,
+          commissionCount: params.commissionIds.length,
+          totalAmount: params.totalAmount,
+          currencyCode: params.currencyCode,
+          fromMonth: params.fromMonth,
+          toMonth: params.toMonth,
+          notes: params.notes,
+          paidBy: params.paidBy,
+        },
+      });
+
+      const updated = await tx.salesCommission.updateMany({
+        where: {
+          id: { in: params.commissionIds },
+          statusId: params.pendingStatusId,
+          payoutId: null,
+        },
+        data: {
+          statusId: params.paidStatusId,
+          payoutId: payout.id,
+          paidAt: payout.paidAt,
+          paidBy: params.paidBy,
+          payoutNotes: params.notes,
+        },
+      });
+
+      if (updated.count !== params.commissionIds.length) {
+        throw new Error(
+          `La liquidación cambió mientras se procesaba (${updated.count} de ` +
+            `${params.commissionIds.length} comisiones); vuelve a intentarlo`,
+        );
+      }
+
+      return tx.commissionPayout.findUniqueOrThrow({
+        where: { id: payout.id },
+        include: this.payoutInclude,
+      });
+    });
+  }
+
+  /**
+   * Devuelve las comisiones del lote a pendiente y marca el lote como revertido.
+   * El lote NO se borra: el histórico debe mostrar que ese giro existió y que se
+   * devolvió, con su motivo.
+   */
+  async revertPayout(params: {
+    payoutId: string;
+    pendingStatusId: number;
+    revertedBy: string | null;
+    reason: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.salesCommission.updateMany({
+        where: { payoutId: params.payoutId },
+        data: {
+          statusId: params.pendingStatusId,
+          payoutId: null,
+          paidAt: null,
+          paidBy: null,
+          payoutNotes: `Liquidación revertida: ${params.reason}`,
+        },
+      });
+
+      return tx.commissionPayout.update({
+        where: { id: params.payoutId },
+        data: {
+          revertedAt: new Date(),
+          revertedBy: params.revertedBy,
+          revertReason: params.reason,
+        },
+        include: this.payoutInclude,
+      });
+    });
+  }
+
+  async findPayouts(salesRepId: string | null) {
+    return this.prisma.commissionPayout.findMany({
+      where: salesRepId ? { salesRepId } : undefined,
+      orderBy: { paidAt: 'desc' },
+      include: this.payoutInclude,
+    });
+  }
+
+  /** Lote con sus líneas: alimenta el comprobante. */
+  async findPayoutById(id: string) {
+    return this.prisma.commissionPayout.findUnique({
+      where: { id },
+      include: {
+        ...this.payoutInclude,
+        commissions: {
+          orderBy: { accruedAt: 'asc' },
+          include: {
+            company: { select: { name: true, nit: true } },
+            analysisPack: { select: { quantityPurchased: true, paidAt: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /** Nº de lotes emitidos en un mes, para el correlativo de la referencia. */
+  async countPayoutsInMonth(yearMonth: string) {
+    return this.prisma.commissionPayout.count({
+      where: { reference: { startsWith: `PAY-${yearMonth}-` } },
+    });
+  }
+
+  async markReceiptSent(payoutId: string) {
+    return this.prisma.commissionPayout.update({
+      where: { id: payoutId },
+      data: { receiptSentAt: new Date() },
     });
   }
 
@@ -380,6 +630,8 @@ export class SalesRepository {
         commission_amount: number | null;
         pending_amount: number | null;
         paid_amount: number | null;
+        gross_commission_amount: number | null;
+        discount_funded_amount: number | null;
       }>
     >`
       SELECT sc.accrual_month                                        AS month,
@@ -390,6 +642,8 @@ export class SalesRepository {
              COUNT(*) FILTER (WHERE sc.kind = 'recurring')           AS recurring_count,
              SUM(sc.base_amount)                                     AS base_amount,
              SUM(sc.commission_amount)                               AS commission_amount,
+             SUM(sc.gross_commission_amount)                         AS gross_commission_amount,
+             SUM(sc.discount_funded_amount)                          AS discount_funded_amount,
              SUM(sc.commission_amount) FILTER (WHERE p.code = 'pending') AS pending_amount,
              SUM(sc.commission_amount) FILTER (WHERE p.code = 'paid')    AS paid_amount
         FROM sales_commissions sc
@@ -415,6 +669,8 @@ export class SalesRepository {
       commissionAmount: Number(r.commission_amount ?? 0),
       pendingAmount: Number(r.pending_amount ?? 0),
       paidAmount: Number(r.paid_amount ?? 0),
+      grossCommissionAmount: Number(r.gross_commission_amount ?? 0),
+      discountFundedAmount: Number(r.discount_funded_amount ?? 0),
     }));
   }
 }
