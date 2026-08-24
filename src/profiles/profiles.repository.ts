@@ -50,19 +50,6 @@ export class ProfilesRepository {
                 nit: true,
                 name: true,
                 isOnboardingReady: true,
-                // Contrato macro: gate de uso de la app (ContractSignedGuard).
-                // Uno por empresa; ausente = nunca se envió.
-                contractSignature: {
-                  select: {
-                    signUrl: true,
-                    sentAt: true,
-                    signedAt: true,
-                    refusedAt: true,
-                    refusedReason: true,
-                    signedFileStoragePath: true,
-                    status: { select: { code: true, label: true } },
-                  },
-                },
               },
             },
           },

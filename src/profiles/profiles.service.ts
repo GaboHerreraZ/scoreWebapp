@@ -96,52 +96,19 @@ export class ProfilesService {
     // de nuevo (evita doble compra):
     //   'no_pack'          → nunca compró → pantalla de elegir plan.
     //   'payment_pending'  → pagó/inició compra, esperando webhook → "pago en proceso".
-    //   'pending_contract' → bolsa activa pero contrato macro sin firmar →
-    //                        redirigir al signUrl de Zapsign (ContractSignedGuard
-    //                        bloquea las rutas operativas hasta la firma).
-    //   'ready'            → bolsa activa + contrato firmado → dashboard.
-    let onboardingStatus:
-      | 'no_pack'
-      | 'payment_pending'
-      | 'pending_contract'
-      | 'ready' = 'no_pack';
-
-    // Contrato macro de la empresa. La fuente de verdad de "firmado" es signedAt
-    // (mismo criterio que ContractSignedGuard), no el código de estado.
-    const signature = userCompany?.company.contractSignature ?? null;
-    const contract = {
-      isSigned: !!signature?.signedAt,
-      // 'not_sent' = aún no se ha generado el documento (p. ej. sin pago
-      // confirmado todavía); el resto son los códigos de company_contract_status.
-      status: signature ? (signature.status?.code ?? null) : 'not_sent',
-      statusLabel: signature?.status?.label ?? null,
-      // URL de firma en Zapsign a la que el front debe redirigir cuando
-      // isSigned=false y hay documento pendiente.
-      signUrl: signature?.signUrl ?? null,
-      sentAt: signature?.sentAt ?? null,
-      signedAt: signature?.signedAt ?? null,
-      refusedAt: signature?.refusedAt ?? null,
-      refusedReason: signature?.refusedReason ?? null,
-      // Hay PDF firmado disponible para ver/descargar. El perfil NO trae la URL:
-      // el bucket es privado y la URL firmada caduca (~1h), así que quedaría
-      // muerta en una sesión larga. El front pide una fresca al abrirlo, en
-      // GET /companies/:companyId/contract/download.
-      hasSignedDocument: !!signature?.signedAt,
-    };
+    //   'ready'            → bolsa activa → dashboard.
+    let onboardingStatus: 'no_pack' | 'payment_pending' | 'ready' = 'no_pack';
 
     if (userCompany) {
       const availableCredits = await this.getAvailableCredits(
         userCompany.companyId,
       );
-      // Sin contrato firmado el guard rechaza las rutas operativas: los permisos
-      // deben reflejarlo para que el front no ofrezca acciones que darían 403.
       const hasCredits = availableCredits > 0;
-      const canOperate = hasCredits && contract.isSigned;
 
       permissions = {
-        canAddCreditStudy: canOperate,
-        canMakeAiAnalysis: canOperate,
-        canExtractPdf: canOperate,
+        canAddCreditStudy: hasCredits,
+        canMakeAiAnalysis: hasCredits,
+        canExtractPdf: hasCredits,
         canAddUser: true,
         hasCredits,
         availableCredits,
@@ -152,9 +119,7 @@ export class ProfilesService {
           userCompany.companyId,
         );
       onboardingStatus = hasActive
-        ? contract.isSigned
-          ? 'ready'
-          : 'pending_contract'
+        ? 'ready'
         : hasPending
           ? 'payment_pending'
           : 'no_pack';
@@ -175,7 +140,6 @@ export class ProfilesService {
       companyNit: company.company.nit,
       isOnboardingReady: company.company.isOnboardingReady,
       onboardingStatus,
-      contract,
       permissions,
     };
   }
