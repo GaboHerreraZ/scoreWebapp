@@ -2,14 +2,14 @@ import {
   IsEmail,
   IsString,
   IsInt,
-  IsOptional,
   MinLength,
   MaxLength,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+import { PlatformAdminProfileDto } from './platform-admin-profile.dto.js';
 
 /** Datos para crear un usuario del portal (Supabase Auth + PlatformAdmin). */
-export class CreatePlatformAdminDto {
+export class CreatePlatformAdminDto extends PlatformAdminProfileDto {
   @ApiProperty({
     description: 'Correo del usuario',
     example: 'maria@creditia.co',
@@ -33,11 +33,11 @@ export class CreatePlatformAdminDto {
   @MaxLength(150)
   name!: string;
 
-  @ApiPropertyOptional({ description: 'Teléfono', example: '+573001234567' })
-  @IsOptional()
+  @ApiProperty({ description: 'Teléfono', example: '+573001234567' })
   @IsString()
+  @MinLength(1)
   @MaxLength(50)
-  phone?: string;
+  phone!: string;
 
   @ApiProperty({
     description:
