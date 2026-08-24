@@ -31,6 +31,8 @@
     "prisma:migrate:pro": "dotenv -e .env -- npx prisma migrate deploy",
     "prisma:studio:pro": "dotenv -e .env -- npx prisma studio",
     "migrate:check": "node scripts/migrate-check.mjs",
+    "backup:contracts": "node scripts/export-contract-signatures.mjs .env.staging",
+    "backup:contracts:pro": "node scripts/export-contract-signatures.mjs .env",
     "data:apply": "dotenv -e .env.staging -- node scripts/apply-data-migrations.js",
     "data:apply:pro": "dotenv -e .env -- node scripts/apply-data-migrations.js"
   },
