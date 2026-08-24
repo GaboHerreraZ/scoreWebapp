@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /** Márgenes de página. Acepta unidades: in, cm, mm, pt, px (o número = pulgadas). */
@@ -146,7 +151,8 @@ export class PdfService implements OnModuleInit {
     // fondos de color, así que aquí el default es true (como estaba con Puppeteer).
     form.append('printBackground', String(options.printBackground ?? true));
     form.append('landscape', String(options.landscape ?? false));
-    if (options.scale !== undefined) form.append('scale', String(options.scale));
+    if (options.scale !== undefined)
+      form.append('scale', String(options.scale));
     if (options.waitDelay) form.append('waitDelay', options.waitDelay);
 
     const timeoutMs = options.timeoutMs ?? 60_000;
@@ -192,13 +198,18 @@ export class PdfService implements OnModuleInit {
   }
 
   /** Normaliza un margen a pulgadas, que es lo que espera Gotenberg. */
-  private toInches(value: string | number | undefined, fallback: number): string {
+  private toInches(
+    value: string | number | undefined,
+    fallback: number,
+  ): string {
     if (value === undefined) return String(fallback);
     if (typeof value === 'number') return String(value);
 
     const match = /^\s*([\d.]+)\s*(in|cm|mm|pt|px)?\s*$/i.exec(value);
     if (!match) {
-      this.logger.warn(`Margen no reconocido: "${value}". Se usa ${fallback}in.`);
+      this.logger.warn(
+        `Margen no reconocido: "${value}". Se usa ${fallback}in.`,
+      );
       return String(fallback);
     }
     const amount = Number(match[1]);

@@ -63,9 +63,7 @@ const TECHNIQUE_INFO: Record<
 
 @Injectable()
 export class PricingCalculatorService {
-  constructor(
-    private readonly consultationPrices: ConsultationPricesService,
-  ) {}
+  constructor(private readonly consultationPrices: ConsultationPricesService) {}
 
   /**
    * Genera el menú de bolsas de consultas. El precio base (P₀) es SIEMPRE el
@@ -98,7 +96,10 @@ export class PricingCalculatorService {
     const qStart = dto.discountStartQuantity ?? packSizes[0];
     const strength = dto.curveStrength ?? 1;
 
-    if (dto.discountStartQuantity != null && dto.discountStartQuantity >= qMax) {
+    if (
+      dto.discountStartQuantity != null &&
+      dto.discountStartQuantity >= qMax
+    ) {
       throw new BadRequestException(
         `discountStartQuantity (${dto.discountStartQuantity}) debe ser menor a la bolsa más grande (${qMax}); de lo contrario ninguna bolsa tendría descuento`,
       );
@@ -169,7 +170,9 @@ export class PricingCalculatorService {
         marginalPrice: marginalPrice != null ? round(marginalPrice) : null,
         marginPerUnit: marginPerUnit != null ? round(marginPerUnit) : null,
         marginPercent:
-          marginPerUnit != null ? pct((marginPerUnit / unitEffective) * 100) : null,
+          marginPerUnit != null
+            ? pct((marginPerUnit / unitEffective) * 100)
+            : null,
         breakEvenUnits:
           dto.fixedCosts != null && marginPerUnit != null && marginPerUnit > 0
             ? Math.ceil(dto.fixedCosts / marginPerUnit)

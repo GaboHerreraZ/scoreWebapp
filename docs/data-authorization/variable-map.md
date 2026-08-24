@@ -5,7 +5,7 @@ consultan en centrales de riesgo) autorizando a la EMPRESA cliente y a CREDITIA
 el tratamiento de datos y la consulta/reporte en centrales de riesgo.
 
 > Por ahora es SOLO el documento. Estas variables quedan documentadas por si más
-> adelante se genera vía Zapsign (como el contrato macro).
+> adelante se genera vía Zapsign (como la autorización del titular).
 
 ## EL TITULAR (quien firma — persona consultada)
 

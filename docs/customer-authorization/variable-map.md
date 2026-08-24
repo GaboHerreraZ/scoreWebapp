@@ -10,7 +10,7 @@ tratamiento de datos (Ley 1581), Habeas Data (Ley 1266) y custodia.
 > finalidad no necesaria (criterio SIC). Se implementa después.
 
 Se sube a Zapsign como plantilla DOCX; el backend rellena las variables al crear
-el documento (`createDocFromTemplate`), igual que el contrato macro.
+el documento (`createDocFromTemplate`), igual que el pagaré.
 
 ## Plantillas separadas por tipo de persona
 

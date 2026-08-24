@@ -32,7 +32,8 @@ import { Prisma } from '../../../generated/prisma/client.js';
  * viables ('approved' | 'conditional', nunca 'rejected'), con consecutivo único
  * por empresa y monto/plazo editables respecto a la solicitud (monto ≤ cupo
  * solicitado). El documento incluye el pagaré y la autorización para llenar
- * espacios en blanco (art. 622 C.Co.) — una sola firma cubre ambas secciones.
+ * espacios en blanco (art. 622 C.Co.): un solo acto de firma que se estampa en
+ * ambas secciones vía el ancla `<<...>>` de la plantilla.
  *
  * Ciclo del estudio: studyCompleted → pendingSignature (al emitir) → closed (al
  * firmarse) o de vuelta a studyCompleted (si se declina/rechaza).
@@ -43,6 +44,12 @@ export class PromissoryNotesService {
   private readonly templateId: string;
   private readonly storageBucket: string;
   private readonly logoUrl: string;
+  /**
+   * Ancla `<<...>>` de la plantilla donde Zapsign estampa la firma. Va dos veces
+   * en el documento (pagaré y autorización), así que la firma sale en ambas
+   * páginas. Vacía = Zapsign la coloca solo al final.
+   */
+  private readonly signatureAnchor: string;
   /** Plantilla HTML del pagaré (fuente única: modelo Zapsign + preview). */
   private readonly templatePath = join(
     dirname(fileURLToPath(import.meta.url)),
@@ -72,6 +79,10 @@ export class PromissoryNotesService {
     this.logoUrl =
       this.configService.get<string>('LOGO_URL') ??
       'https://creditia.co/logo.png';
+    this.signatureAnchor =
+      this.configService.get<string>(
+        'ZAPSIGN_PROMISSORY_NOTE_SIGNATURE_ANCHOR',
+      ) ?? '';
   }
 
   private async noteStatusId(code: string): Promise<number> {
@@ -490,6 +501,7 @@ export class PromissoryNotesService {
         templateId: this.templateId,
         signerName,
         signerEmail,
+        signaturePlacementAnchor: this.signatureAnchor || undefined,
         data: this.buildTemplateData(
           { customer, company, signerEmail, firmante, issuedAt },
           created.noteNumber,

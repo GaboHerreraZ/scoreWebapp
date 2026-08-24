@@ -15,6 +15,7 @@ import {
   type NormalizedPeriod,
 } from '../financial-statements/utils/extracted-periods.js';
 import { resolvePeriodMonths } from '../common/enums/income-statement-period.enum.js';
+import { toDateOnly } from '../common/utils/date-only.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -216,11 +217,6 @@ export class PdfExtractionTestService {
 
   /** La fecha de balance se serializa como YYYY-MM-DD (sin hora). */
   private presentPeriod({ balanceSheetDate, ...period }: NormalizedPeriod) {
-    return {
-      ...period,
-      balanceSheetDate: balanceSheetDate
-        ? balanceSheetDate.toISOString().slice(0, 10)
-        : null,
-    };
+    return { ...period, balanceSheetDate: toDateOnly(balanceSheetDate) };
   }
 }

@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn, ExcelSheet } from '../common/excel/excel.types.js';
 import { PdfService } from '../common/pdf/pdf.service.js';
+import { toDateOnly } from '../common/utils/date-only.js';
 import { buildReportViewModel } from './pdf/credit-study-report.mapper.js';
 import type { StepsData } from './pdf/credit-study-report.mapper.js';
 import { renderReportHtml } from './pdf/credit-study-report.renderer.js';
@@ -476,7 +477,13 @@ export class CreditStudiesService {
       return {
         source: indicators.source,
         analysisId: indicators.id,
-        periods,
+        // La fecha de corte sale como 'YYYY-MM-DD', no como instante UTC: si va
+        // con hora, el DatePipe del front la pasa al huso local y el corte al 31
+        // de diciembre se ve como 30 de diciembre.
+        periods: periods.map((p) => ({
+          ...p,
+          balanceSheetDate: toDateOnly(p.balanceSheetDate),
+        })),
         ratios: ratios ?? null,
         indicators: {
           stabilityFactor: indicators.stabilityFactor,

@@ -28,6 +28,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { toJson } from '../common/utils/prisma-json.util.js';
 import { LOCKED_STUDY_STATUSES } from '../credit-studies/credit-study-status.constants.js';
 import { resolvePeriodMonths } from '../common/enums/income-statement-period.enum.js';
+import { toDateOnly } from '../common/utils/date-only.js';
 
 /** Los EEFF que reporta la central son cierres anuales (12 meses). */
 const DATACREDITO_STATEMENT_MONTHS = 12;
@@ -288,7 +289,18 @@ export class FinancialStatementsService {
         `Estudio de crédito con id=${creditStudyId} no encontrado en esta empresa`,
       );
     }
-    return this.repository.findAnalysesByCreditStudy(creditStudyId);
+    const analyses =
+      await this.repository.findAnalysesByCreditStudy(creditStudyId);
+
+    // Misma razón que en el step2: la fecha de corte viaja como 'YYYY-MM-DD'
+    // para que el huso del cliente no la retroceda un día.
+    return analyses.map((a) => ({
+      ...a,
+      periods: a.periods.map((p) => ({
+        ...p,
+        balanceSheetDate: toDateOnly(p.balanceSheetDate),
+      })),
+    }));
   }
 
   // ── Helpers ──────────────────────────────────────────────
