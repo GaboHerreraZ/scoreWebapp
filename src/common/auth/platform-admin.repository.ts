@@ -10,15 +10,31 @@ export class PlatformAdminRepository {
     private readonly configService: ConfigService,
   ) {}
 
+  // La ciudad se devuelve resuelta con su departamento: el front pinta ambos y
+  // el departamento no existe como columna (sale de dane_cities.region).
+  private readonly citySelect = {
+    select: {
+      code: true,
+      name: true,
+      region: { select: { code: true, name: true } },
+    },
+  } as const;
+
   private readonly defaultSelect = {
     id: true,
     userId: true,
     name: true,
+    lastName: true,
     email: true,
     phone: true,
+    identificationNumber: true,
+    address: true,
+    cityCode: true,
     avatarUrl: true,
     isActive: true,
     role: { select: { id: true, code: true, label: true } },
+    identificationType: { select: { id: true, code: true, label: true } },
+    daneCity: this.citySelect,
   } as const;
 
   /** Crea un PlatformAdmin (tras crear el usuario en Supabase). */
@@ -72,17 +88,25 @@ export class PlatformAdminRepository {
     return !!admin && admin.isActive;
   }
 
-  /** PlatformAdmin por su userId de Supabase, con el rol resuelto. */
+  /**
+   * PlatformAdmin por su userId de Supabase, con el rol resuelto. Incluye el
+   * avatar: el portal pinta la foto del usuario logueado en su perfil.
+   */
   async findByUserIdWithRole(userId: string) {
     return this.prisma.platformAdmin.findUnique({
       where: { userId },
       select: {
         id: true,
         name: true,
+        lastName: true,
         email: true,
         phone: true,
+        avatarUrl: true,
         isActive: true,
         role: { select: { code: true, label: true } },
+        // Ficha de vendedor si la tiene: el portal la usa para mostrarle sus
+        // códigos y sus comisiones. Un admin también puede vender.
+        salesRep: { select: { id: true, code: true, isActive: true } },
       },
     });
   }
@@ -128,11 +152,17 @@ export class PlatformAdminRepository {
       select: {
         id: true,
         name: true,
+        lastName: true,
         email: true,
         phone: true,
+        identificationNumber: true,
+        address: true,
+        cityCode: true,
         avatarUrl: true,
         isActive: true,
-        role: { select: { code: true, label: true } },
+        role: { select: { id: true, code: true, label: true } },
+        identificationType: { select: { id: true, code: true, label: true } },
+        daneCity: this.citySelect,
       },
     });
   }
