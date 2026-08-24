@@ -31,9 +31,10 @@ model DaneCity {
 
   region DaneRegion @relation(fields: [regionCode], references: [code])
 
-  companies        Company[]  @relation("CompanyCity")
-  billingCompanies Company[]  @relation("CompanyBillingCity")
-  customers        Customer[] @relation("CustomerCity")
+  companies        Company[]       @relation("CompanyCity")
+  billingCompanies Company[]       @relation("CompanyBillingCity")
+  customers        Customer[]      @relation("CustomerCity")
+  platformAdmins   PlatformAdmin[] @relation("PlatformAdminCity")
 
   @@index([regionCode, name]) // desplegable de ciudades por departamento
   @@map("dane_cities")
@@ -81,9 +82,11 @@ model Parameter {
   paymentAlertsBySeverity               PaymentAlert[]        @relation("PaymentAlertSeverity")
   paymentAlertsByStatus                 PaymentAlert[]        @relation("PaymentAlertStatus")
   promoCodesByScope                     PromoCode[]           @relation("PromoCodeScope")
+  promoCodesByAppliesTo                 PromoCode[]           @relation("PromoCodeAppliesTo")
   contactRequestsBySubject              ContactRequest[]      @relation("ContactRequestSubject")
   contactRequestsByStatus               ContactRequest[]      @relation("ContactRequestStatus")
   platformAdminsByRole                  PlatformAdmin[]       @relation("PlatformAdminRole")
+  platformAdminsByIdentificationType    PlatformAdmin[]       @relation("PlatformAdminIdentificationType")
   supportTicketsByArea                  SupportTicket[]       @relation("SupportTicketArea")
   supportTicketsByType                  SupportTicket[]       @relation("SupportTicketType")
   supportTicketsByPriority              SupportTicket[]       @relation("SupportTicketPriority")
@@ -91,7 +94,6 @@ model Parameter {
   blogPostsByCategory                   BlogPost[]            @relation("BlogPostCategory")
   blogPostsByStatus                     BlogPost[]            @relation("BlogPostStatus")
   electronicInvoicesByStatus            ElectronicInvoice[]   @relation("ElectronicInvoiceStatus")
-  contractSignaturesByStatus            ContractSignature[]   @relation("ContractSignatureStatus")
   scoringConfigurationsByPersonType     ScoringConfiguration[] @relation("ScoringConfigurationPersonType")
   customerAuthorizationsByStatus        CustomerAuthorization[] @relation("CustomerAuthorizationStatus")
   customerAuthorizationsByType          CustomerAuthorization[] @relation("CustomerAuthorizationType")
@@ -190,8 +192,8 @@ model Company {
   accountNumber    String?  @map("account_number") @db.VarChar(50)
   logoUrl          String?  @map("logo_url") @db.VarChar(500)
   // ── Representante legal (quien obliga a la empresa) ──
-  // Es el FIRMANTE del contrato macro, NO el usuario que se registró: se piden
-  // en el onboarding. Nullable por las empresas creadas antes de esta columna.
+  // NO es el usuario que se registró: se piden en el onboarding y son los datos
+  // que van en los documentos. Nullable por las empresas previas a la columna.
   legalRepName                 String? @map("legal_rep_name") @db.VarChar(255)
   legalRepIdentificationTypeId Int?    @map("legal_rep_identification_type_id")
   legalRepIdentificationNumber String? @map("legal_rep_identification_number") @db.VarChar(50)
@@ -226,7 +228,6 @@ model Company {
   invitations          Invitation[]
   customers            Customer[]
   creditStudies        CreditStudy[]
-  contractSignature    ContractSignature?
   aiAnalyses           AiAnalysis[]
   promissoryNotes      PromissoryNote[]
   notifications        Notification[]
@@ -243,6 +244,8 @@ model Company {
   scoringConfigurations ScoringConfiguration[]
   customerAuthorizations CustomerAuthorization[]
   electronicInvoices     ElectronicInvoice[]
+  // Uno por facturador (el @@unique es [provider, companyId]), no uno en total.
+  einvoiceContactRefs    EInvoiceContactRef[]
   referral               CompanyReferral? // vendedor que la recomendó (si aplica)
   salesCommissions       SalesCommission[]
 
@@ -330,7 +333,17 @@ model PlatformAdmin {
   userId    String   @unique @map("user_id") @db.Uuid // Supabase auth.users
   email     String   @db.VarChar(255)
   name      String?  @db.VarChar(150)
+  lastName  String?  @map("last_name") @db.VarChar(150)
   phone     String?  @db.VarChar(50)
+  // Identificación y domicilio. Hacen falta para el equipo interno (contratos,
+  // pagos de comisiones a vendedores). Nullable: las cuentas creadas antes de
+  // estas columnas no los tienen y no se obliga a completarlos retroactivamente.
+  identificationTypeId Int?    @map("identification_type_id") // Parameter 'identification_type'
+  identificationNumber String? @map("identification_number") @db.VarChar(50)
+  address              String? @db.VarChar(255)
+  // Municipio DANE. El departamento NO se guarda: se deriva de la ciudad
+  // (daneCity.region), igual que en Company y Customer.
+  cityCode             String? @map("city_code") @db.VarChar(5)
   // Rol del equipo interno Creditia (admin/support/sales). Parameter
   // 'platform_admin_role'. DISTINTO de los roles de empresa (UserCompany.role).
   roleId    Int?     @map("role_id")
@@ -339,6 +352,8 @@ model PlatformAdmin {
   createdAt DateTime @default(now()) @map("created_at")
 
   role                      Parameter?          @relation("PlatformAdminRole", fields: [roleId], references: [id])
+  identificationType        Parameter?          @relation("PlatformAdminIdentificationType", fields: [identificationTypeId], references: [id])
+  daneCity                  DaneCity?           @relation("PlatformAdminCity", fields: [cityCode], references: [code])
   createdConsultationPrices ConsultationPrice[] @relation("ConsultationPriceCreatedBy")
   updatedConsultationPrices ConsultationPrice[] @relation("ConsultationPriceUpdatedBy")
   createdPackOfferings      PackOffering[]      @relation("PackOfferingCreatedBy")
@@ -348,12 +363,16 @@ model PlatformAdmin {
   assignedSupportTickets    SupportTicket[]     @relation("SupportTicketAssignedTo")
   blogPosts                 BlogPost[]          @relation("BlogPostAuthor")
   einvoicedPacks            AnalysisPack[]      @relation("AnalysisPackEinvoiceMarkedBy")
+  linkedEinvoiceContacts    EInvoiceContactRef[] @relation("EInvoiceContactLinkedBy")
+  voidedElectronicInvoices  ElectronicInvoice[] @relation("ElectronicInvoiceVoidedBy")
   // Programa de referidos: su ficha de vendedor (solo rol 'sales') y su rastro
   // de gestión (planes creados, empresas vinculadas, comisiones liquidadas).
   salesRep                  SalesRep?           @relation("SalesRepPlatformAdmin")
   createdCommissionPlans    CommissionPlan[]    @relation("CommissionPlanCreatedBy")
   assignedReferrals         CompanyReferral[]   @relation("CompanyReferralAssignedBy")
   paidSalesCommissions      SalesCommission[]   @relation("SalesCommissionPaidBy")
+  paidCommissionPayouts     CommissionPayout[]  @relation("CommissionPayoutPaidBy")
+  revertedCommissionPayouts CommissionPayout[]  @relation("CommissionPayoutRevertedBy")
 
   @@map("platform_admins")
 }
@@ -377,6 +396,9 @@ model PackOffering {
   discountTypeId Int?     @map("discount_type_id") // Parameter 'discount_type': percentage | fixed
   discountValue  Float?   @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
   sortOrder      Int      @default(0) @map("sort_order")
+  // Con qué ítem del catálogo facturable se emite. Sin esto no se puede facturar
+  // la oferta: el facturador exige un código de producto que exista en su cuenta.
+  einvoiceItemId String?  @map("einvoice_item_id") @db.Uuid
   // Único flag de visibilidad: si está en el catálogo ofrecible. Retirar una
   // oferta (isActive=false) la saca del catálogo sin borrarla ni romper las
   // AnalysisPack ya compradas que la referencian.
@@ -387,6 +409,7 @@ model PackOffering {
 
   createdByAdmin PlatformAdmin? @relation("PackOfferingCreatedBy", fields: [createdBy], references: [id])
   discountType   Parameter?     @relation("PackOfferingDiscountType", fields: [discountTypeId], references: [id])
+  einvoiceItem   EInvoiceItem?  @relation(fields: [einvoiceItemId], references: [id])
   analysisPacks  AnalysisPack[]
 
   @@map("pack_offerings")
@@ -454,6 +477,13 @@ model AnalysisPack {
   taxRatePaid Decimal? @map("tax_rate_paid") @db.Decimal(5, 2)
   taxBase     Float?   @map("tax_base")
   taxAmount   Float?   @map("tax_amount")
+  // Si el precio del catálogo traía el IVA adentro. Se congela porque sin él no
+  // se puede reconstruir el desglose de una bolsa vieja si la config cambia.
+  taxIncludedPaid Boolean? @map("tax_included_paid")
+  // Base gravable ANTES del código promocional. Es la base de la comisión del
+  // vendedor: sobre lo cobrado, un descuento le costaría solo una fracción de lo
+  // que regaló y el resto lo pondría Creditia.
+  listTaxBase     Float?   @map("list_tax_base")
 
   // Facturación electrónica: se emite fuera del sistema y se marca aquí desde el
   // panel admin (mismo esquema que tenía payment_history antes de las bolsas).
@@ -1152,70 +1182,10 @@ model PromissoryNote {
   @@map("promissory_notes")
 }
 
-// ─── Contrato Macro (firma electrónica vía Zapsign) ─────────
-// Contrato marco Creditia ↔ empresa cliente que se firma UNA vez en la vida de
-// la empresa (companyId único). Se dispara cuando el primer pago se confirma:
-// Creditia firma por API automáticamente (si ZAPSIGN_CREDITIA_USER_TOKEN está
-// configurado; si no, su firma va pre-impresa en la plantilla y el único firmante
-// electrónico es el cliente) y el cliente recibe el sign_url. La
-// cuenta NO queda activa hasta que el cliente firma (status='signed'), momento
-// en que el webhook de Zapsign descarga el PDF firmado a Supabase Storage
-// (respaldo) y deja la referencia del documento en Zapsign para servirlo luego.
-// status es Parameter 'company_contract_status': pending_contract | signed |
-// refused | expired.
-
-model ContractSignature {
-  id         String @id @default(uuid()) @db.Uuid
-  companyId  String @unique @map("company_id") @db.Uuid // uno por empresa
-  templateId String @map("template_id") @db.VarChar(100) // modelo de Zapsign usado
-  statusId   Int    @map("status_id")
-
-  // ── Datos del proveedor de firma (agnósticos; provider = quién emitió) ──
-  provider           String  @default("zapsign") @db.VarChar(50)
-  providerDocToken   String  @unique @map("provider_doc_token") @db.VarChar(100)
-  clientSignerToken  String? @map("client_signer_token") @db.VarChar(100)
-  // Firmante Creditia: solo cuando la firma va por API (ZAPSIGN_CREDITIA_USER_TOKEN
-  // configurado). Si el token está pero creditiaSignedAt es null, la firma quedó
-  // pendiente y el webhook doc_signed la reintenta antes de dar el doc por completo.
-  creditiaSignerToken String?   @map("creditia_signer_token") @db.VarChar(100)
-  creditiaSignedAt    DateTime? @map("creditia_signed_at")
-  signUrl            String? @map("sign_url") @db.VarChar(500)
-  signedDocumentUrl  String? @map("signed_document_url") @db.VarChar(500) // último signed_file de Zapsign
-  signedFileStoragePath String? @map("signed_file_storage_path") @db.VarChar(500) // respaldo en Supabase Storage
-
-  // ── Snapshot del firmante cliente (trazabilidad) ────
-  signerName  String @map("signer_name") @db.VarChar(255)
-  signerEmail String @map("signer_email") @db.VarChar(255)
-
-  // ── Auditoría de firma ─────────────────────────────
-  sentAt        DateTime? @map("sent_at")
-  signedAt      DateTime? @map("signed_at")
-  refusedAt     DateTime? @map("refused_at")
-  refusedReason String?   @map("refused_reason") @db.VarChar(1000) // motivo del cliente al rechazar
-
-  // ── Visualización del cliente (seguimiento comercial) ──
-  // Se alimenta del webhook doc_viewed, filtrando por el firmante cliente
-  // (Creditia firma por API, no "ve"). Útil para detectar "lo abrió pero no firma".
-  firstViewedAt DateTime? @map("first_viewed_at")
-  lastViewedAt  DateTime? @map("last_viewed_at")
-  viewCount     Int       @default(0) @map("view_count")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  company Company   @relation(fields: [companyId], references: [id])
-  status  Parameter @relation("ContractSignatureStatus", fields: [statusId], references: [id])
-
-  @@index([statusId])
-  @@map("contract_signatures")
-}
-
 // ─── Autorización del titular consultado ────────────────────
 //
 // Consentimiento que firma el TITULAR CONSULTADO (persona/empresa a evaluar)
-// para que una EMPRESA lo consulte en centrales de riesgo. Es la contraparte de
-// ContractSignature pero al otro lado: allá firma el cliente de Creditia para
-// usar la app; aquí firma el tercero evaluado para que puedan consultarlo.
+// para que una EMPRESA lo consulte en centrales de riesgo.
 //
 // Se llavea por la IDENTIDAD (companyId + identificationNumber), la MISMA llave
 // natural que Customer, NO por customerId: el Customer nace de la consulta al
@@ -1223,8 +1193,7 @@ model ContractSignature {
 // aguas arriba (existe antes del Customer) y guarda el snapshot de identidad que
 // necesita la plantilla; customerId se rellena (backfill) tras la 1ª consulta.
 //
-// El gate del bureau se DERIVA de signedAt (no revocado), igual que
-// ContractSignature.signedAt gobierna ContractSignedGuard.
+// El gate del bureau se DERIVA de signedAt (no revocado).
 model CustomerAuthorization {
   id        String @id @default(uuid()) @db.Uuid
   companyId String @map("company_id") @db.Uuid
@@ -1247,7 +1216,7 @@ model CustomerAuthorization {
   // ── Estado ──
   statusId Int @map("status_id") // Parameter 'customer_authorization_status'
 
-  // ── Datos del proveedor de firma (mismo patrón que ContractSignature) ──
+  // ── Datos del proveedor de firma (agnósticos; provider = quién emitió) ──
   templateId            String  @map("template_id") @db.VarChar(100)
   provider              String  @default("zapsign") @db.VarChar(50)
   providerDocToken      String  @unique @map("provider_doc_token") @db.VarChar(100)
@@ -1397,7 +1366,13 @@ model PromoCode {
   id               String    @id @default(uuid()) @db.Uuid
   code             String    @unique @db.VarChar(50) // normalizado a UPPERCASE
   scopeId          Int       @map("scope_id") // Parameter 'promo_code_scope'
+  appliesToId      Int       @map("applies_to_id") // Parameter 'promo_code_applies_to'
   companyId        String?   @map("company_id") @db.Uuid // solo scope=company
+  // Vendedor que FINANCIA el descuento: el monto se resta de su comisión. NULL =
+  // lo pone Creditia (campañas de marketing) y no afecta a ningún vendedor.
+  // Un código de vendedor solo lo puede canjear una empresa YA vinculada a ÉL:
+  // el código descuenta, nunca atribuye (eso es del código de vendedor).
+  salesRepId       String?   @map("sales_rep_id") @db.Uuid
   discountPercent  Decimal   @map("discount_percent") @db.Decimal(5, 2) // inmutable
   maxRedemptions   Int       @map("max_redemptions") // cupo total
   redemptionsCount Int       @default(0) @map("redemptions_count") // denorm del ledger
@@ -1410,13 +1385,16 @@ model PromoCode {
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   scope          Parameter             @relation("PromoCodeScope", fields: [scopeId], references: [id])
+  appliesTo      Parameter             @relation("PromoCodeAppliesTo", fields: [appliesToId], references: [id])
   company        Company?              @relation(fields: [companyId], references: [id])
+  salesRep       SalesRep?             @relation("PromoCodeSalesRep", fields: [salesRepId], references: [id])
   createdByAdmin PlatformAdmin?        @relation("PromoCodeCreatedBy", fields: [createdBy], references: [id])
   redemptions    PromoCodeRedemption[]
   analysisPacks  AnalysisPack[]
 
   // (sin @@index([code]): code ya es @unique y ese índice lo cubre)
   @@index([scopeId, isActive])
+  @@index([salesRepId]) // "mis códigos" en el panel del vendedor
   @@map("promo_codes")
 }
 
@@ -1467,6 +1445,12 @@ model CommissionPlan {
   // % sobre TODA recompra posterior, sin fecha de caducidad (el 10%).
   recurringPercent   Decimal @map("recurring_percent") @db.Decimal(5, 2)
 
+  // Techo del descuento que un vendedor puede otorgar en sus propios códigos.
+  // El descuento se resta de SU comisión, así que a este tope su ganancia de la
+  // primera venta queda en cero. Bajarlo obliga a que siempre conserve algo y
+  // defiende el precio de lista.
+  maxNewCustomerDiscount Decimal @default(30) @map("max_new_customer_discount") @db.Decimal(5, 2)
+
   isActive  Boolean  @default(true) @map("is_active") // solo uno vigente
   notes     String?  @db.VarChar(500)
   createdBy String?  @map("created_by") @db.Uuid
@@ -1482,7 +1466,8 @@ model CommissionPlan {
 }
 
 // Vendedor del programa. 1:1 con su cuenta del portal (PlatformAdmin con rol
-// 'sales'): entra al panel con su usuario y ve SUS ganancias mes a mes. El
+// 'sales' o 'admin' — alguien de Creditia también puede vender): entra al panel
+// con su usuario y ve SUS ganancias mes a mes. El
 // `code` es lo que se teclea al vincular una empresa. Sin borrado físico:
 // isActive=false lo retira sin tocar sus comisiones históricas.
 model SalesRep {
@@ -1498,6 +1483,8 @@ model SalesRep {
   platformAdmin PlatformAdmin     @relation("SalesRepPlatformAdmin", fields: [platformAdminId], references: [id])
   referrals     CompanyReferral[]
   commissions   SalesCommission[]
+  promoCodes    PromoCode[]       @relation("PromoCodeSalesRep")
+  payouts       CommissionPayout[]
 
   @@map("sales_reps")
 }
@@ -1535,9 +1522,15 @@ model CompanyReferral {
 // referida; analysisPackId es @unique → una venta jamás comisiona dos veces,
 // aunque el webhook de pago llegue repetido.
 //
-// El monto se calcula sobre taxBase (la base gravable congelada de la bolsa):
-// el IVA no es ingreso de Creditia y el descuento promo ya viene aplicado. Las
-// bolsas sin costo (código del 100%) NO generan fila: no hay nada que comisionar.
+// El monto se calcula sobre la base gravable de LISTA (antes de descuentos): el
+// IVA no es ingreso de Creditia. Si el descuento lo financió el propio vendedor
+// con uno de sus códigos, se le resta de la comisión:
+//
+//   neta = max(0, % × baseDeLista − descuentoQueÉlOtorgó)
+//
+// Con eso el neto de Creditia no se mueve por más descuento que dé el vendedor:
+// cambia comisión por cierre 1 a 1. Un código de Creditia (salesRepId NULL) no
+// le descuenta nada. Las bolsas sin costo (código del 100%) NO generan fila.
 model SalesCommission {
   id                String @id @default(uuid()) @db.Uuid
   analysisPackId    String @unique @map("analysis_pack_id") @db.Uuid
@@ -1552,9 +1545,15 @@ model SalesCommission {
 
   // Todo congelado al causar: si mañana cambia el plan, esta fila no se mueve.
   percentApplied   Decimal @map("percent_applied") @db.Decimal(5, 2)
-  baseAmount       Float   @map("base_amount") // taxBase de la bolsa
-  commissionAmount Float   @map("commission_amount")
+  baseAmount       Float   @map("base_amount") // taxBase COBRADA (concilia con la factura)
+  commissionAmount Float   @map("commission_amount") // NETA: lo que se le paga
   currencyCode     String  @default("COP") @map("currency_code") @db.VarChar(10)
+
+  // Desglose de la liquidación. Sin descuento del vendedor, bruta = neta y
+  // financiado = 0, que es como quedaron las filas anteriores a esta función.
+  listBaseAmount        Float @default(0) @map("list_base_amount") // base de lista (sin descuento)
+  grossCommissionAmount Float @default(0) @map("gross_commission_amount") // % × base de lista
+  discountFundedAmount  Float @default(0) @map("discount_funded_amount") // lo que puso de su bolsillo
 
   // Mes de causación 'YYYY-MM' precalculado en hora de Colombia. Se guarda
   // resuelto (y no se deriva en cada query) para que agrupar por mes no dependa
@@ -1569,6 +1568,10 @@ model SalesCommission {
   paidAt      DateTime? @map("paid_at")
   paidBy      String?   @map("paid_by") @db.Uuid
   payoutNotes String?   @map("payout_notes") @db.VarChar(500)
+  // Lote en el que se liquidó, si se pagó en bloque. NULL = se marcó suelta.
+  // Una comisión de un lote NO se revierte sola: se revierte el lote entero, o
+  // el total del comprobante dejaría de cuadrar con lo que suman sus líneas.
+  payoutId    String?   @map("payout_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1580,11 +1583,61 @@ model SalesCommission {
   commissionPlan  CommissionPlan  @relation(fields: [commissionPlanId], references: [id])
   status          Parameter       @relation("SalesCommissionStatus", fields: [statusId], references: [id])
   paidByAdmin     PlatformAdmin?  @relation("SalesCommissionPaidBy", fields: [paidBy], references: [id])
+  payout          CommissionPayout? @relation(fields: [payoutId], references: [id])
 
   @@index([salesRepId, accrualMonth]) // "mis ganancias del mes"
   @@index([accrualMonth]) // consolidado global mes a mes
   @@index([statusId, accrualMonth]) // cola de pendientes por liquidar
+  @@index([payoutId]) // líneas de un comprobante
   @@map("sales_commissions")
+}
+
+// ─── Lotes de liquidación ──────────────────────────────────────────────
+// Al vendedor se le paga UNA transferencia por todas sus comisiones del mes, no
+// una por venta. Cada lote es ese giro: agrupa N comisiones, guarda el total y
+// da una referencia estable para el comprobante que se le envía.
+//
+// Revertir es a nivel de lote (un giro se devuelve entero): sus comisiones
+// vuelven a 'pending' y el lote queda marcado como revertido, sin borrarse, para
+// que el histórico muestre que existió.
+
+model CommissionPayout {
+  id         String @id @default(uuid()) @db.Uuid
+  reference  String @unique @db.VarChar(30) // PAY-202608-0001, va en el comprobante
+  salesRepId String @map("sales_rep_id") @db.Uuid
+
+  // Snapshot al liquidar: qué se pagó y cuánto. No se recalcula desde las
+  // líneas, para que el comprobante emitido siga diciendo lo mismo siempre.
+  commissionCount Int    @map("commission_count")
+  totalAmount     Float  @map("total_amount")
+  currencyCode    String @default("COP") @map("currency_code") @db.VarChar(10)
+
+  // Rango que cubre el giro, para el comprobante ('YYYY-MM').
+  fromMonth String? @map("from_month") @db.VarChar(7)
+  toMonth   String? @map("to_month") @db.VarChar(7)
+
+  notes  String?  @db.VarChar(500) // nº de transferencia, banco, fecha del giro
+  paidAt DateTime @default(now()) @map("paid_at")
+  paidBy String?  @map("paid_by") @db.Uuid
+
+  // Reversión (giro devuelto o liquidación equivocada). No se borra la fila.
+  revertedAt   DateTime? @map("reverted_at")
+  revertedBy   String?   @map("reverted_by") @db.Uuid
+  revertReason String?   @map("revert_reason") @db.VarChar(500)
+
+  // Envío del comprobante al vendedor (best-effort, no bloquea la liquidación).
+  receiptSentAt DateTime? @map("receipt_sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  salesRep       SalesRep       @relation(fields: [salesRepId], references: [id])
+  paidByAdmin    PlatformAdmin? @relation("CommissionPayoutPaidBy", fields: [paidBy], references: [id])
+  revertedByAdmin PlatformAdmin? @relation("CommissionPayoutRevertedBy", fields: [revertedBy], references: [id])
+  commissions    SalesCommission[]
+
+  @@index([salesRepId, paidAt])
+  @@map("commission_payouts")
 }
 
 // ─── Contacto comercial (leads del formulario público) ─────────────────
@@ -1740,12 +1793,76 @@ model BlogPost {
 }
 
 // ─── Facturación electrónica ──────────────────────────────────────────────
-// Con la API de integradores el proveedor NO lleva la numeración: la resolución
-// de la DIAN y el consecutivo son nuestros. Por eso viven aquí.
 //
-// Una fila por resolución vigente. nextConsecutive se reserva de forma ATÓMICA
-// (UPDATE … RETURNING acotado por rangeFinal): dos emisiones simultáneas no
-// pueden tomar el mismo número, que ante la DIAN sería un documento duplicado.
+// El facturador lleva sus propios maestros (terceros, productos, impuestos) y la
+// factura solo los REFERENCIA. Las dos tablas de abajo son ese puente, y están
+// escritas sin nombrar al proveedor: `provider` + `provider*Id`. Cambiar de
+// facturador no toca el esquema, solo el adaptador.
+
+// Catálogo de ítems facturables. Es NUESTRA fuente de verdad de qué se factura;
+// el facturador solo guarda una copia enlazada por providerItemId. Las ofertas
+// del catálogo (PackOffering) apuntan aquí para saber con qué código facturarse.
+
+model EInvoiceItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  code                String   @unique @db.VarChar(50) // 'PACK-CONSULTAS'
+  name                String   @db.VarChar(150)
+  description         String?  @db.VarChar(500)
+  // Unidad de medida DIAN ('94' = unidad). No se vende por peso ni volumen.
+  unitMeasurementCode String   @default("94") @map("unit_measurement_code") @db.VarChar(10)
+  // Referencial: el precio que factura sale CONGELADO de la venta, no de aquí.
+  priceSell           Float?   @map("price_sell")
+  // Tarifa esperada del impuesto. Se contrasta con la congelada en la venta
+  // antes de emitir: si no casan, la factura saldría por otro valor.
+  taxRate             Decimal? @map("tax_rate") @db.Decimal(5, 2)
+  isActive            Boolean  @default(true) @map("is_active")
+
+  // Enlace al facturador.
+  provider         String    @default("aliaddo") @db.VarChar(50)
+  providerItemId   String?   @map("provider_item_id") @db.VarChar(100)
+  providerItemCode String?   @map("provider_item_code") @db.VarChar(50)
+  // Impuestos del ítem tal como los tiene el facturador: [{ref,name,rate,…}].
+  providerTaxIds   Json?     @map("provider_tax_ids") @db.JsonB
+  // Categoría y unidad de medida del facturador. Se guardan porque su edición
+  // REEMPLAZA el producto: no mandarlas lo dejaría sin ellas.
+  providerCategoryRef      String? @map("provider_category_ref") @db.VarChar(100)
+  providerMeasuringUnitRef String? @map("provider_measuring_unit_ref") @db.VarChar(100)
+  providerSyncedAt DateTime? @map("provider_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  packOfferings PackOffering[]
+
+  @@unique([provider, providerItemId])
+  @@map("einvoice_items")
+}
+
+// Vínculo empresa ↔ tercero del facturador. Evita rebuscar en cada compra y deja
+// constancia de QUIÉN lo vinculó. Guarda la identificación con la que se resolvió:
+// si la empresa cambia su documento, el vínculo deja de ser válido.
+
+model EInvoiceContactRef {
+  id                String   @id @default(uuid()) @db.Uuid
+  provider          String   @default("aliaddo") @db.VarChar(50)
+  companyId         String   @map("company_id") @db.Uuid
+  providerContactId String   @map("provider_contact_id") @db.VarChar(100)
+  identification    String   @db.VarChar(50)
+  displayName       String?  @map("display_name") @db.VarChar(255)
+  linkedBy          String?  @map("linked_by") @db.Uuid
+  linkedAt          DateTime @default(now()) @map("linked_at")
+
+  company Company        @relation(fields: [companyId], references: [id])
+  admin   PlatformAdmin? @relation("EInvoiceContactLinkedBy", fields: [linkedBy], references: [id])
+
+  @@unique([provider, companyId])
+  @@map("einvoice_contact_refs")
+}
+
+// LEGADO. Con la API contable la resolución y el consecutivo los lleva el
+// facturador: nada escribe ya esta tabla. Se conserva porque un documento fiscal
+// tiene que poder mostrar bajo qué autorización se expidió, y porque volver a una
+// API donde la numeración sea nuestra la necesitaría intacta.
 
 model EInvoiceResolution {
   id            String @id @default(uuid()) @db.Uuid
@@ -1786,12 +1903,19 @@ model ElectronicInvoice {
   provider     String @default("aliaddo") @db.VarChar(50)
   environment  String @db.VarChar(20)
   statusId     Int    @map("status_id") // Parameter 'einvoice_status'
+  // LEGADO: numeración propia. Con la API contable la pone el facturador y estas
+  // tres quedan en null; `number` guarda el consecutivo completo que devuelve.
   resolutionId String? @map("resolution_id") @db.Uuid
   prefix      String?  @db.VarChar(10)
   consecutive Int?
   number      String?  @db.VarChar(50) // 'SETP994121930'
   issueDate   DateTime @map("issue_date") @db.Date
   dueDate     DateTime @map("due_date") @db.Date
+
+  // Maestros del facturador con los que se emitió. Se guardan porque la factura
+  // se anula y se reconsulta contra ELLOS, no contra los datos de hoy.
+  providerContactId String? @map("provider_contact_id") @db.VarChar(100)
+  providerBranchId  String? @map("provider_branch_id") @db.VarChar(100)
 
   // Snapshot de lo facturado.
   customerSnapshot Json   @map("customer_snapshot") @db.JsonB
@@ -1808,6 +1932,9 @@ model ElectronicInvoice {
   pdfUrl             String? @map("pdf_url")
   xmlUrl             String? @map("xml_url")
   statusReasons      Json?   @map("status_reasons") @db.JsonB
+  // Estado CRUDO del facturador ('Vigente/Pagada/Invalida', 'Emision', 'Valida').
+  // Nuestro statusId es la lectura de dominio; esto es lo que él dice.
+  providerStatus     Json?   @map("provider_status") @db.JsonB
 
   // Operación.
   attempts    Int       @default(0)
@@ -1817,6 +1944,11 @@ model ElectronicInvoice {
   rawRequest  Json?     @map("raw_request") @db.JsonB
   rawResponse Json?     @map("raw_response") @db.JsonB
 
+  // Anulación.
+  voidedAt   DateTime? @map("voided_at")
+  voidedBy   String?   @map("voided_by") @db.Uuid
+  voidReason String?   @map("void_reason") @db.VarChar(500)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1824,6 +1956,7 @@ model ElectronicInvoice {
   analysisPack AnalysisPack?       @relation(fields: [analysisPackId], references: [id])
   status       Parameter           @relation("ElectronicInvoiceStatus", fields: [statusId], references: [id])
   resolution   EInvoiceResolution? @relation(fields: [resolutionId], references: [id])
+  voidedByAdmin PlatformAdmin?     @relation("ElectronicInvoiceVoidedBy", fields: [voidedBy], references: [id])
 
   @@index([statusId, createdAt]) // cola de pendientes/rechazadas
   @@index([companyId, createdAt])
