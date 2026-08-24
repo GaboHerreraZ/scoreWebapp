@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -10,11 +9,14 @@ import { ConfigService } from '@nestjs/config';
 import * as Sentry from '@sentry/nestjs';
 import { EInvoicingRepository } from './e-invoicing.repository.js';
 import { FiscalProfileValidator } from './fiscal-profile.validator.js';
+import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
+import { storedTaxRefs } from './domain/billing-catalog.js';
 import {
   E_INVOICE_PROVIDER,
   type IEInvoiceProvider,
 } from './providers/e-invoice-provider.interface.js';
 import type { EInvoiceResult } from './providers/e-invoice-result.js';
+import type { BillingContact } from './domain/billing-catalog.js';
 import type {
   InvoiceDocument,
   InvoiceEnvironment,
@@ -32,22 +34,26 @@ import {
   toDianPersonType,
 } from './domain/dian.catalogs.js';
 import { calculateVerificationDigit } from './domain/verification-digit.js';
-import { INVOICE_ITEM } from './domain/issuer.constants.js';
 import {
   dianPaymentMeanLabel,
   toDianPaymentMean,
   type PaymentMeanResolution,
 } from './domain/payment-means.js';
 import { toJson } from '../common/utils/prisma-json.util.js';
-import type { CreateResolutionDto } from './dto/create-resolution.dto.js';
 
 /** Nombre del impuesto en la línea. Solo se factura IVA por ahora. */
 const VAT = { name: 'IVA', code: '01' } as const;
 
-/** La clave técnica es una credencial: en el preview se confirma, no se lee. */
-function maskKey(key: string): string {
-  return key.length <= 6 ? '••••' : `••••${key.slice(-6)}`;
-}
+/**
+ * Cuánto puede diferir el total del facturador del cobrado antes de considerarlo
+ * un descuadre. Un peso cubre el redondeo al centavo; más que eso es que el
+ * impuesto configurado allá no es el que se congeló al cobrar.
+ */
+const TOTAL_TOLERANCE = 1;
+
+type Pack = NonNullable<
+  Awaited<ReturnType<EInvoicingRepository['findPackForInvoicing']>>
+>;
 
 /**
  * Resultado de pulsar "Emitir" en el panel. La emisión es MANUAL: el webhook de
@@ -60,6 +66,7 @@ export interface IssueInvoiceOutcome {
     | 'accepted' // la DIAN la aprobó: hay CUFE y PDF
     | 'rejected' // rechazada; `reasons` dice por qué y se puede reintentar
     | 'pending' // enviada sin veredicto: reconsultar con /refresh
+    | 'cancelled' // anulada ante el facturador
     | 'already_invoiced' // ya tenía factura aceptada; no se reemite
     | 'disabled'; // EINVOICE_ENABLED=false: queda registrada, no se envía
   invoiceId: string;
@@ -69,20 +76,34 @@ export interface IssueInvoiceOutcome {
   reasons: string[];
 }
 
-/** Resolución vigente, tal como se le muestra al admin antes de emitir. */
-export interface InvoicePreviewResolution {
-  id: string;
-  prefix: string;
-  number: string;
-  /** Enmascarada: sirve para confirmar que está cargada, no para leerla. */
-  keyMasked: string;
-  rangeInitial: number;
-  rangeFinal: number;
-  /** El consecutivo que tomaría esta factura. No queda reservado por mirarlo. */
-  nextConsecutive: number;
-  remaining: number;
-  validFrom: Date;
-  validUntil: Date;
+/** Cómo quedó la búsqueda del adquirente en el directorio del facturador. */
+export interface ContactResolution {
+  status:
+    | 'linked' // ya vinculado: se factura contra este
+    | 'found' // existe allá pero nadie lo ha vinculado: hay que elegir
+    | 'not_found' // no existe: hay que crearlo
+    | 'unsupported' // el facturador no admite su tipo de documento
+    | 'unavailable'; // no se pudo consultar (red, credenciales)
+  /** Ref del tercero cuando ya está vinculado. */
+  ref: string | null;
+  displayName: string | null;
+  /** Candidatos para que el financiero elija. Solo en 'found'. */
+  matches: BillingContact[];
+  /** Con qué datos se crearía. Solo cuando hay perfil fiscal completo. */
+  suggested: InvoiceParty | null;
+  /** No impide seguir, pero hay que verlo (ej.: el tercero no es cliente). */
+  warnings: string[];
+  error: string | null;
+}
+
+/** Ítem del catálogo con el que se facturaría esta venta. */
+export interface ItemResolution {
+  id: string | null;
+  code: string | null;
+  name: string | null;
+  /** Ref del producto en el facturador. Sin esto no se puede emitir. */
+  ref: string | null;
+  taxRefs: string[];
 }
 
 /** Factura ya existente para la venta (rechazada, pendiente o aceptada). */
@@ -91,7 +112,6 @@ export interface InvoicePreviewExisting {
   statusCode: string;
   statusLabel: string;
   number: string | null;
-  consecutive: number | null;
   cufe: string | null;
   pdfUrl: string | null;
   xmlUrl: string | null;
@@ -100,14 +120,14 @@ export interface InvoicePreviewExisting {
   reasons: string[];
   sentAt: Date | null;
   acceptedAt: Date | null;
+  voidedAt: Date | null;
 }
 
 /**
  * Lo que se va a facturar, ANTES de facturarlo.
  *
  * Sale del mismo armado que usa la emisión (`prepareDraft`), así que lo que se
- * ve aquí es exactamente lo que se envía — salvo el consecutivo, que solo se
- * reserva al emitir de verdad.
+ * ve aquí es exactamente lo que se envía.
  */
 export interface InvoicePreview {
   analysisPackId: string;
@@ -122,10 +142,14 @@ export interface InvoicePreview {
   environment: InvoiceEnvironment;
   /** Kill switch EINVOICE_ENABLED: en false la factura se registra sin enviar. */
   enabled: boolean;
+  /** El facturador asigna prefijo y consecutivo: aquí no se conocen de antemano. */
+  numberedByProvider: true;
 
-  resolution: InvoicePreviewResolution | null;
-  /** Prefijo + consecutivo que llevaría el documento. */
-  documentNumber: string | null;
+  contact: ContactResolution;
+  item: ItemResolution;
+  branchRef: string | null;
+  /** Cuenta del recaudo. null = la factura nacería como cartera abierta. */
+  paymentAccountCode: string | null;
 
   customer: InvoiceParty | null;
   lines: InvoiceLine[];
@@ -150,19 +174,16 @@ export interface InvoicePreview {
 
 /**
  * Documento armado y listo, o los motivos por los que no se pudo armar.
- * `document` viene sin consecutivo porque reservarlo es un efecto de emitir.
  */
 interface InvoiceDraft {
-  pack: NonNullable<
-    Awaited<ReturnType<EInvoicingRepository['findPackForInvoicing']>>
-  >;
+  pack: Pack;
   existing: Awaited<
     ReturnType<EInvoicingRepository['findByAnalysisPack']>
   > | null;
-  resolution: Awaited<
-    ReturnType<EInvoicingRepository['findActiveResolution']>
-  > | null;
-  document: Omit<InvoiceDocument, 'consecutive'> | null;
+  contact: ContactResolution;
+  item: ItemResolution;
+  branchRef: string | null;
+  document: InvoiceDocument | null;
   paymentMean: PaymentMeanResolution;
   blockers: string[];
 }
@@ -172,28 +193,53 @@ export class EInvoicingService {
   private readonly logger = new Logger(EInvoicingService.name);
   /** Kill switch: en false se registra la factura pero no se envía. */
   private readonly enabled: boolean;
+  /**
+   * Cuenta contable del recaudo. Con ella la factura nace PAGADA; sin ella queda
+   * como cartera abierta en la contabilidad del facturador.
+   */
+  private readonly paymentAccountCode: string | null;
 
   constructor(
     private readonly repository: EInvoicingRepository,
     private readonly fiscalProfileValidator: FiscalProfileValidator,
+    private readonly platformAdminRepository: PlatformAdminRepository,
     private readonly configService: ConfigService,
     @Inject(E_INVOICE_PROVIDER)
     private readonly provider: IEInvoiceProvider,
   ) {
     this.enabled =
       this.configService.get<string>('EINVOICE_ENABLED', 'false') === 'true';
+    this.paymentAccountCode =
+      this.configService.get<string>('EINVOICE_PAYMENT_ACCOUNT_CODE') || null;
   }
+
+  /**
+   * Cómo está configurado el servidor para facturar. El panel lo necesita para
+   * advertir de un ambiente que no sea producción.
+   */
+  getConfig() {
+    return {
+      provider: this.provider.name,
+      environment: this.provider.environment,
+      enabled: this.enabled,
+      paymentAccountCode: this.paymentAccountCode,
+      // El ambiente lo determina la CUENTA del facturador, no este valor.
+      environmentIsDeclared: true,
+    };
+  }
+
+  // ── Emisión ───────────────────────────────────────────────────────────
 
   /**
    * Emite la factura de una bolsa ya pagada.
    *
    * Idempotente por venta: si la bolsa ya tiene factura ACEPTADA, no hace nada.
    * Si tiene una rechazada, REUSA la fila (por eso lleva `attempts`) en vez de
-   * crear otra — un consecutivo quemado no se recicla, pero el documento sí.
+   * crear otra.
    */
   async issueForPack(analysisPackId: string): Promise<IssueInvoiceOutcome> {
     const draft = await this.prepareDraft(analysisPackId);
-    const { pack, existing, resolution } = draft;
+    const { pack, existing } = draft;
 
     if (existing?.status.code === 'accepted') {
       this.logger.log(
@@ -211,13 +257,13 @@ export class EInvoicingService {
 
     // Lo que el preview muestra en rojo es lo mismo que aquí corta la emisión:
     // una sola lista de impedimentos, no dos criterios que puedan divergir.
-    if (draft.blockers.length > 0 || !draft.document || !resolution) {
+    if (draft.blockers.length > 0 || !draft.document) {
       throw new BadRequestException(
         `No se puede emitir la factura: ${draft.blockers.join('; ')}`,
       );
     }
 
-    const { customer, lines, totals, issueDate } = draft.document;
+    const doc = draft.document;
     const invoiceId =
       existing?.id ??
       (
@@ -227,15 +273,15 @@ export class EInvoicingService {
           provider: this.provider.name,
           environment: this.provider.environment,
           statusId: await this.statusId('pending'),
-          resolutionId: resolution.id,
-          prefix: resolution.prefix,
-          issueDate,
-          dueDate: issueDate,
-          customerSnapshot: toJson(customer),
-          linesSnapshot: toJson(lines),
+          issueDate: doc.issueDate,
+          dueDate: doc.dueDate,
+          providerContactId: doc.contactRef,
+          providerBranchId: doc.branchRef,
+          customerSnapshot: toJson(doc.customer),
+          linesSnapshot: toJson(doc.lines),
           currencyCode: pack.currencyCode,
-          taxBase: totals.amount,
-          taxAmount: totals.taxesAmount,
+          taxBase: doc.totals.amount,
+          taxAmount: doc.totals.taxesAmount,
           total: pack.totalPaid,
         })
       ).id;
@@ -256,19 +302,6 @@ export class EInvoicingService {
       };
     }
 
-    // El consecutivo se reserva ANTES de llamar al proveedor. Si la llamada
-    // falla, ese número queda quemado: la DIAN tolera huecos en la numeración,
-    // pero NUNCA duplicados.
-    const consecutive = await this.repository.reserveConsecutive(resolution.id);
-    if (consecutive === null) {
-      const message = `La resolución ${resolution.prefix} agotó su rango autorizado (${resolution.rangeFinal})`;
-      await this.repository.update(invoiceId, {
-        statusId: await this.statusId('rejected'),
-        lastError: message,
-      });
-      throw new BadRequestException(message);
-    }
-
     if (draft.paymentMean.isFallback && pack.providerFranchise) {
       this.logger.warn(
         `Franquicia '${pack.providerFranchise}' sin equivalente DIAN; la factura ${invoiceId} ` +
@@ -276,13 +309,13 @@ export class EInvoicingService {
       );
     }
 
-    const doc: InvoiceDocument = { ...draft.document, consecutive };
-
     await this.repository.update(invoiceId, {
-      consecutive,
       statusId: await this.statusId('sending'),
       sentAt: new Date(),
       attempts: { increment: 1 },
+      providerContactId: doc.contactRef,
+      providerBranchId: doc.branchRef,
+      rawRequest: toJson(doc),
     });
 
     let result: EInvoiceResult;
@@ -295,13 +328,20 @@ export class EInvoicingService {
       const message = (error as Error).message;
       Sentry.captureException(error);
       await this.repository.update(invoiceId, { lastError: message });
-      this.logger.error(
-        `Fallo enviando la factura ${invoiceId} (consecutivo ${consecutive}): ${message}`,
-      );
+      this.logger.error(`Fallo enviando la factura ${invoiceId}: ${message}`);
       throw error;
     }
 
-    await this.persistResult(invoiceId, pack.id, result);
+    // El facturador calcula los importes: este es el único número que dice por
+    // cuánto se facturó de verdad.
+    const mismatch = this.totalMismatch(result, pack.totalPaid);
+    if (mismatch) {
+      result = { ...result, reasons: [...result.reasons, mismatch] };
+      this.logger.error(`Descuadre en la factura ${invoiceId}: ${mismatch}`);
+      Sentry.captureMessage(`Factura ${invoiceId}: ${mismatch}`, 'error');
+    }
+
+    await this.persistResult(invoiceId, pack.id, result, mismatch);
 
     return {
       outcome: result.status,
@@ -314,28 +354,429 @@ export class EInvoicingService {
   }
 
   /**
+   * Descuadre entre lo cobrado y lo facturado, si lo hay.
+   *
+   * No se revierte nada: el documento ya está ante la DIAN y corregirlo es una
+   * nota crédito. Lo que sí se hace es dejarlo escrito y visible.
+   */
+  private totalMismatch(
+    result: EInvoiceResult,
+    totalPaid: number,
+  ): string | null {
+    if (result.status !== 'accepted' || result.totalAmount === null)
+      return null;
+    const difference = Math.abs(result.totalAmount - totalPaid);
+    if (difference <= TOTAL_TOLERANCE) return null;
+
+    return (
+      `El facturador emitió por ${result.totalAmount} y la venta se cobró por ${totalPaid} ` +
+      `(diferencia ${difference.toFixed(2)}). Revisa la tarifa del impuesto configurada en el ítem.`
+    );
+  }
+
+  /**
+   * Todos los documentos de una venta, anulados incluidos.
+   *
+   * Sin esto la anulación desaparecería de la vista: el preview solo muestra la
+   * factura viva, y la anulada es justo la que hay que poder mirar después.
+   */
+  async listDocumentsForPack(analysisPackId: string) {
+    const documents = await this.repository.listByAnalysisPack(analysisPackId);
+    return documents.map((invoice) => ({
+      id: invoice.id,
+      statusCode: invoice.status.code,
+      statusLabel: invoice.status.label,
+      number: invoice.number,
+      cufe: invoice.cufe,
+      pdfUrl: invoice.pdfUrl,
+      xmlUrl: invoice.xmlUrl,
+      total: invoice.total,
+      environment: invoice.environment,
+      attempts: invoice.attempts,
+      lastError: invoice.lastError,
+      reasons: Array.isArray(invoice.statusReasons)
+        ? (invoice.statusReasons as string[])
+        : [],
+      issueDate: invoice.issueDate,
+      sentAt: invoice.sentAt,
+      acceptedAt: invoice.acceptedAt,
+      voidedAt: invoice.voidedAt,
+      voidReason: invoice.voidReason,
+      createdAt: invoice.createdAt,
+    }));
+  }
+
+  /** Reconsulta un documento que quedó sin veredicto. Mismo shape que emitir. */
+  async refreshStatus(invoiceId: string): Promise<IssueInvoiceOutcome> {
+    const invoice = await this.repository.findById(invoiceId);
+    if (!invoice) {
+      throw new NotFoundException(`Factura ${invoiceId} no encontrada`);
+    }
+    if (!invoice.providerDocumentId) {
+      throw new BadRequestException(
+        'La factura no llegó a crearse en el facturador: no hay nada que reconsultar. Vuelve a emitirla.',
+      );
+    }
+
+    const result = await this.provider.getInvoice(invoice.providerDocumentId);
+    await this.persistResult(invoiceId, invoice.analysisPackId, result);
+
+    return {
+      outcome: result.status,
+      invoiceId,
+      number: result.number,
+      cufe: result.cufe,
+      pdfUrl: result.pdfUrl,
+      reasons: result.reasons,
+    };
+  }
+
+  /**
+   * Anula una factura ante el facturador y devuelve la venta a la cola.
+   *
+   * La factura NO se borra: queda con su CUFE, su PDF y el motivo. La DIAN puede
+   * preguntar por un documento anulado años después.
+   */
+  async voidInvoice(
+    invoiceId: string,
+    reason: string,
+    userId: string,
+  ): Promise<IssueInvoiceOutcome> {
+    const invoice = await this.repository.findById(invoiceId);
+    if (!invoice) {
+      throw new NotFoundException(`Factura ${invoiceId} no encontrada`);
+    }
+    if (invoice.status.code === 'cancelled') {
+      throw new BadRequestException('La factura ya está anulada');
+    }
+    if (!invoice.providerDocumentId) {
+      throw new BadRequestException(
+        'La factura no existe en el facturador: no hay nada que anular',
+      );
+    }
+
+    const result = await this.provider.voidInvoice(invoice.providerDocumentId, {
+      paymentAccountCode: this.paymentAccountCode,
+    });
+
+    if (result.status !== 'cancelled') {
+      await this.repository.update(invoiceId, {
+        lastError:
+          result.reasons[0] ?? 'El facturador no pudo anular la factura',
+        rawResponse: toJson(result.raw),
+      });
+      throw new BadRequestException(
+        `No se pudo anular la factura: ${result.reasons.join('; ') || `HTTP ${result.httpStatus}`}`,
+      );
+    }
+
+    await this.repository.update(invoiceId, {
+      statusId: await this.statusId('cancelled'),
+      voidedAt: new Date(),
+      voidedBy: await this.resolveAdminId(userId),
+      voidReason: reason,
+      rawResponse: toJson(result.raw),
+    });
+
+    // La venta vuelve a la cola: sigue cobrada y sin factura válida.
+    if (invoice.analysisPackId) {
+      await this.repository.unmarkPackInvoiced(invoice.analysisPackId);
+    }
+
+    this.logger.log(
+      `Factura ${invoiceId} (${invoice.number}) anulada: ${reason}`,
+    );
+
+    return {
+      outcome: 'cancelled',
+      invoiceId,
+      number: invoice.number,
+      cufe: invoice.cufe,
+      pdfUrl: invoice.pdfUrl,
+      reasons: [reason],
+    };
+  }
+
+  /**
+   * Guarda el veredicto y, si fue aceptado, marca la venta como facturada.
+   *
+   * `mismatch` es lo único que puede dejar en error una factura aceptada. El
+   * resto de `reasons` NO va a `lastError` cuando fue aceptada: la DIAN devuelve
+   * ahí mensajes informativos ("Procesado Correctamente") y el panel los pintaría
+   * como si algo hubiera fallado.
+   */
+  private async persistResult(
+    invoiceId: string,
+    analysisPackId: string | null,
+    result: EInvoiceResult,
+    mismatch: string | null = null,
+  ): Promise<void> {
+    const accepted = result.status === 'accepted';
+
+    await this.repository.update(invoiceId, {
+      statusId: await this.statusId(result.status),
+      providerDocumentId: result.externalId,
+      number: result.number,
+      cufe: result.cufe,
+      qrData: result.qrData,
+      pdfUrl: result.pdfUrl,
+      xmlUrl: result.xmlUrl,
+      statusReasons: toJson(result.reasons),
+      providerStatus: toJson(result.providerStatus),
+      rawResponse: toJson(result.raw),
+      acceptedAt: accepted ? new Date() : null,
+      lastError: mismatch ?? (accepted ? null : (result.reasons[0] ?? null)),
+    });
+
+    if (accepted && analysisPackId && result.number) {
+      await this.repository.markPackInvoiced(analysisPackId, result.number);
+    }
+  }
+
+  private async statusId(code: string): Promise<number> {
+    const id = await this.repository.findStatusId(code);
+    if (!id) {
+      throw new BadRequestException(
+        `Falta el parámetro einvoice_status '${code}'`,
+      );
+    }
+    return id;
+  }
+
+  // ── El adquirente en el directorio del facturador ─────────────────────
+
+  /** Busca en el directorio sin atarlo a ninguna venta (buscador libre). */
+  async findContacts(query: {
+    identification?: string;
+    email?: string;
+    phone?: string;
+    isLegalEntity?: boolean | null;
+  }): Promise<BillingContact[]> {
+    if (!query.identification && !query.email && !query.phone) {
+      throw new BadRequestException(
+        'Indica al menos un criterio: documento, correo o teléfono. El facturador no busca por nombre.',
+      );
+    }
+    return this.provider.findContacts({
+      identification: query.identification,
+      email: query.email,
+      phone: query.phone,
+      isLegalEntity: query.isLegalEntity ?? null,
+    });
+  }
+
+  /** Estado del adquirente de una venta concreta. Lo que alimenta el botón. */
+  async resolveContactForPack(
+    analysisPackId: string,
+  ): Promise<ContactResolution> {
+    const pack = await this.repository.findPackForInvoicing(analysisPackId);
+    if (!pack) {
+      throw new NotFoundException(`Bolsa ${analysisPackId} no encontrada`);
+    }
+    // Los motivos por los que el perfil fiscal no alcanza los lista el preview;
+    // aquí solo interesa con qué datos se crearía el tercero.
+    return this.resolveContact(pack, this.buildCustomer(pack.company, []));
+  }
+
+  /** Vincula la empresa de la venta con un tercero que ya existe allá. */
+  async linkContactForPack(
+    analysisPackId: string,
+    contactRef: string,
+    userId: string,
+  ) {
+    const pack = await this.repository.findPackForInvoicing(analysisPackId);
+    if (!pack) {
+      throw new NotFoundException(`Bolsa ${analysisPackId} no encontrada`);
+    }
+
+    const identification = pack.company.billingDocNumber?.trim() ?? '';
+    // Se confirma contra el facturador en vez de creerle al front: vincular un
+    // ref inventado facturaría a otra empresa.
+    const matches = await this.provider.findContacts({
+      identification,
+      isLegalEntity: null,
+    });
+    const contact = matches.find((candidate) => candidate.ref === contactRef);
+    if (!contact) {
+      throw new BadRequestException(
+        `El tercero seleccionado no corresponde al documento ${identification} de la empresa`,
+      );
+    }
+
+    await this.repository.upsertContactRef({
+      provider: this.provider.name,
+      companyId: pack.companyId,
+      providerContactId: contact.ref,
+      identification: contact.identificationNumber,
+      displayName: contact.displayName,
+      linkedBy: await this.resolveAdminId(userId),
+    });
+
+    this.logger.log(
+      `Empresa ${pack.companyId} vinculada al tercero ${contact.ref} (${contact.displayName})`,
+    );
+    return { companyId: pack.companyId, contact };
+  }
+
+  /** Da de alta al adquirente en el facturador y lo deja vinculado. */
+  async createContactForPack(analysisPackId: string, userId: string) {
+    const pack = await this.repository.findPackForInvoicing(analysisPackId);
+    if (!pack) {
+      throw new NotFoundException(`Bolsa ${analysisPackId} no encontrada`);
+    }
+
+    const blockers: string[] = [];
+    const missing = this.fiscalProfileValidator.missingForInvoice(
+      pack.company,
+      pack.company.billingDocType?.code ?? null,
+    );
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `No se puede crear el cliente: faltan datos de facturación de la empresa (${missing.join(', ')})`,
+      );
+    }
+
+    const party = this.buildCustomer(pack.company, blockers);
+    if (!party) {
+      throw new BadRequestException(
+        `No se puede crear el cliente: ${blockers.join('; ')}`,
+      );
+    }
+
+    const contact = await this.provider.createContact(party);
+
+    await this.repository.upsertContactRef({
+      provider: this.provider.name,
+      companyId: pack.companyId,
+      providerContactId: contact.ref,
+      identification: contact.identificationNumber,
+      displayName: contact.displayName,
+      linkedBy: await this.resolveAdminId(userId),
+    });
+
+    return { companyId: pack.companyId, contact };
+  }
+
+  /** userId de Supabase → id del PlatformAdmin, que es lo que auditan las tablas. */
+  private async resolveAdminId(userId: string): Promise<string | null> {
+    const admin =
+      await this.platformAdminRepository.findByUserIdWithRole(userId);
+    return admin?.id ?? null;
+  }
+
+  /**
+   * Resuelve al adquirente sin lanzar: el preview tiene que poder pintar el
+   * estado aunque el facturador esté caído.
+   *
+   * Orden: vínculo guardado (con el MISMO documento) → búsqueda por documento →
+   * no existe. El documento es la llave; el facturador no busca por nombre.
+   */
+  private async resolveContact(
+    pack: Pack,
+    suggested: InvoiceParty | null,
+  ): Promise<ContactResolution> {
+    const identification = pack.company.billingDocNumber?.trim() ?? '';
+
+    const base: ContactResolution = {
+      status: 'not_found',
+      ref: null,
+      displayName: null,
+      matches: [],
+      suggested,
+      warnings: [],
+      error: null,
+    };
+
+    if (!identification) {
+      return { ...base, error: 'La empresa no tiene número de documento' };
+    }
+
+    const linked = await this.repository.findContactRef(
+      this.provider.name,
+      pack.companyId,
+    );
+    if (linked && linked.identification === identification) {
+      return {
+        ...base,
+        status: 'linked',
+        ref: linked.providerContactId,
+        displayName: linked.displayName,
+      };
+    }
+
+    const warnings = linked
+      ? [
+          `La empresa estaba vinculada con el documento ${linked.identification} y ahora factura con ${identification}: hay que volver a vincularla.`,
+        ]
+      : [];
+
+    let matches: BillingContact[];
+    try {
+      matches = await this.provider.findContacts({
+        identification,
+        isLegalEntity: null,
+      });
+    } catch (error) {
+      return {
+        ...base,
+        status: 'unavailable',
+        warnings,
+        error: (error as Error).message,
+      };
+    }
+
+    if (matches.length === 0) {
+      // Si no existe hay que crearlo, y para eso el facturador tiene que admitir
+      // su tipo de documento. Mejor saberlo aquí que al pulsar "crear".
+      const typeCode = suggested?.identificationTypeCode;
+      if (typeCode && !this.provider.supportsIdentificationType(typeCode)) {
+        return {
+          ...base,
+          status: 'unsupported',
+          warnings,
+          error: `El facturador no admite el tipo de documento '${typeCode}' para dar de alta terceros`,
+        };
+      }
+      return { ...base, warnings };
+    }
+
+    const notCustomers = matches.filter((contact) => !contact.isCustomer);
+    if (notCustomers.length > 0) {
+      warnings.push(
+        `${notCustomers.length} de los terceros encontrados no está marcado como cliente en el facturador: no se le puede facturar sin corregirlo allá.`,
+      );
+    }
+
+    return { ...base, status: 'found', matches, warnings };
+  }
+
+  // ── Preview ───────────────────────────────────────────────────────────
+
+  /**
    * Qué se va a facturar, sin facturarlo.
    *
-   * Se apoya en el MISMO `prepareDraft` que la emisión, así que no puede
-   * mostrar una cosa y enviarse otra. Lo único que no ocurre aquí es la reserva
-   * del consecutivo: mirar el preview no debe quemar un número.
-   *
-   * No lanza por datos incompletos — los devuelve en `blockers` para que el
-   * panel los liste y el admin sepa qué corregir.
+   * Se apoya en el MISMO `prepareDraft` que la emisión, así que no puede mostrar
+   * una cosa y enviarse otra. No lanza por datos incompletos — los devuelve en
+   * `blockers` para que el panel los liste y el admin sepa qué corregir.
    */
   async previewForPack(analysisPackId: string): Promise<InvoicePreview> {
     const draft = await this.prepareDraft(analysisPackId);
-    const { pack, existing, resolution, document } = draft;
+    const { pack, existing, document } = draft;
 
-    const warnings: string[] = [];
+    const warnings = [...draft.contact.warnings];
     if (!this.enabled) {
       warnings.push(
-        'La emisión está desactivada (EINVOICE_ENABLED=false): la factura quedará registrada como pendiente, sin enviarse al proveedor.',
+        'La emisión está desactivada (EINVOICE_ENABLED=false): la factura quedará registrada como pendiente, sin enviarse al facturador.',
       );
     }
     if (this.provider.environment !== 'production') {
       warnings.push(
-        `El ambiente es '${this.provider.environment}': el documento NO tiene efectos legales ante la DIAN.`,
+        `El ambiente declarado es '${this.provider.environment}': el documento NO tiene efectos legales ante la DIAN. Ojo: el ambiente real lo define la cuenta del facturador, no esta etiqueta.`,
+      );
+    }
+    if (!this.paymentAccountCode) {
+      warnings.push(
+        'No hay cuenta de recaudo configurada (EINVOICE_PAYMENT_ACCOUNT_CODE): la factura nacerá como cartera abierta aunque la venta ya esté cobrada.',
       );
     }
     if (draft.paymentMean.isFallback) {
@@ -350,7 +791,7 @@ export class EInvoicingService {
     }
     if (existing && existing.status.code !== 'accepted') {
       warnings.push(
-        `Esta venta ya tiene un documento en estado '${existing.status.label}'. Al emitir se reintenta sobre ese mismo documento con un consecutivo nuevo.`,
+        `Esta venta ya tiene un documento en estado '${existing.status.label}'. Al emitir se reintenta sobre ese mismo documento.`,
       );
     }
 
@@ -363,29 +804,14 @@ export class EInvoicingService {
       provider: this.provider.name,
       environment: this.provider.environment,
       enabled: this.enabled,
+      numberedByProvider: true,
 
-      resolution: resolution
-        ? {
-            id: resolution.id,
-            prefix: resolution.prefix,
-            number: resolution.number.toString(),
-            keyMasked: maskKey(resolution.key),
-            rangeInitial: resolution.rangeInitial,
-            rangeFinal: resolution.rangeFinal,
-            nextConsecutive: resolution.nextConsecutive,
-            remaining: Math.max(
-              0,
-              resolution.rangeFinal - resolution.nextConsecutive + 1,
-            ),
-            validFrom: resolution.validFrom,
-            validUntil: resolution.validUntil,
-          }
-        : null,
-      documentNumber: resolution
-        ? `${resolution.prefix}${resolution.nextConsecutive}`
-        : null,
+      contact: draft.contact,
+      item: draft.item,
+      branchRef: draft.branchRef,
+      paymentAccountCode: this.paymentAccountCode,
 
-      customer: document?.customer ?? null,
+      customer: document?.customer ?? draft.contact.suggested,
       lines: document?.lines ?? [],
       totals: document ? { ...document.totals, total: pack.totalPaid } : null,
 
@@ -408,7 +834,6 @@ export class EInvoicingService {
             statusCode: existing.status.code,
             statusLabel: existing.status.label,
             number: existing.number,
-            consecutive: existing.consecutive,
             cufe: existing.cufe,
             pdfUrl: existing.pdfUrl,
             xmlUrl: existing.xmlUrl,
@@ -419,6 +844,7 @@ export class EInvoicingService {
               : [],
             sentAt: existing.sentAt,
             acceptedAt: existing.acceptedAt,
+            voidedAt: existing.voidedAt,
           }
         : null,
     };
@@ -437,11 +863,7 @@ export class EInvoicingService {
       throw new NotFoundException(`Bolsa ${analysisPackId} no encontrada`);
     }
 
-    const [existing, resolution] = await Promise.all([
-      this.repository.findByAnalysisPack(analysisPackId),
-      this.repository.findActiveResolution(this.provider.environment),
-    ]);
-
+    const existing = await this.repository.findByAnalysisPack(analysisPackId);
     const blockers: string[] = [];
 
     if (!pack.paidAt || pack.totalPaid <= 0) {
@@ -462,51 +884,50 @@ export class EInvoicingService {
       );
     }
 
-    if (!resolution) {
-      blockers.push(
-        `no hay una resolución de facturación vigente para el ambiente '${this.provider.environment}'`,
-      );
-    } else if (resolution.nextConsecutive > resolution.rangeFinal) {
-      blockers.push(
-        `la resolución ${resolution.prefix} agotó su rango autorizado (${resolution.rangeFinal})`,
-      );
+    const customer = this.buildCustomer(pack.company, blockers);
+
+    const [contact, branchRef] = await Promise.all([
+      this.resolveContact(pack, customer),
+      this.resolveBranch(blockers),
+    ]);
+    const item = this.resolveItem(pack, blockers);
+
+    if (contact.status !== 'linked') {
+      blockers.push(contactBlocker(contact));
     }
 
-    const customer = this.buildCustomer(pack.company, blockers);
     const paymentMean = toDianPaymentMean(pack.providerFranchise);
 
-    // Sin customer o sin resolución no hay documento que armar; los motivos ya
-    // quedaron en blockers.
-    if (!customer || !resolution || !pack.paidAt) {
+    const canBuild =
+      blockers.length === 0 && !!customer && !!pack.paidAt && !!contact.ref;
+
+    if (!canBuild || !customer || !contact.ref || !pack.paidAt) {
       return {
         pack,
         existing,
-        resolution,
+        contact,
+        item,
+        branchRef,
         document: null,
         paymentMean,
         blockers,
       };
     }
 
-    const lines = this.buildLines(pack);
     const issueDate = pack.paidAt;
 
     return {
       pack,
       existing,
-      resolution,
+      contact,
+      item,
+      branchRef,
       paymentMean,
       blockers,
       document: {
-        resolution: {
-          key: resolution.key,
-          prefix: resolution.prefix,
-          number: Number(resolution.number),
-          rangeInitial: resolution.rangeInitial,
-          rangeFinal: resolution.rangeFinal,
-          validFrom: resolution.validFrom,
-          validUntil: resolution.validUntil,
-        },
+        contactRef: contact.ref,
+        branchRef,
+        paymentAccountCode: this.paymentAccountCode,
         customer,
         issueDate,
         dueDate: issueDate, // pago de contado: vence el mismo día
@@ -514,7 +935,7 @@ export class EInvoicingService {
         paymentForm: 'cash',
         paymentMeanCode: paymentMean.code,
         termDays: 0,
-        lines,
+        lines: this.buildLines(pack, item),
         totals: {
           amount: pack.taxBase ?? pack.totalPaid,
           taxesAmount: pack.taxAmount ?? 0,
@@ -528,193 +949,67 @@ export class EInvoicingService {
     };
   }
 
-  /** Reconsulta un documento que quedó sin veredicto. Mismo shape que emitir. */
-  async refreshStatus(invoiceId: string): Promise<IssueInvoiceOutcome> {
-    const invoice = await this.repository.findById(invoiceId);
-    if (!invoice) {
-      throw new NotFoundException(`Factura ${invoiceId} no encontrada`);
+  /** Sucursal de emisión. Es obligatoria en el payload, así que sin ella no hay factura. */
+  private async resolveBranch(blockers: string[]): Promise<string | null> {
+    try {
+      const ref = await this.provider.resolveDefaultBranchRef();
+      if (!ref) {
+        blockers.push(
+          'el facturador no tiene ninguna sucursal habilitada (o configura ALIADDO_BRANCH_ID)',
+        );
+      }
+      return ref;
+    } catch (error) {
+      blockers.push(
+        `no se pudo consultar la sucursal del facturador: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Ítem con el que se factura la oferta comprada, y la comprobación de que su
+   * tarifa de impuesto es la misma que se congeló al cobrar: si no lo es, el
+   * facturador emitiría por otro valor.
+   */
+  private resolveItem(pack: Pack, blockers: string[]): ItemResolution {
+    const item = pack.packOffering?.einvoiceItem ?? null;
+
+    if (!item) {
+      blockers.push(
+        `la oferta '${pack.packOffering?.name ?? 'sin catálogo'}' no tiene un ítem facturable asociado`,
+      );
+      return { id: null, code: null, name: null, ref: null, taxRefs: [] };
+    }
+    if (!item.isActive) {
+      blockers.push(`el ítem facturable '${item.code}' está desactivado`);
+    }
+    if (!item.providerItemCode) {
+      blockers.push(
+        `el ítem facturable '${item.code}' no está sincronizado con el facturador`,
+      );
     }
 
-    const result = await this.provider.getStatus({
-      externalId: invoice.providerDocumentId,
-      prefix: invoice.prefix,
-      consecutive: invoice.consecutive,
-    });
-
-    await this.persistResult(invoiceId, invoice.analysisPackId, result);
+    const paidRate = Number(pack.taxRatePaid ?? 0);
+    const itemRate = item.taxRate === null ? null : Number(item.taxRate);
+    if (itemRate !== null && Math.abs(itemRate - paidRate) > 0.01) {
+      blockers.push(
+        `el ítem '${item.code}' está configurado al ${itemRate}% y la venta se cobró con IVA del ${paidRate}%`,
+      );
+    }
+    if (paidRate > 0 && storedTaxRefs(item.providerTaxIds).length === 0) {
+      blockers.push(
+        `el ítem '${item.code}' no tiene impuesto configurado en el facturador y la venta lleva IVA del ${paidRate}%`,
+      );
+    }
 
     return {
-      outcome: result.status,
-      invoiceId,
-      number: result.number,
-      cufe: result.cufe,
-      pdfUrl: result.pdfUrl,
-      reasons: result.reasons,
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      ref: item.providerItemCode,
+      taxRefs: storedTaxRefs(item.providerTaxIds),
     };
-  }
-
-  /** Guarda el veredicto y, si fue aceptado, marca la venta como facturada. */
-  private async persistResult(
-    invoiceId: string,
-    analysisPackId: string | null,
-    result: EInvoiceResult,
-  ): Promise<void> {
-    const accepted = result.status === 'accepted';
-
-    await this.repository.update(invoiceId, {
-      statusId: await this.statusId(result.status),
-      providerDocumentId: result.externalId,
-      number: result.number,
-      cufe: result.cufe,
-      qrData: result.qrData,
-      pdfUrl: result.pdfUrl,
-      xmlUrl: result.xmlUrl,
-      statusReasons: toJson(result.reasons),
-      rawResponse: toJson(result.raw),
-      acceptedAt: accepted ? new Date() : null,
-      lastError: accepted ? null : (result.reasons[0] ?? null),
-    });
-
-    if (accepted && analysisPackId && result.number) {
-      await this.repository.markPackInvoiced(analysisPackId, result.number);
-    }
-  }
-
-  private async statusId(code: string): Promise<number> {
-    const id = await this.repository.findStatusId(code);
-    if (!id) {
-      throw new BadRequestException(
-        `Falta el parámetro einvoice_status '${code}'`,
-      );
-    }
-    return id;
-  }
-
-  // ── Resoluciones de facturación ───────────────────────────────────────
-
-  /**
-   * Catálogo de resoluciones. `isCurrent` marca la que realmente se usaría hoy:
-   * es activa Y del ambiente configurado, que no es lo mismo que estar activa.
-   */
-  async listResolutions() {
-    const resolutions = await this.repository.listResolutions();
-    const environment = this.provider.environment;
-
-    return resolutions.map((r) => ({
-      id: r.id,
-      environment: r.environment,
-      // BigInt no se serializa a JSON; además el número de resolución solo se
-      // muestra, nunca se opera.
-      number: r.number.toString(),
-      keyMasked: maskKey(r.key),
-      prefix: r.prefix,
-      rangeInitial: r.rangeInitial,
-      rangeFinal: r.rangeFinal,
-      nextConsecutive: r.nextConsecutive,
-      remaining: Math.max(0, r.rangeFinal - r.nextConsecutive + 1),
-      issued: Math.max(0, r.nextConsecutive - r.rangeInitial),
-      validFrom: r.validFrom,
-      validUntil: r.validUntil,
-      isActive: r.isActive,
-      isCurrent: r.isActive && r.environment === environment,
-      invoiceCount: r._count.invoices,
-      createdAt: r.createdAt,
-    }));
-  }
-
-  /**
-   * Cómo está configurado el servidor para facturar. El panel lo necesita para
-   * no dejar registrar una resolución de un ambiente que nunca se va a usar.
-   */
-  getConfig(): {
-    provider: string;
-    environment: InvoiceEnvironment;
-    enabled: boolean;
-  } {
-    return {
-      provider: this.provider.name,
-      environment: this.provider.environment,
-      enabled: this.enabled,
-    };
-  }
-
-  async createResolution(dto: CreateResolutionDto) {
-    if (dto.rangeFinal < dto.rangeInitial) {
-      throw new BadRequestException(
-        'rangeFinal no puede ser menor que rangeInitial',
-      );
-    }
-
-    const validFrom = new Date(dto.validFrom);
-    const validUntil = new Date(dto.validUntil);
-    if (validUntil < validFrom) {
-      throw new BadRequestException(
-        'validUntil no puede ser anterior a validFrom',
-      );
-    }
-
-    // Se permite arrancar en medio del rango (facturas ya emitidas por fuera),
-    // pero nunca fuera de él: rangeFinal + 1 es el único valor "por encima"
-    // válido y significa rango agotado.
-    const nextConsecutive = dto.nextConsecutive ?? dto.rangeInitial;
-    if (
-      nextConsecutive < dto.rangeInitial ||
-      nextConsecutive > dto.rangeFinal + 1
-    ) {
-      throw new BadRequestException(
-        `nextConsecutive debe estar entre ${dto.rangeInitial} y ${dto.rangeFinal + 1}`,
-      );
-    }
-
-    const created = await this.repository.createResolution({
-      environment: dto.environment,
-      key: dto.key.trim(),
-      prefix: dto.prefix.trim().toUpperCase(),
-      number: BigInt(dto.number),
-      rangeInitial: dto.rangeInitial,
-      rangeFinal: dto.rangeFinal,
-      nextConsecutive,
-      validFrom,
-      validUntil,
-    });
-
-    this.logger.log(
-      `Resolución ${created.prefix} (${dto.environment}) creada: rango ${dto.rangeInitial}-${dto.rangeFinal}, arranca en ${nextConsecutive}`,
-    );
-    return { id: created.id };
-  }
-
-  async setResolutionActive(id: string, isActive: boolean) {
-    const resolution = await this.repository.findResolutionById(id);
-    if (!resolution) {
-      throw new NotFoundException(`Resolución ${id} no encontrada`);
-    }
-    await this.repository.setResolutionActive(
-      id,
-      resolution.environment,
-      isActive,
-    );
-    return { id, isActive };
-  }
-
-  /**
-   * Borra una resolución sin usar. Si ya emitió facturas NO se borra: el
-   * documento tiene que poder mostrar bajo qué autorización se expidió, y la
-   * DIAN puede pedirlo años después. En ese caso se retira (isActive=false).
-   */
-  async deleteResolution(id: string) {
-    const resolution = await this.repository.findResolutionById(id);
-    if (!resolution) {
-      throw new NotFoundException(`Resolución ${id} no encontrada`);
-    }
-    if (resolution._count.invoices > 0) {
-      throw new ConflictException(
-        `La resolución ${resolution.prefix} ya respalda ${resolution._count.invoices} factura(s) y no se puede borrar. Retírala en su lugar.`,
-      );
-    }
-    await this.repository.deleteResolution(id);
-    this.logger.log(`Resolución ${resolution.prefix} (${id}) borrada`);
-    return { id, deleted: true };
   }
 
   // ── Armado del documento ──────────────────────────────────────────────
@@ -725,9 +1020,7 @@ export class EInvoicingService {
    * una sola pasada, no morirse en el primer campo vacío.
    */
   private buildCustomer(
-    company: NonNullable<
-      Awaited<ReturnType<EInvoicingRepository['findPackForInvoicing']>>
-    >['company'],
+    company: Pack['company'],
     blockers: string[],
   ): InvoiceParty | null {
     const docTypeCode = company.billingDocType?.code ?? null;
@@ -785,11 +1078,7 @@ export class EInvoicingService {
     };
   }
 
-  private buildLines(
-    pack: NonNullable<
-      Awaited<ReturnType<EInvoicingRepository['findPackForInvoicing']>>
-    >,
-  ): InvoiceLine[] {
+  private buildLines(pack: Pack, item: ItemResolution): InvoiceLine[] {
     // La tarifa y el desglose están CONGELADOS en la bolsa desde el cobro: la
     // factura debe emitirse con lo que rigió ese día, no con lo vigente hoy.
     const base = pack.taxBase ?? pack.totalPaid;
@@ -798,15 +1087,37 @@ export class EInvoicingService {
 
     return [
       {
-        code: INVOICE_ITEM.code,
-        name: pack.packOffering?.name ?? INVOICE_ITEM.name,
+        code: item.code ?? '',
+        name: pack.packOffering?.name ?? item.name ?? '',
         description: pack.packOffering?.description ?? null,
         quantity: pack.quantityPurchased,
         // Precio unitario SIN impuestos, derivado de la base congelada.
         unitPrice: base / pack.quantityPurchased,
-        unitMeasurementCode: DIAN_UNIT_MEASUREMENT_UNIT,
+        unitMeasurementCode:
+          pack.packOffering?.einvoiceItem?.unitMeasurementCode ??
+          DIAN_UNIT_MEASUREMENT_UNIT,
         taxes: taxAmount > 0 ? [{ ...VAT, rate, base, amount: taxAmount }] : [],
+        itemRef: item.ref ?? '',
+        taxRefs: taxAmount > 0 ? item.taxRefs : [],
       },
     ];
+  }
+}
+
+/** Por qué no se puede emitir todavía, según cómo quedó la búsqueda. */
+function contactBlocker(contact: ContactResolution): string {
+  switch (contact.status) {
+    case 'found':
+      return `el cliente existe en el facturador pero no está vinculado: selecciona cuál de los ${contact.matches.length} corresponde`;
+    case 'not_found':
+      return 'el cliente no existe en el facturador: hay que crearlo antes de facturar';
+    case 'unsupported':
+      return (
+        contact.error ?? 'el facturador no admite el documento del cliente'
+      );
+    case 'unavailable':
+      return `no se pudo consultar el directorio del facturador: ${contact.error ?? 'error desconocido'}`;
+    default:
+      return 'el cliente no está vinculado con el facturador';
   }
 }

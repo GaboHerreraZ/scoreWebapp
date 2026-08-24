@@ -6,9 +6,15 @@ import { Prisma } from '../../generated/prisma/client.js';
 export class PackOfferingsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Solo lo usan las rutas de admin; el catálogo público va por findOfferable.
   private readonly defaultInclude = {
     discountType: true,
     createdByAdmin: { select: { email: true } },
+    // Con qué ítem se factura esta oferta. Sin él la venta no se puede emitir,
+    // así que el panel tiene que verlo aquí y no en una segunda llamada.
+    einvoiceItem: {
+      select: { id: true, code: true, name: true, providerItemId: true },
+    },
   } as const;
 
   async create(data: Prisma.PackOfferingUncheckedCreateInput) {
