@@ -132,6 +132,8 @@ export class AnalysisPacksRepository {
       taxRatePaid?: Prisma.Decimal | null;
       taxBase?: number | null;
       taxAmount?: number | null;
+      taxIncludedPaid?: boolean | null;
+      listTaxBase?: number | null;
     },
   ) {
     return this.prisma.analysisPack.update({
@@ -175,6 +177,7 @@ export class AnalysisPacksRepository {
       promoDiscountPercent: Prisma.Decimal;
       promoDiscountAmount: number;
       promoRedeemedBy: string | null;
+      taxIncludedPaid: boolean;
     };
     redeem: (
       tx: Prisma.TransactionClient,
@@ -190,9 +193,11 @@ export class AnalysisPacksRepository {
       totalPaid: 0,
       // Sin cobro no hay hecho generador de IVA, pero se dejan los campos en 0
       // (y no en null) para que la invariante totalPaid = base + IVA se sostenga.
+      // listTaxBase también en 0: sin ingreso no hay comisión que calcular.
       taxRatePaid: new Prisma.Decimal(0),
       taxBase: 0,
       taxAmount: 0,
+      listTaxBase: 0,
       // Estado de facturación limpio (importa al reutilizar una pendiente). La
       // cola de FE filtra por totalPaid > 0, así que una bolsa sin costo nunca
       // aparece ahí: no hay nada que facturar.

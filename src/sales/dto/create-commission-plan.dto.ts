@@ -38,6 +38,19 @@ export class CreateCommissionPlanDto {
   @Max(100)
   recurringPercent!: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Techo del descuento que un vendedor puede otorgar en sus códigos. Sale ' +
+      'de su comisión, así que a este tope su ganancia de la primera venta es ' +
+      'cero. No puede superar newCustomerPercent. Default 30.',
+    example: 30,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  maxNewCustomerDiscount?: number;
+
   @ApiPropertyOptional({ description: 'Nota del cambio (motivo, vigencia…)' })
   @IsOptional()
   @IsString()

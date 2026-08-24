@@ -17,6 +17,11 @@ import { UpdatePromoCodeDto } from './dto/update-promo-code.dto.js';
 import { FilterPromoCodeDto } from './dto/filter-promo-code.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
 
+/**
+ * Códigos promocionales del portal. El AdminGuard solo garantiza que quien entra
+ * es un usuario del portal: el alcance real (admin ve todo, vendedor solo los
+ * suyos) lo resuelve el service a partir del userId.
+ */
 @ApiTags('Promo Codes (Admin)')
 @AdminOnly()
 @Controller('promo-codes')
@@ -24,7 +29,9 @@ export class PromoCodesController {
   constructor(private readonly service: PromoCodesService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Crear un código promocional (empresa o global)' })
+  @ApiOperation({
+    summary: 'Crear un código promocional (de Creditia o de un vendedor)',
+  })
   @ApiResponse({ status: 201, description: 'Código creado' })
   @ApiResponse({ status: 409, description: 'El code ya existe' })
   create(@Body() dto: CreatePromoCodeDto, @Req() req: Request) {
@@ -37,16 +44,27 @@ export class PromoCodesController {
     summary: 'Listar códigos promocionales (paginado, filtrable)',
   })
   @ApiResponse({ status: 200, description: 'data + meta de paginación' })
-  findAll(@Query() filters: FilterPromoCodeDto) {
-    return this.service.findAll(filters);
+  findAll(@Query() filters: FilterPromoCodeDto, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.service.findAll(filters, userId);
+  }
+
+  @Get('discount-ceiling')
+  @ApiOperation({
+    summary: 'Techo del descuento que un vendedor puede otorgar (plan vigente)',
+  })
+  @ApiResponse({ status: 200, description: '{ maxDiscountPercent, planName }' })
+  getDiscountCeiling() {
+    return this.service.getDiscountCeiling();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Detalle de un código' })
   @ApiResponse({ status: 200, description: 'Código' })
   @ApiResponse({ status: 404, description: 'No encontrado' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.service.findOne(id, userId);
   }
 
   @Patch(':id')
@@ -59,7 +77,9 @@ export class PromoCodesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePromoCodeDto,
+    @Req() req: Request,
   ) {
-    return this.service.update(id, dto);
+    const userId = (req as any).user.id as string;
+    return this.service.update(id, dto, userId);
   }
 }

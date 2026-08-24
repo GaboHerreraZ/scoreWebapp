@@ -27,7 +27,7 @@ export class OnboardingService {
    * Alta de un cliente que se autorregistra: crea Profile (ligado al usuario de
    * Supabase ya autenticado) + Company (con facturación y representante legal)
    * + UserCompany (rol administrator), todo en una transacción. El representante
-   * legal se pide aparte porque es quien firma el contrato macro y no tiene por
+   * legal se pide aparte porque es quien obliga a la empresa y no tiene por
    * qué ser el usuario que se registra. NO toca ePayco: el pago es un paso
    * posterior (POST companies/:id/analysis-packs/purchase con el packOfferingId).
    *

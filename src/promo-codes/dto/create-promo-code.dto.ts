@@ -35,6 +35,30 @@ export class CreatePromoCodeDto {
 
   @ApiPropertyOptional({
     description:
+      'A qué compra aplica. Default "any". Un código financiado por un ' +
+      'vendedor siempre es "first_purchase" (se fuerza).',
+    enum: ['any', 'first_purchase'],
+    example: 'any',
+  })
+  @IsOptional()
+  @IsIn(['any', 'first_purchase'])
+  appliesTo?: 'any' | 'first_purchase';
+
+  @ApiPropertyOptional({
+    description:
+      'Quién paga el descuento. "creditia" sale del margen; "sales_rep" se ' +
+      'resta de la comisión de quien crea el código. Un vendedor solo puede ' +
+      '"sales_rep"; un admin sin ficha de vendedor solo "creditia". Quien es ' +
+      'ambas cosas debe elegir (default "creditia").',
+    enum: ['creditia', 'sales_rep'],
+    example: 'creditia',
+  })
+  @IsOptional()
+  @IsIn(['creditia', 'sales_rep'])
+  fundedBy?: 'creditia' | 'sales_rep';
+
+  @ApiPropertyOptional({
+    description:
       'Empresa a la que se ata el código. Requerido si scope=company.',
     example: '4cc725de-1919-4228-b4ff-161a32b1be5b',
   })

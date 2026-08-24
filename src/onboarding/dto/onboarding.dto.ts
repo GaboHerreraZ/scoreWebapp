@@ -86,8 +86,8 @@ class OnboardingCompanyDto {
 
 /**
  * Representante legal de la empresa: quien tiene facultad para obligarla y por
- * tanto FIRMA el contrato macro. Puede no ser el usuario que se registra, por
- * eso se piden aparte del profile.
+ * tanto figura en los documentos que la vinculan. Puede no ser el usuario que se
+ * registra, por eso se piden aparte del profile.
  */
 class OnboardingLegalRepDto {
   @ApiProperty({ example: 'María Gómez Rojas', maxLength: 255 })
@@ -108,7 +108,7 @@ class OnboardingLegalRepDto {
   @ApiProperty({
     example: 'maria.gomez@acme.com',
     maxLength: 255,
-    description: 'A este correo llega la solicitud de firma del contrato macro',
+    description: 'Correo de contacto del representante legal',
   })
   @IsEmail()
   @MaxLength(255)

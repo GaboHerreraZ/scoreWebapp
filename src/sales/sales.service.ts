@@ -21,6 +21,12 @@ import { Prisma } from '../../generated/prisma/client.js';
 
 export type { SalesCaller };
 
+/**
+ * Prefijo de marca de los códigos de vendedor. Va delante del nombre para que
+ * el cliente reconozca de dónde viene el código que le están dictando.
+ */
+const CODE_PREFIX = 'CREDITIA-';
+
 @Injectable()
 export class SalesService {
   private readonly logger = new Logger(SalesService.name);
@@ -85,35 +91,65 @@ export class SalesService {
   async publishPlan(dto: CreateCommissionPlanDto, caller: SalesCaller) {
     this.assertIsAdmin(caller);
 
+    const maxDiscount = dto.maxNewCustomerDiscount ?? 30;
+    // Por encima del % de primera compra, el descuento dejaría la comisión en
+    // cero y el resto lo pondría Creditia: deja de ser dinero del vendedor.
+    if (maxDiscount > dto.newCustomerPercent) {
+      throw new BadRequestException(
+        `El techo del descuento (${maxDiscount}%) no puede superar la comisión de ` +
+          `cliente nuevo (${dto.newCustomerPercent}%): el vendedor estaría regalando ` +
+          `plata que no es suya.`,
+      );
+    }
+
     const plan = await this.repository.publishPlan({
       name: dto.name,
       newCustomerPercent: new Prisma.Decimal(dto.newCustomerPercent),
       recurringPercent: new Prisma.Decimal(dto.recurringPercent),
+      maxNewCustomerDiscount: new Prisma.Decimal(maxDiscount),
       notes: dto.notes ?? null,
       createdBy: caller.platformAdminId,
     });
 
     this.logger.log(
       `Plan de comisiones "${plan.name}" publicado: ${dto.newCustomerPercent}% nuevo / ` +
-        `${dto.recurringPercent}% recompra (por ${caller.name ?? caller.platformAdminId})`,
+        `${dto.recurringPercent}% recompra / tope de descuento ${maxDiscount}% ` +
+        `(por ${caller.name ?? caller.platformAdminId})`,
     );
     return plan;
   }
 
   // ── Vendedores ────────────────────────────────────────────────────────
 
+  /** Quita tildes y deja solo A-Z, para armar códigos dictables por teléfono. */
+  private slug(value: string | null): string {
+    return (value ?? '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // marcas de acento sueltas tras NFD
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '');
+  }
+
   /**
-   * Código sugerido a partir del nombre: sin tildes, solo A-Z0-9, máx. 20. Si ya
-   * existe, agrega un sufijo numérico hasta encontrar uno libre.
+   * Código sugerido: CREDITIA-<3 del nombre><3 del apellido>. Por ejemplo
+   * Gabriel Herrera → CREDITIA-GABHER.
+   *
+   * Lleva la marca adelante a propósito: es lo que el cliente teclea al
+   * registrarse y lo que el vendedor dicta por teléfono, así que debe sonar a
+   * Creditia y no al nombre suelto de una persona. Solo letras, para que nadie
+   * confunda un 0 con una O al dictarlo.
+   *
+   * Si ya existe, se le agrega un sufijo numérico hasta encontrar uno libre.
    */
-  private async generateCode(name: string | null): Promise<string> {
-    const base =
-      (name ?? '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // marcas de acento sueltas tras NFD
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '')
-        .slice(0, 20) || 'VENDEDOR';
+  private async generateCode(
+    name: string | null,
+    lastName: string | null,
+  ): Promise<string> {
+    const first = this.slug(name).slice(0, 3);
+    const second = this.slug(lastName).slice(0, 3);
+    // Sin apellido se toman 6 letras del nombre, para no quedarse en 3.
+    const initials = second ? `${first}${second}` : this.slug(name).slice(0, 6);
+    const base = `${CODE_PREFIX}${initials || 'VENTAS'}`;
 
     if (!(await this.repository.findRepByCode(base))) return base;
     for (let i = 2; i < 100; i++) {
@@ -132,8 +168,12 @@ export class SalesService {
 
   /**
    * Da de alta como vendedor a una cuenta del portal ya creada. El usuario se
-   * crea antes en "Usuarios plataforma" con rol 'sales'; aquí solo se le asigna
-   * su código y entra al programa.
+   * crea antes en "Usuarios plataforma"; aquí solo se le asigna su código y
+   * entra al programa.
+   *
+   * Se admiten los roles 'sales' (referidor externo) y 'admin': alguien de
+   * Creditia también puede traer clientes y cobrar su comisión. Los demás roles
+   * no, porque no forman parte del programa.
    */
   async createRep(dto: CreateSalesRepDto, caller: SalesCaller) {
     this.assertIsAdmin(caller);
@@ -146,11 +186,12 @@ export class SalesService {
         `Usuario del portal con id=${dto.platformAdminId} no encontrado`,
       );
     }
-    if (admin.role?.code !== 'sales') {
+    if (admin.role?.code !== 'sales' && admin.role?.code !== 'admin') {
       throw new BadRequestException(
-        `El usuario ${admin.email} no tiene rol de vendedor (rol actual: ${
-          admin.role?.label ?? 'sin rol'
-        })`,
+        `El usuario ${admin.email} no puede entrar al programa: necesita rol de ` +
+          `vendedor o de administrador (rol actual: ${
+            admin.role?.label ?? 'sin rol'
+          })`,
       );
     }
 
@@ -163,7 +204,7 @@ export class SalesService {
 
     const code = dto.code
       ? this.normalizeCode(dto.code)
-      : await this.generateCode(admin.name);
+      : await this.generateCode(admin.name, admin.lastName);
 
     if (dto.code && (await this.repository.findRepByCode(code))) {
       throw new ConflictException(
@@ -214,6 +255,93 @@ export class SalesService {
     if (dto.notes !== undefined) data.notes = dto.notes;
 
     return this.repository.updateRep(id, data);
+  }
+
+  /**
+   * Si el vendedor se puede borrar de verdad o solo retirar, y por qué. Lo
+   * consulta el panel ANTES de preguntar, para ofrecer la acción correcta en vez
+   * de dejar que el usuario choque contra un 409.
+   */
+  async getRepRemovalOptions(id: string, caller: SalesCaller) {
+    this.assertIsAdmin(caller);
+
+    const rep = await this.repository.findRepById(id);
+    if (!rep) {
+      throw new NotFoundException(`Vendedor con id=${id} no encontrado`);
+    }
+
+    const footprint = await this.repository.countRepFootprint(id);
+    const blockers: string[] = [];
+    if (footprint.referrals > 0) {
+      blockers.push(
+        `${footprint.referrals} empresa(s) vinculada(s) a su nombre`,
+      );
+    }
+    if (footprint.commissions > 0) {
+      blockers.push(`${footprint.commissions} comisión(es) causada(s)`);
+    }
+    if (footprint.redeemedCodes > 0) {
+      blockers.push(
+        `${footprint.redeemedCodes} código(s) de descuento ya canjeado(s)`,
+      );
+    }
+
+    return {
+      salesRepId: rep.id,
+      code: rep.code,
+      isActive: rep.isActive,
+      ...footprint,
+      canDelete: blockers.length === 0,
+      // Los códigos sin canjear se van con él: no dejan rastro que preservar.
+      deletesPromoCodes: blockers.length === 0 ? footprint.promoCodes : 0,
+      blockers,
+    };
+  }
+
+  /**
+   * Retira a un vendedor del programa.
+   *
+   * Si no dejó rastro (ni empresas, ni comisiones, ni códigos canjeados) se
+   * borra de verdad — típicamente un alta equivocada. Si sí lo dejó, borrarlo
+   * descuadraría el histórico de comisiones, así que se DESACTIVA: sus
+   * ganancias pasadas quedan intactas, no puede recibir empresas nuevas y sus
+   * códigos dejan de funcionar.
+   */
+  async removeRep(id: string, caller: SalesCaller) {
+    const options = await this.getRepRemovalOptions(id, caller);
+
+    if (options.canDelete) {
+      await this.repository.deleteRep(id);
+      this.logger.log(
+        `Vendedor ${options.code} eliminado por ${caller.name ?? caller.platformAdminId}` +
+          (options.deletesPromoCodes > 0
+            ? ` (con ${options.deletesPromoCodes} código(s) sin canjear)`
+            : ''),
+      );
+      return { deleted: true, deactivated: false, ...options };
+    }
+
+    if (!options.isActive) {
+      throw new ConflictException(
+        `El vendedor ${options.code} ya está desactivado.`,
+      );
+    }
+
+    // Desactivar también apaga sus códigos: si siguieran vivos, un cliente
+    // podría redimir el descuento de alguien que ya no está en el programa.
+    await this.repository.updateRep(id, { isActive: false });
+    const disabledCodes = await this.repository.deactivateRepPromoCodes(id);
+
+    this.logger.log(
+      `Vendedor ${options.code} desactivado (no se puede borrar: ${options.blockers.join(', ')})` +
+        (disabledCodes > 0 ? `; ${disabledCodes} código(s) apagado(s)` : ''),
+    );
+    return {
+      deleted: false,
+      deactivated: true,
+      disabledCodes,
+      ...options,
+    };
   }
 
   /** Empresas que trajo un vendedor (su cartera). */
@@ -374,6 +502,35 @@ export class SalesService {
           : ''),
     );
     return { ...referral, backlog };
+  }
+
+  /**
+   * Reintenta causar las comisiones de una empresa YA vinculada cuyas compras
+   * quedaron sin comisionar. Es la salida al fallo silencioso: la causación es
+   * best-effort dentro del webhook, así que si se cae (la base ocupada, un
+   * despliegue a mitad de camino) la venta queda firme y la comisión no existe.
+   * Sin esto habría que arreglarlo a mano contra la base.
+   *
+   * A diferencia de assignReferral, no toca la vinculación ni mira la ventana:
+   * la empresa ya es de ese vendedor, solo faltaba registrar lo que ganó.
+   */
+  async retryAccrual(companyId: string, caller: SalesCaller) {
+    this.assertIsAdmin(caller);
+
+    const referral = await this.repository.findReferralByCompany(companyId);
+    if (!referral) {
+      throw new NotFoundException(
+        'La empresa no tiene vendedor asignado, así que no hay comisiones que causar',
+      );
+    }
+
+    const result =
+      await this.commissionsService.accrueBacklogForCompany(companyId);
+    this.logger.log(
+      `Reintento de causación para la empresa ${companyId} (${referral.salesRep.code}): ` +
+        `${result.count} comisión(es) por ${result.totalAmount}`,
+    );
+    return result;
   }
 
   /**

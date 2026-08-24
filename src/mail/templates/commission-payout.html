@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #eef1f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #eef1f6; padding: 40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(17,24,39,0.10);">
+          <tr>
+            <td style="background-color: #ffffff; padding: 28px 40px 0; text-align: center;">
+              <img src="{{logoUrl}}" alt="Creditia" height="40" style="height: 40px; display: inline-block;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 40px 0; text-align: center;">
+              <div style="height: 4px; width: 56px; background-color: #5AB991; border-radius: 2px; margin: 0 auto 24px;"></div>
+              <h1 style="color: #111827; margin: 0; font-size: 22px; font-weight: 700;">Te liquidamos tus comisiones</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 40px 8px;">
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
+                Hola {{salesRepName}}, ya salió el giro de tus comisiones. Aquí va el resumen; el detalle venta por venta está en el comprobante adjunto.
+              </p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0faf5; border: 1px solid #cdeade; border-radius: 10px; margin: 0 0 20px;">
+                <tr>
+                  <td style="padding: 22px 24px; text-align: center;">
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.04em;">Total girado</p>
+                    <p style="color: #2f8c66; font-size: 32px; font-weight: 700; margin: 0;">{{totalAmount}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; border-radius: 10px; margin: 0 0 20px;">
+                <tr>
+                  <td style="padding: 18px 20px;">
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Comprobante</p>
+                    <p style="color: #111827; font-size: 18px; font-weight: 700; margin: 0 0 12px;">{{reference}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Periodo</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">{{period}}</p>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em;">Ventas comisionadas</p>
+                    <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0;">{{commissionCount}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              {{notesBlock}}
+
+              <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 16px 0 0;">
+                Si algo no te cuadra, respóndenos este correo y lo revisamos.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 40px 32px; text-align: center;">
+              <p style="color: #9ca3af; font-size: 12px; line-height: 1.6; margin: 0;">
+                Este es un comprobante interno del programa de referidos de Creditia.
+                No constituye factura ni documento equivalente para efectos tributarios.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

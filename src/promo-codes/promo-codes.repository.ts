@@ -28,10 +28,18 @@ export interface PromoRedeemParams {
 export class PromoCodesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Para listar/leer: scope (label) + datos mínimos de empresa y creador.
+  // Para listar/leer: scope y tipo (labels) + empresa y vendedor que financia.
   private readonly defaultInclude = {
     scope: { select: { code: true, label: true } },
+    appliesTo: { select: { code: true, label: true } },
     company: { select: { id: true, name: true, nit: true } },
+    salesRep: {
+      select: {
+        id: true,
+        code: true,
+        platformAdmin: { select: { name: true, lastName: true } },
+      },
+    },
   } as const;
 
   /** Parameter por type+code (scope del código). */
@@ -39,9 +47,92 @@ export class PromoCodesRepository {
     return this.prisma.parameter.findFirst({ where: { type, code } });
   }
 
-  /** PlatformAdmin por su userId de Supabase (para createdBy). */
+  /**
+   * PlatformAdmin por su userId de Supabase. Trae el rol y su ficha de vendedor
+   * (si la tiene) porque de ahí sale el alcance: un vendedor solo maneja sus
+   * códigos, y quien es admin Y vendedor tiene que elegir quién financia.
+   */
   async findPlatformAdminByUserId(userId: string) {
-    return this.prisma.platformAdmin.findUnique({ where: { userId } });
+    return this.prisma.platformAdmin.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        isActive: true,
+        role: { select: { code: true } },
+        salesRep: { select: { id: true, code: true, isActive: true } },
+      },
+    });
+  }
+
+  /**
+   * Plan de comisiones vigente: de ahí sale el techo del descuento que un
+   * vendedor puede otorgar. Se consulta aquí y no vía SalesService para no
+   * acoplar los módulos (mismo criterio que findParameterByTypeAndCode).
+   */
+  async findActiveCommissionPlan() {
+    return this.prisma.commissionPlan.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        maxNewCustomerDiscount: true,
+        newCustomerPercent: true,
+      },
+    });
+  }
+
+  /**
+   * Compras FACTURADAS que ya tiene la empresa. 0 = la siguiente es su primera
+   * compra, que es lo que habilita un código de tipo 'first_purchase'.
+   */
+  async countPaidPacks(companyId: string) {
+    return this.prisma.analysisPack.count({
+      where: { companyId, totalPaid: { gt: 0 }, paidAt: { not: null } },
+    });
+  }
+
+  /**
+   * Paquete más chico del catálogo activo + el precio vigente. Es la referencia
+   * del simulador: el vendedor negocia sobre el paquete de entrada, así que la
+   * cuenta se le muestra en esos números y no en abstracto.
+   */
+  async findSimulationBasis() {
+    const [offering, price] = await Promise.all([
+      this.prisma.packOffering.findFirst({
+        where: { isActive: true },
+        orderBy: { quantity: 'asc' },
+        select: {
+          name: true,
+          quantity: true,
+          hasDiscount: true,
+          discountValue: true,
+          discountType: { select: { code: true } },
+        },
+      }),
+      this.prisma.consultationPrice.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          unitPrice: true,
+          currencyCode: true,
+          taxRate: true,
+          taxIncluded: true,
+        },
+      }),
+    ]);
+    return offering && price ? { offering, price } : null;
+  }
+
+  /** Vendedor al que está vinculada la empresa (null = venta directa). */
+  async findCompanyReferral(companyId: string) {
+    return this.prisma.companyReferral.findUnique({
+      where: { companyId },
+      select: {
+        salesRepId: true,
+        salesRep: { select: { code: true } },
+      },
+    });
   }
 
   async create(data: Prisma.PromoCodeUncheckedCreateInput) {
