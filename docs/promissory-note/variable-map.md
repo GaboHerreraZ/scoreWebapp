@@ -26,8 +26,9 @@ Env: `ZAPSIGN_PROMISSORY_NOTE_TEMPLATE_ID`,
 ## Reglas de emisión (las valida `PromissoryNotesService.issue`)
 
 - `CreditStudy.viabilityStatus` ∈ {`approved`, `conditional`}.
-- **Monto editable** pero ≤ `CreditStudy.requestedCreditLine`.
-- **Plazo en días editable** (`termDays`); vencimiento = fecha de emisión + plazo.
+- **Monto y plazo NO se piden**: el body solo trae `creditStudyId` y `signer`.
+  Se derivan del estudio (`recommendedCreditLine ?? requestedCreditLine` y
+  `requestedTerm ?? recommendedTerm`); vencimiento = emisión + plazo.
 - Un solo pagaré activo (pendiente o firmado) por estudio.
 - El estudio pasa a `credit_status = pendingSignature` al emitir; a `closed` al
   firmarse; vuelve a `studyCompleted` si se declina o el deudor rechaza.
@@ -68,15 +69,28 @@ datos después, el pagaré emitido no cambia).
 | `{{ACREEDOR_NUM_CUENTA}}`   | `Company.accountNumber`                      | `creditor_account_number` — **requerido** |
 | `{{ACREEDOR_BANCO}}`        | label del Parameter `Company.accountBank`    | `creditor_bank` — **requerido** |
 
-## LA OBLIGACIÓN (snapshot editable al emitir)
+## LA OBLIGACIÓN (derivada del estudio, no se pide al emitir)
 
 Es un **pagaré en blanco**: el documento **no imprime el monto ni la fecha de
-pago** (van en línea de guiones, los llena el acreedor conforme a la Sección 2, art.
-622 C.Co.). `amount`, `amount_in_words`, `term_days` y `due_date` se siguen
-guardando en `promissory_notes` (referencia interna, recordatorio de pago y
-tope vs. el cupo del estudio), pero **ya no se envían a la plantilla**: las
+pago** (van en línea de guiones, los llena el acreedor conforme a la Sección 2,
+art. 622 C.Co.). Por eso el formulario de emisión **ya no los pide** y las
 variables `{{MONTO_LETRAS}}`, `{{MONTO_NUMERO}}`, `{{PAGO_DIA}}`,
 `{{PAGO_MES}}` y `{{PAGO_ANIO}}` fueron eliminadas del mapeo.
+
+`amount`, `amount_in_words`, `term_days` y `due_date` se siguen guardando en
+`promissory_notes` como **referencia interna** (listado, detalle y recordatorio
+de pago), derivados del estudio en `resolveIssueContext`:
+
+| Columna           | Se deriva de                                          |
+|-------------------|--------------------------------------------------------|
+| `amount`          | `recommendedCreditLine ?? requestedCreditLine ?? 0`     |
+| `amount_in_words` | `numberToSpanishWords(amount)`                          |
+| `term_days`       | `requestedTerm ?? recommendedTerm` (puede quedar null)  |
+| `due_date`        | emisión + `term_days`; null si no hay plazo             |
+
+Si el estudio no tiene plazo, `due_date` queda null y el recordatorio de pago
+responde 400 ("El pagaré no tiene fecha de vencimiento registrada"), que es el
+comportamiento que ya existía para pagarés sin vencimiento.
 
 | Variable            | Origen                                                | Notas |
 |---------------------|--------------------------------------------------------|-------|

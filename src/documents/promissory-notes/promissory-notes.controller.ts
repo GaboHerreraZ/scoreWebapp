@@ -52,12 +52,12 @@ export class PromissoryNotesController {
   @ApiResponse({
     status: 201,
     description:
-      'Variables resueltas (consecutivo tentativo, monto en letras, vencimiento, deudor, acreedor)',
+      'HTML del pagaré ya rellenado + consecutivo tentativo (no emite nada)',
   })
   @ApiResponse({
     status: 400,
     description:
-      'Estudio no viable, monto mayor al solicitado o datos faltantes (email del cliente / cuenta bancaria de la empresa)',
+      'Estudio no viable o datos faltantes (email del firmante / cuenta bancaria de la empresa)',
   })
   @ApiResponse({
     status: 409,
@@ -79,7 +79,7 @@ export class PromissoryNotesController {
   @ApiResponse({
     status: 400,
     description:
-      'Estudio no viable, monto mayor al solicitado o datos faltantes (email del cliente / cuenta bancaria de la empresa)',
+      'Estudio no viable o datos faltantes (email del firmante / cuenta bancaria de la empresa)',
   })
   @ApiResponse({
     status: 409,

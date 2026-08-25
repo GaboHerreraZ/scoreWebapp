@@ -30,8 +30,9 @@ import { Prisma } from '../../../generated/prisma/client.js';
  * Pagarés firmados por el CONSULTADO (deudor) vía el proveedor de firma
  * (Zapsign, capa compartida en SigningModule). Se emiten solo para estudios
  * viables ('approved' | 'conditional', nunca 'rejected'), con consecutivo único
- * por empresa y monto/plazo editables respecto a la solicitud (monto ≤ cupo
- * solicitado). El documento incluye el pagaré y la autorización para llenar
+ * por empresa. Monto y plazo NO se piden al emitir: se derivan del estudio y se
+ * guardan como referencia interna, porque el pagaré se firma en blanco (el
+ * documento no los imprime). El documento incluye el pagaré y la autorización para llenar
  * espacios en blanco (art. 622 C.Co.): un solo acto de firma que se estampa en
  * ambas secciones vía el ancla `<<...>>` de la plantilla.
  *
@@ -135,7 +136,8 @@ export class PromissoryNotesService {
 
   /**
    * Carga el estudio y corre TODAS las validaciones de emisión (viabilidad,
-   * tope de monto, unicidad por estudio, email del firmante, datos bancarios).
+   * unicidad por estudio, email del firmante, datos bancarios), y deriva del
+   * estudio el monto y el plazo de referencia.
    * Compartido por preview() e issue() para que nunca diverjan.
    */
   private async resolveIssueContext(
@@ -176,16 +178,6 @@ export class PromissoryNotesService {
     ) {
       throw new BadRequestException(
         'Solo se puede emitir pagaré para estudios viables o viables con condiciones.',
-      );
-    }
-
-    // ── El monto es editable pero no puede superar el cupo solicitado ──
-    if (
-      study.requestedCreditLine != null &&
-      dto.amount > study.requestedCreditLine
-    ) {
-      throw new BadRequestException(
-        `El monto del pagaré (${formatCOP(dto.amount)}) no puede superar el cupo solicitado en el estudio (${formatCOP(study.requestedCreditLine)}).`,
       );
     }
 
@@ -309,11 +301,18 @@ export class PromissoryNotesService {
       );
     }
 
+    // ── Monto y plazo: derivados del estudio, NO se piden al emitir ──
+    // El pagaré se firma en blanco (no los imprime); se guardan como referencia
+    // interna para el listado, el detalle y el recordatorio de pago.
     const issuedAt = new Date();
-    const dueDate = new Date(
-      issuedAt.getTime() + dto.termDays * 24 * 60 * 60 * 1000,
+    const termDays = study.requestedTerm ?? study.recommendedTerm;
+    const dueDate =
+      termDays != null
+        ? new Date(issuedAt.getTime() + termDays * 24 * 60 * 60 * 1000)
+        : null;
+    const amount = Math.round(
+      study.recommendedCreditLine ?? study.requestedCreditLine ?? 0,
     );
-    const amount = Math.round(dto.amount);
     const amountInWords = numberToSpanishWords(amount);
 
     return {
@@ -324,6 +323,7 @@ export class PromissoryNotesService {
       signerEmail,
       firmante,
       issuedAt,
+      termDays,
       dueDate,
       amount,
       amountInWords,
@@ -422,7 +422,7 @@ export class PromissoryNotesService {
 
     return {
       noteNumber, // tentativo
-      requestedCreditLine: ctx.study.requestedCreditLine, // tope del monto editable
+      requestedCreditLine: ctx.study.requestedCreditLine, // informativo
       html,
     };
   }
@@ -447,6 +447,7 @@ export class PromissoryNotesService {
       signerEmail,
       firmante,
       issuedAt,
+      termDays,
       dueDate,
       amount,
       amountInWords,
@@ -471,7 +472,7 @@ export class PromissoryNotesService {
           noteNumber,
           amount,
           amountInWords,
-          termDays: dto.termDays,
+          termDays,
           dueDate,
           signCity: company.daneCity.name,
           creditorAddress: company.address,
