@@ -45,6 +45,7 @@ const ALL_SCREENS = [
   'contact-requests',
   'support-tickets',
   'platform-admins', // gestión de usuarios del portal: SOLO rol admin
+  'users', // usuarios de las empresas cliente: rol admin y soporte
   'blog-posts',
   'scoring-dimensions',
   'datacredito',
@@ -74,6 +75,10 @@ const BASE_SCREENS = [
 // descuento. NADA más: ni el dashboard (son métricas del negocio), ni sucursales,
 // ni datos de clientes. Es un referidor externo, no personal de Creditia.
 const SALES_SCREENS = ['sales-commissions', 'sales-promo-codes'];
+
+// Lo que soporte ve además del set base: atender un ticket exige poder mirar al
+// usuario que lo abrió. El endpoint también exige rol (@PlatformRoles).
+const SUPPORT_EXTRA_SCREENS = ['users'];
 
 // Ventana hacia adelante para marcar créditos "en riesgo de vencer" en /usage.
 const EXPIRY_RISK_DAYS = 30;
@@ -146,7 +151,9 @@ export class AdminService {
         ? [...ALL_SCREENS]
         : admin.role?.code === 'sales'
           ? [...SALES_SCREENS]
-          : [...BASE_SCREENS];
+          : admin.role?.code === 'support'
+            ? [...BASE_SCREENS, ...SUPPORT_EXTRA_SCREENS]
+            : [...BASE_SCREENS];
 
     // La purga de empresas es destructiva e irreversible: solo existe en
     // staging (el endpoint responde 404 fuera de él) y solo para rol admin.

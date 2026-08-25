@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller.js';
 import { AuthMeController } from './auth-me.controller.js';
 import { AdminService } from './admin.service.js';
+import { PlatformUsersService } from './platform-users.service.js';
 import { CompanyPurgeService } from './company-purge.service.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
 import { PdfExtractionTestRepository } from './pdf-extraction-test.repository.js';
@@ -26,6 +27,7 @@ import { EInvoicingModule } from '../e-invoicing/e-invoicing.module.js';
   controllers: [AdminController, AuthMeController],
   providers: [
     AdminService,
+    PlatformUsersService,
     CompanyPurgeService,
     PdfExtractionTestService,
     PdfExtractionTestRepository,

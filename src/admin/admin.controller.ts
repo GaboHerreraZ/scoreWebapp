@@ -28,7 +28,12 @@ import {
 } from '@nestjs/swagger';
 import { AdminGuard } from '../common/auth/admin.guard.js';
 import { StagingOnlyGuard } from '../common/auth/staging-only.guard.js';
+import {
+  PlatformRoles,
+  PlatformRolesGuard,
+} from '../common/auth/platform-roles.guard.js';
 import { AdminService } from './admin.service.js';
+import { PlatformUsersService } from './platform-users.service.js';
 import { CompanyPurgeService } from './company-purge.service.js';
 import { ScoringService } from '../scoring/scoring.service.js';
 import { CreateScoringDimensionDto } from '../scoring/dto/create-scoring-dimension.dto.js';
@@ -41,6 +46,7 @@ import { ResetCreditStudyDto } from './dto/reset-credit-study.dto.js';
 import { PurgeCompanyDto } from './dto/purge-company.dto.js';
 import { TestExtractPdfDto } from './dto/test-extract-pdf.dto.js';
 import { FilterPdfExtractionTestDto } from './dto/filter-pdf-extraction-test.dto.js';
+import { FilterPlatformUserDto } from './dto/filter-platform-user.dto.js';
 import { PdfExtractionTestService } from './pdf-extraction-test.service.js';
 import { ExperianClient } from '../credit-bureau/experian/experian.client.js';
 import {
@@ -55,6 +61,7 @@ import {
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
+    private readonly platformUsersService: PlatformUsersService,
     private readonly scoringService: ScoringService,
     private readonly pdfExtractionTestService: PdfExtractionTestService,
     private readonly experianClient: ExperianClient,
@@ -236,6 +243,54 @@ export class AdminController {
   ) {
     const callerUserId = (req as any).user.id as string;
     return this.adminService.deactivatePlatformAdmin(id, callerUserId);
+  }
+
+  // ── Usuarios del sistema (perfiles de las empresas cliente) ───────────────
+
+  @Get('users')
+  @PlatformRoles('admin', 'support')
+  @UseGuards(PlatformRolesGuard)
+  @ApiOperation({
+    summary:
+      'Listar los usuarios del sistema (cross-tenant). Rol admin/soporte',
+    description:
+      'Perfiles de los usuarios de las empresas cliente, NO los usuarios del portal (esos van en /admin/platform-admins). Fila liviana para la tabla: ficha básica, empresas a las que pertenece y cuántos estudios ha creado. Filtros independientes por email, identificationNumber y name (se combinan con AND); search busca el término en los tres a la vez.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Correo, nombre, apellido o identificación',
+  })
+  @ApiQuery({ name: 'email', required: false })
+  @ApiQuery({ name: 'identificationNumber', required: false })
+  @ApiQuery({ name: 'name', required: false })
+  @ApiResponse({ status: 200, description: 'data + meta (paginado)' })
+  @ApiResponse({
+    status: 403,
+    description: 'El rol del portal no tiene acceso a esta sección',
+  })
+  listUsers(@Query() filters: FilterPlatformUserDto) {
+    return this.platformUsersService.findAll(filters);
+  }
+
+  @Get('users/:id')
+  @PlatformRoles('admin', 'support')
+  @UseGuards(PlatformRolesGuard)
+  @ApiOperation({
+    summary: 'Ficha completa de un usuario del sistema. Rol admin/soporte',
+    description:
+      'Todo lo que cuelga del usuario: perfil, estado de su cuenta en Supabase Auth (último ingreso), empresas con su rol y quién lo invitó, y su actividad — estudios de crédito (total, desglose por estado y los más recientes), clientes creados, créditos de bolsa consumidos, consultas a la central, análisis de IA con tokens y costo, tickets de soporte e invitaciones enviadas.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'user, auth, companies, activity, creditStudies, customers, bureauConsultations, supportTickets',
+  })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  getUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.platformUsersService.findOne(id);
   }
 
   @Get('companies')
