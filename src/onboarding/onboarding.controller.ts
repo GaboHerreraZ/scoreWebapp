@@ -6,6 +6,7 @@ import {
   Param,
   Req,
   ParseUUIDPipe,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,13 +27,16 @@ export class OnboardingController {
   @Post()
   @ApiOperation({
     summary:
-      'Alta del cliente: crea Profile + Company + facturación (atómico). El pago del pack es un paso posterior.',
+      'Alta del cliente: crea Profile mínimo + Company (solo nombre) + facturación (atómico). El pago del pack es un paso posterior.',
   })
   @ApiResponse({
     status: 201,
     description: 'profileId, companyId y userCompanyId creados',
   })
-  @ApiResponse({ status: 409, description: 'El NIT ya existe' })
+  @ApiResponse({
+    status: 409,
+    description: 'El correo ya pertenece a otro perfil',
+  })
   onboard(@Body() dto: OnboardingDto, @Req() req: Request) {
     const userId = (req as any).user.id as string;
     const email = (req as any).user.email as string;
@@ -49,7 +53,15 @@ export class OnboardingController {
     description: 'profileId, companyId, profile, company y billing',
   })
   @ApiResponse({ status: 404, description: 'Perfil o empresa no encontrados' })
-  getOnboardingData(@Param('profileId', ParseUUIDPipe) profileId: string) {
+  getOnboardingData(
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Req() req: Request,
+  ) {
+    // Devuelve datos de facturación: solo el dueño del perfil puede leerlos.
+    const userId = (req as any).user.id as string;
+    if (userId !== profileId) {
+      throw new ForbiddenException('Solo puedes consultar tu propio perfil');
+    }
     return this.onboardingService.getOnboardingData(profileId);
   }
 }

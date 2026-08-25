@@ -12,39 +12,21 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Perfil mínimo del onboarding: solo lo necesario para arrancar. Documento y
+ * teléfono ya no se piden aquí (se siembran desde la facturación si es persona
+ * natural, o se completan después desde Administración → Perfil).
+ */
 class OnboardingProfileDto {
-  @ApiPropertyOptional({ example: 'Gabriel', maxLength: 150 })
-  @IsOptional()
+  @ApiProperty({ example: 'Gabriel', maxLength: 150 })
   @IsString()
   @MaxLength(150)
-  name?: string;
+  name: string;
 
-  @ApiPropertyOptional({ example: 'Herrera', maxLength: 150 })
-  @IsOptional()
+  @ApiProperty({ example: 'Herrera', maxLength: 150 })
   @IsString()
   @MaxLength(150)
-  lastName?: string;
-
-  @ApiPropertyOptional({ example: '+573001234567', maxLength: 50 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  phone?: string;
-
-  @ApiPropertyOptional({
-    example: 104,
-    description: 'Parameter ID tipo de documento',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  identificationTypeId?: number;
-
-  @ApiPropertyOptional({ example: '1035851234', maxLength: 50 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  identificationNumber?: string;
+  lastName: string;
 
   @ApiPropertyOptional({ example: 'Gerente', maxLength: 150 })
   @IsOptional()
@@ -53,72 +35,16 @@ class OnboardingProfileDto {
   position?: string;
 }
 
+/**
+ * La empresa nace solo con el nombre. NIT, sector, ciudad y dirección se
+ * completan después en Administración → Empresa (gates por función: los
+ * estudios exigen NIT; el pagaré, dirección y ciudad).
+ */
 class OnboardingCompanyDto {
   @ApiProperty({ example: 'Acme S.A.S.', maxLength: 255 })
   @IsString()
   @MaxLength(255)
   name: string;
-
-  @ApiProperty({ example: '900123456-7', maxLength: 50 })
-  @IsString()
-  @MaxLength(50)
-  nit: string;
-
-  @ApiProperty({ example: 12, description: 'Parameter ID del sector' })
-  @Type(() => Number)
-  @IsInt()
-  sectorId: number;
-
-  @ApiProperty({
-    example: '05001',
-    description: 'Código DANE del municipio (dane_cities)',
-    maxLength: 5,
-  })
-  @IsString()
-  @MaxLength(5)
-  cityCode: string;
-
-  @ApiProperty({ example: 'Calle 1 #2-3', maxLength: 255 })
-  @IsString()
-  @MaxLength(255)
-  address: string;
-}
-
-/**
- * Representante legal de la empresa: quien tiene facultad para obligarla y por
- * tanto figura en los documentos que la vinculan. Puede no ser el usuario que se
- * registra, por eso se piden aparte del profile.
- */
-class OnboardingLegalRepDto {
-  @ApiProperty({ example: 'María Gómez Rojas', maxLength: 255 })
-  @IsString()
-  @MaxLength(255)
-  legalRepName: string;
-
-  @ApiProperty({ example: 104, description: 'Parameter ID tipo de documento' })
-  @Type(() => Number)
-  @IsInt()
-  legalRepIdentificationTypeId: number;
-
-  @ApiProperty({ example: '1035851234', maxLength: 50 })
-  @IsString()
-  @MaxLength(50)
-  legalRepIdentificationNumber: string;
-
-  @ApiProperty({
-    example: 'maria.gomez@acme.com',
-    maxLength: 255,
-    description: 'Correo de contacto del representante legal',
-  })
-  @IsEmail()
-  @MaxLength(255)
-  legalRepEmail: string;
-
-  @ApiPropertyOptional({ example: '+573001234567', maxLength: 50 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  legalRepPhone?: string;
 }
 
 class OnboardingBillingDto {
@@ -219,12 +145,6 @@ export class OnboardingDto {
   @ValidateNested()
   @Type(() => OnboardingCompanyDto)
   company: OnboardingCompanyDto;
-
-  @ApiProperty({ type: OnboardingLegalRepDto })
-  @IsObject()
-  @ValidateNested()
-  @Type(() => OnboardingLegalRepDto)
-  legalRep: OnboardingLegalRepDto;
 
   @ApiProperty({ type: OnboardingBillingDto })
   @IsObject()

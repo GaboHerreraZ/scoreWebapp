@@ -413,7 +413,11 @@ export class CreditStudiesService {
     const viewModel = buildReportViewModel(
       steps as unknown as StepsData,
       company
-        ? { name: company.name, nit: company.nit, city: company.daneCity.name }
+        ? {
+            name: company.name,
+            nit: company.nit,
+            city: company.daneCity?.name ?? null,
+          }
         : { name: null, nit: null, city: null },
       generatedAt,
     );

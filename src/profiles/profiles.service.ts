@@ -9,6 +9,7 @@ import { ParametersRepository } from '../parameters/parameters.repository.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { FilterProfileDto } from './dto/filter-profile.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { missingCompanyData } from '../companies/company-completeness.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
 @Injectable()
@@ -126,19 +127,41 @@ export class ProfilesService {
     }
 
     const { userCompanies, ...rest } = profile;
-    const company = userCompanies[0];
+    // Nullable a propósito: un perfil puede existir sin empresa (invitación a
+    // medias, onboarding interrumpido); antes esto tumbaba el post-login.
+    const company = userCompanies[0] ?? null;
+    // Campos operativos aún sin completar (onboarding diferido): el front pinta
+    // con esto el checklist de pendientes y el aviso del header.
+    const companyMissingFields = company
+      ? missingCompanyData(company.company)
+      : [];
+    const c = company?.company;
+    const companyBankDataComplete = !!(
+      c?.accountTypeId &&
+      c.accountBankId &&
+      c.accountNumber
+    );
+    const companyLegalRepComplete = !!(
+      c?.legalRepName &&
+      c.legalRepIdentificationTypeId &&
+      c.legalRepIdentificationNumber &&
+      c.legalRepEmail
+    );
 
     return {
       ...rest,
       role: rest.role?.code,
       roleName: rest.role?.label,
-      hasCompany: userCompanies.length > 0,
-      isUserActiveInCompany: company.isActive,
-      companyId: company.companyId,
-      companyName: company.company.name,
-      companyCity: company.company.daneCity.name,
-      companyNit: company.company.nit,
-      isOnboardingReady: company.company.isOnboardingReady,
+      hasCompany: company != null,
+      isUserActiveInCompany: company?.isActive ?? false,
+      companyId: company?.companyId ?? null,
+      companyName: company?.company.name ?? null,
+      companyCity: company?.company.daneCity?.name ?? null,
+      companyNit: company?.company.nit ?? null,
+      isOnboardingReady: company?.company.isOnboardingReady ?? false,
+      companyMissingFields,
+      companyBankDataComplete,
+      companyLegalRepComplete,
       onboardingStatus,
       permissions,
     };

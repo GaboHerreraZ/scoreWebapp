@@ -81,7 +81,7 @@ export class CompanyPurgeService {
     dto: PurgeCompanyDto,
     callerUserId: string,
   ): Promise<{
-    company: { id: string; name: string; nit: string };
+    company: { id: string; name: string; nit: string | null };
     steps: PurgeStep[];
     totalRows: number;
     users: {
@@ -98,15 +98,20 @@ export class CompanyPurgeService {
     await this.assertCallerIsAdmin(callerUserId);
 
     const company = await this.findCompanyOrFail(companyId);
-    if (dto.confirmNit.trim() !== company.nit) {
+    // Confirmación: el NIT si existe; si la empresa aún no lo registró
+    // (onboarding diferido), la razón social exacta.
+    const challenge = company.nit ?? company.name;
+    if (dto.confirmNit.trim() !== challenge) {
       throw new BadRequestException(
-        'El NIT de confirmación no coincide con el de la empresa',
+        company.nit
+          ? 'El NIT de confirmación no coincide con el de la empresa'
+          : 'La razón social de confirmación no coincide con la de la empresa',
       );
     }
 
     const startedAt = Date.now();
     this.logger.warn(
-      `PURGA de empresa ${company.name} (${company.nit}, id=${companyId}) solicitada por ${callerUserId}`,
+      `PURGA de empresa ${company.name} (${company.nit ?? 'sin NIT'}, id=${companyId}) solicitada por ${callerUserId}`,
     );
 
     const result = await this.prisma.$transaction(
@@ -116,7 +121,7 @@ export class CompanyPurgeService {
 
     const durationMs = Date.now() - startedAt;
     this.logger.warn(
-      `PURGA completada: ${company.nit} — ${result.totalRows} filas en ${durationMs} ms`,
+      `PURGA completada: ${company.name} — ${result.totalRows} filas en ${durationMs} ms`,
     );
 
     return {

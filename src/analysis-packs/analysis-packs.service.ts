@@ -1267,8 +1267,10 @@ export class AnalysisPacksService {
     }
 
     try {
+      // Solo el rol 'admin' del portal (más SUPPORT_EMAIL): el desglose fiscal
+      // no debe llegarle a soporte ni a ventas.
       const adminEmails =
-        await this.platformAdminRepository.findActiveAdminEmails();
+        await this.platformAdminRepository.findActiveAdminEmails('admin');
       if (adminEmails.length === 0) {
         this.logger.warn(
           `Venta de la bolsa ${pack.id}: no hay admins activos a quién notificar`,
@@ -1357,10 +1359,10 @@ export class AnalysisPacksService {
       );
     }
 
-    // Correo a los admins activos del portal.
+    // Correo a los usuarios del portal con rol 'admin' (más SUPPORT_EMAIL).
     try {
       const adminEmails =
-        await this.platformAdminRepository.findActiveAdminEmails();
+        await this.platformAdminRepository.findActiveAdminEmails('admin');
       const companyName = billing?.name ?? pack.companyId;
       const actionNote = consumed
         ? `El cliente ya consumió ${pack.quantityConsumed} de ${pack.quantityPurchased} ` +

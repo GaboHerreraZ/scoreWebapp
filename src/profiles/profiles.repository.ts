@@ -50,6 +50,18 @@ export class ProfilesRepository {
                 nit: true,
                 name: true,
                 isOnboardingReady: true,
+                // Para calcular companyMissingFields (onboarding diferido).
+                sectorId: true,
+                cityCode: true,
+                address: true,
+                // Para el checklist de pendientes: bancarios (pagaré) y rep. legal.
+                accountTypeId: true,
+                accountBankId: true,
+                accountNumber: true,
+                legalRepName: true,
+                legalRepIdentificationTypeId: true,
+                legalRepIdentificationNumber: true,
+                legalRepEmail: true,
               },
             },
           },

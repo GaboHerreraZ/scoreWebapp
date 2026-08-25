@@ -12,6 +12,7 @@ import {
   type PersonTypeCode,
 } from '../scoring/scoring.constants.js';
 import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
+import { isLegalEntityDocument } from '../e-invoicing/domain/dian.catalogs.js';
 import { SalesService } from '../sales/sales.service.js';
 
 @Injectable()
@@ -24,12 +25,11 @@ export class OnboardingService {
   ) {}
 
   /**
-   * Alta de un cliente que se autorregistra: crea Profile (ligado al usuario de
-   * Supabase ya autenticado) + Company (con facturación y representante legal)
-   * + UserCompany (rol administrator), todo en una transacción. El representante
-   * legal se pide aparte porque es quien obliga a la empresa y no tiene por
-   * qué ser el usuario que se registra. NO toca ePayco: el pago es un paso
-   * posterior (POST companies/:id/analysis-packs/purchase con el packOfferingId).
+   * Alta de un cliente que se autorregistra: crea Profile (mínimo: nombre,
+   * apellido y cargo) + Company (solo nombre + facturación) + UserCompany (rol
+   * administrator), todo en una transacción. El NIT, sector, ciudad, dirección
+   * y representante legal se completan después en la app. NO toca ePayco: el
+   * pago es un paso posterior (POST companies/:id/analysis-packs/purchase).
    *
    * @param userId id del usuario en Supabase (del token) → PK del Profile.
    * @param email  email del usuario (del token) → email del Profile.
@@ -45,16 +45,6 @@ export class OnboardingService {
     if (emailOwner && emailOwner.id !== userId) {
       throw new ConflictException(
         `El correo ${email} ya existe en el sistema asociado a otro perfil.`,
-      );
-    }
-
-    // Validaciones rápidas antes de la transacción.
-    const existingNit = await this.prisma.company.findUnique({
-      where: { nit: dto.company.nit },
-    });
-    if (existingNit) {
-      throw new ConflictException(
-        `Ya existe una empresa con el NIT ${dto.company.nit}`,
       );
     }
 
@@ -96,6 +86,32 @@ export class OnboardingService {
       ? await this.salesService.resolveCodeForOnboarding(dto.salesRepCode)
       : null;
 
+    // El wizard ya no pide documento ni teléfono del usuario: si la facturación
+    // es de persona natural, ese documento/teléfono son de la persona y se
+    // siembran en el perfil (sin pisar lo que ya tenga).
+    const billingDocType = await this.parametersRepository.findById(
+      dto.billing.billingDocTypeId,
+    );
+    const isPersonalDoc =
+      billingDocType != null && !isLegalEntityDocument(billingDocType.code);
+    const existingProfile = await this.prisma.profile.findUnique({
+      where: { id: userId },
+      select: {
+        identificationTypeId: true,
+        identificationNumber: true,
+        phone: true,
+      },
+    });
+    const identificationTypeId =
+      existingProfile?.identificationTypeId ??
+      (isPersonalDoc ? dto.billing.billingDocTypeId : undefined);
+    const identificationNumber =
+      existingProfile?.identificationNumber ??
+      (isPersonalDoc ? dto.billing.billingDocNumber : undefined);
+    const phone =
+      existingProfile?.phone ??
+      (isPersonalDoc ? dto.billing.billingPhone : undefined);
+
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. Profile (upsert: el usuario de Supabase ya existe; si ya tenía
       //    Profile se actualizan sus datos, si no se crea).
@@ -106,38 +122,27 @@ export class OnboardingService {
           email,
           name: dto.profile.name,
           lastName: dto.profile.lastName,
-          phone: dto.profile.phone,
+          phone,
           roleId: adminRole.id, // dueño que se autorregistra = administrator
-          identificationTypeId: dto.profile.identificationTypeId,
-          identificationNumber: dto.profile.identificationNumber,
+          identificationTypeId,
+          identificationNumber,
           position: dto.profile.position,
         },
         update: {
           name: dto.profile.name,
           lastName: dto.profile.lastName,
-          phone: dto.profile.phone,
+          phone,
           roleId: adminRole.id,
-          identificationTypeId: dto.profile.identificationTypeId,
-          identificationNumber: dto.profile.identificationNumber,
+          identificationTypeId,
+          identificationNumber,
           position: dto.profile.position,
         },
       });
 
-      // 2. Company con facturación.
+      // 2. Company mínima (solo nombre) + facturación. El resto se difiere.
       const company = await tx.company.create({
         data: {
           name: dto.company.name,
-          nit: dto.company.nit,
-          sectorId: dto.company.sectorId,
-          cityCode: dto.company.cityCode,
-          address: dto.company.address,
-          legalRepName: dto.legalRep.legalRepName,
-          legalRepIdentificationTypeId:
-            dto.legalRep.legalRepIdentificationTypeId,
-          legalRepIdentificationNumber:
-            dto.legalRep.legalRepIdentificationNumber,
-          legalRepEmail: dto.legalRep.legalRepEmail,
-          legalRepPhone: dto.legalRep.legalRepPhone,
           billingName: dto.billing.billingName,
           billingLastName: dto.billing.billingLastName,
           billingBusinessName: dto.billing.billingBusinessName,
@@ -288,16 +293,10 @@ export class OnboardingService {
         sectorId: company.sectorId,
         cityCode: company.cityCode,
         // Resueltos para pintar el resumen sin que el front vuelva al catálogo.
-        city: company.daneCity.name,
-        state: company.daneCity.region.name,
+        // Nullable: la empresa puede no tener domicilio aún (onboarding mínimo).
+        city: company.daneCity?.name ?? null,
+        state: company.daneCity?.region.name ?? null,
         address: company.address,
-      },
-      legalRep: {
-        legalRepName: company.legalRepName,
-        legalRepIdentificationTypeId: company.legalRepIdentificationTypeId,
-        legalRepIdentificationNumber: company.legalRepIdentificationNumber,
-        legalRepEmail: company.legalRepEmail,
-        legalRepPhone: company.legalRepPhone,
       },
       billing: {
         billingName: company.billingName,
