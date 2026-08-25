@@ -24,6 +24,7 @@ import { numberToSpanishWords } from '../../common/utils/number-to-words.js';
 import { formatCOP } from '../../common/utils/currency.js';
 import { bogotaDateParts, MESES_ES } from '../../common/utils/bogota-date.js';
 import { MailService } from '../../mail/mail.service.js';
+import { MissingFieldCollector } from '../../companies/company-completeness.js';
 import { Prisma } from '../../../generated/prisma/client.js';
 
 /**
@@ -289,17 +290,17 @@ export class PromissoryNotesService {
       };
     }
 
-    // ── Datos bancarios del acreedor: los exige el texto del pagaré ──
+    // ── Datos del acreedor: el texto del pagaré imprime NIT, dirección,
+    //    ciudad y cuenta bancaria de la empresa; sin ellos no se emite ──
     const company = study.company;
-    const missingBank: string[] = [];
-    if (!company.accountType) missingBank.push('tipo de cuenta');
-    if (!company.accountNumber) missingBank.push('número de cuenta');
-    if (!company.accountBank) missingBank.push('banco');
-    if (missingBank.length > 0) {
-      throw new BadRequestException(
-        `Para emitir el pagaré es necesario completar los datos bancarios de la empresa (falta: ${missingBank.join(', ')}). Puedes registrarlos en Administración → Empresa → Datos financieros.`,
-      );
-    }
+    new MissingFieldCollector()
+      .require(!!company.nit?.trim(), 'nit', 'NIT')
+      .require(!!company.address?.trim(), 'address', 'dirección')
+      .require(!!company.daneCity, 'cityCode', 'ciudad')
+      .require(!!company.accountType, 'accountTypeId', 'tipo de cuenta')
+      .require(!!company.accountNumber, 'accountNumber', 'número de cuenta')
+      .require(!!company.accountBank, 'accountBankId', 'banco')
+      .assertComplete('emitir el pagaré');
 
     // ── Monto y plazo: derivados del estudio, NO se piden al emitir ──
     // El pagaré se firma en blanco (no los imprime); se guardan como referencia
@@ -347,9 +348,9 @@ export class PromissoryNotesService {
       };
       company: {
         name: string;
-        nit: string;
-        address: string;
-        daneCity: { name: string };
+        nit: string | null;
+        address: string | null;
+        daneCity: { name: string } | null;
         accountNumber: string | null;
         accountType: { label: string } | null;
         accountBank: { label: string } | null;
@@ -386,15 +387,16 @@ export class PromissoryNotesService {
       DEUDOR_DIRECCION: customer.address ?? '—',
       DEUDOR_TELEFONO: customer.phone ?? '—',
       DEUDOR_EMAIL: signerEmail,
+      // El gate de datos del acreedor corre antes; los ?? son solo por tipado.
       ACREEDOR_RAZON_SOCIAL: company.name,
-      ACREEDOR_NIT: company.nit,
-      ACREEDOR_DIRECCION: company.address,
-      ACREEDOR_CIUDAD: company.daneCity.name,
+      ACREEDOR_NIT: company.nit ?? '',
+      ACREEDOR_DIRECCION: company.address ?? '',
+      ACREEDOR_CIUDAD: company.daneCity?.name ?? '',
       ACREEDOR_TIPO_CUENTA: company.accountType?.label ?? '',
       ACREEDOR_NUM_CUENTA: company.accountNumber ?? '',
       ACREEDOR_BANCO: company.accountBank?.label ?? '',
       FORMA_PAGO: 'un solo pago',
-      FIRMA_CIUDAD: company.daneCity.name,
+      FIRMA_CIUDAD: company.daneCity?.name ?? '',
       FIRMA_DIA: String(firma.day),
       FIRMA_MES: firma.monthName,
       FIRMA_ANIO: String(firma.year),
@@ -474,8 +476,9 @@ export class PromissoryNotesService {
           amountInWords,
           termDays,
           dueDate,
-          signCity: company.daneCity.name,
-          creditorAddress: company.address,
+          // El gate de datos del acreedor corre en prepare(); ?? por tipado.
+          signCity: company.daneCity?.name ?? '',
+          creditorAddress: company.address ?? '',
           creditorAccountType: company.accountType?.label ?? null,
           creditorAccountNumber: company.accountNumber,
           creditorBank: company.accountBank?.label ?? null,

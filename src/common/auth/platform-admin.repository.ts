@@ -115,10 +115,17 @@ export class PlatformAdminRepository {
    * Emails para notificaciones internas (soporte/ventas): los admins activos del
    * portal MÁS el buzón central de soporte (SUPPORT_EMAIL, default
    * soporte@creditia.co), que siempre debe recibir copia. Sin duplicados.
+   * Con roleCode se limita a los usuarios activos con ese rol del portal
+   * (p.ej. 'admin' para los correos de ventas cobradas y reversas).
    */
-  async findActiveAdminEmails(): Promise<string[]> {
+  async findActiveAdminEmails(roleCode?: string): Promise<string[]> {
     const admins = await this.prisma.platformAdmin.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(roleCode
+          ? { role: { type: 'platform_admin_role', code: roleCode } }
+          : {}),
+      },
       select: { email: true },
     });
     const emails = admins.map((a) => a.email).filter((e): e is string => !!e);

@@ -183,10 +183,12 @@ model ConsultationPrice {
 model Company {
   id               String   @id @default(uuid()) @db.Uuid
   name             String   @db.VarChar(255)
-  nit              String   @unique @db.VarChar(50)
-  sectorId         Int      @map("sector_id")
-  cityCode         String   @map("city_code") @db.VarChar(5)
-  address          String   @db.VarChar(255)
+  // nit/sector/ciudad/dirección son nullable: el onboarding solo pide el nombre
+  // y estos se completan después en la app (gates por función: estudios, pagaré).
+  nit              String?  @unique @db.VarChar(50)
+  sectorId         Int?     @map("sector_id")
+  cityCode         String?  @map("city_code") @db.VarChar(5)
+  address          String?  @db.VarChar(255)
   accountTypeId    Int?     @map("account_type_id")
   accountBankId    Int?     @map("account_bank_id")
   accountNumber    String?  @map("account_number") @db.VarChar(50)
@@ -216,13 +218,13 @@ model Company {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  sector               Parameter             @relation("CompanySector", fields: [sectorId], references: [id])
+  sector               Parameter?            @relation("CompanySector", fields: [sectorId], references: [id])
   accountType          Parameter?            @relation("CompanyAccountType", fields: [accountTypeId], references: [id])
   accountBank          Parameter?            @relation("CompanyAccountBank", fields: [accountBankId], references: [id])
   billingDocType       Parameter?            @relation("CompanyBillingDocType", fields: [billingDocTypeId], references: [id])
   legalRepIdentificationType Parameter?      @relation("CompanyLegalRepIdentificationType", fields: [legalRepIdentificationTypeId], references: [id])
   billingRegimeType    Parameter?            @relation("CompanyBillingRegimeType", fields: [billingRegimeTypeId], references: [id])
-  daneCity             DaneCity              @relation("CompanyCity", fields: [cityCode], references: [code])
+  daneCity             DaneCity?             @relation("CompanyCity", fields: [cityCode], references: [code])
   billingDaneCity      DaneCity?             @relation("CompanyBillingCity", fields: [billingCityCode], references: [code])
   userCompanies        UserCompany[]
   invitations          Invitation[]

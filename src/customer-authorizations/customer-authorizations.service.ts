@@ -16,6 +16,7 @@ import {
   extractDocToken,
 } from '../documents/signing/dto/zapsign-webhook.dto.js';
 import { CREDITIA_PARTY } from '../common/constants/creditia.constants.js';
+import { MissingFieldCollector } from '../companies/company-completeness.js';
 
 /**
  * Orquesta la autorización del TITULAR CONSULTADO (documento único: tratamiento
@@ -149,6 +150,12 @@ export class CustomerAuthorizationsService {
     if (!company) {
       throw new BadRequestException(`Empresa ${companyId} no encontrada`);
     }
+    // La autorización imprime la razón social y el NIT de la Responsable: sin
+    // NIT real el consentimiento del titular queda viciado → se exige antes.
+    const companyNit = company.nit?.trim() ?? '';
+    new MissingFieldCollector()
+      .require(!!companyNit, 'nit', 'NIT')
+      .assertComplete('consultar en centrales de riesgo');
 
     // Cliente existente de la identidad (si ya fue consultada antes): respaldo
     // para la ciudad y los datos del representante legal. En la 1ª consulta no
@@ -178,7 +185,7 @@ export class CustomerAuthorizationsService {
         '',
       TITULAR_EMAIL: dto.titularEmail,
       EMPRESA_RAZON_SOCIAL: company.name,
-      EMPRESA_NIT: company.nit,
+      EMPRESA_NIT: companyNit,
     };
 
     let signerName = dto.titularName;

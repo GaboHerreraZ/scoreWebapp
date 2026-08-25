@@ -577,10 +577,11 @@ export class AdminService {
         nit: company.nit,
         isActive: company.isActive,
         isOnboardingReady: company.isOnboardingReady,
-        sector: company.sector.label,
+        // Nullable: la empresa puede no haber completado sus datos aún.
+        sector: company.sector?.label ?? null,
         location: {
-          state: company.daneCity.region.name,
-          city: company.daneCity.name,
+          state: company.daneCity?.region.name ?? null,
+          city: company.daneCity?.name ?? null,
           cityCode: company.cityCode,
           address: company.address,
         },

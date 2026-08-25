@@ -12,7 +12,9 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFile,
+  UseGuards,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -29,14 +31,21 @@ import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { FilterCompanyDto } from './dto/filter-company.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { MAX_IMAGE_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
+import { AdminGuard } from '../common/auth/admin.guard.js';
+import { PlatformAdminRepository } from '../common/auth/platform-admin.repository.js';
+import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 
 @ApiTags('Companies')
 @ApiBearerAuth()
 @Controller('companies')
 export class CompaniesController {
-  constructor(private readonly companiesService: CompaniesService) {}
+  constructor(
+    private readonly companiesService: CompaniesService,
+    private readonly platformAdminRepository: PlatformAdminRepository,
+  ) {}
 
   @Get()
+  @UseGuards(AdminGuard)
   @ApiOperation({ summary: 'List companies with pagination and filters' })
   @ApiResponse({ status: 200, description: 'Paginated list of companies' })
   findAll(@Query() filters: FilterCompanyDto) {
@@ -44,21 +53,36 @@ export class CompaniesController {
   }
 
   @Get('user/:userId')
-  @ApiOperation({ summary: 'Get companies by user ID' })
+  @ApiOperation({ summary: 'Get companies by user ID (self or admin)' })
   @ApiResponse({ status: 200, description: 'List of companies for this user' })
-  findByUserId(@Param('userId', ParseUUIDPipe) userId: string) {
+  async findByUserId(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req: Request,
+  ) {
+    const requesterId = (req as any).user.id as string;
+    if (requesterId !== userId) {
+      const isAdmin =
+        await this.platformAdminRepository.isPlatformAdmin(requesterId);
+      if (!isAdmin) {
+        throw new ForbiddenException(
+          'Solo puedes consultar tus propias empresas',
+        );
+      }
+    }
     return this.companiesService.findByUserId(userId);
   }
 
-  @Get(':id')
+  @Get(':companyId')
+  @CompanyScoped()
   @ApiOperation({ summary: 'Get a company by ID' })
   @ApiResponse({ status: 200, description: 'Company found' })
   @ApiResponse({ status: 404, description: 'Company not found' })
-  findById(@Param('id', ParseUUIDPipe) id: string) {
+  findById(@Param('companyId', ParseUUIDPipe) id: string) {
     return this.companiesService.findById(id);
   }
 
-  @Get(':id/customers')
+  @Get(':companyId/customers')
+  @CompanyScoped()
   @ApiOperation({ summary: 'List customers of a company' })
   @ApiResponse({
     status: 200,
@@ -66,25 +90,30 @@ export class CompaniesController {
   })
   @ApiResponse({ status: 404, description: 'Company not found' })
   findCustomers(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('companyId', ParseUUIDPipe) id: string,
     @Query() filters: PaginationDto,
   ) {
     return this.companiesService.findCustomers(id, filters);
   }
 
-  @Patch(':id')
+  @Patch(':companyId')
+  @CompanyScoped()
   @ApiOperation({ summary: 'Partially update a company' })
   @ApiResponse({ status: 200, description: 'Company updated successfully' })
   @ApiResponse({ status: 404, description: 'Company not found' })
-  @ApiResponse({ status: 409, description: 'NIT uniqueness conflict' })
+  @ApiResponse({
+    status: 409,
+    description: 'NIT uniqueness conflict or NIT already set',
+  })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('companyId', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCompanyDto,
   ) {
     return this.companiesService.update(id, dto);
   }
 
-  @Patch(':id/logo')
+  @Patch(':companyId/logo')
+  @CompanyScoped()
   @UseInterceptors(
     FileInterceptor('logo', { limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } }),
   )
@@ -107,7 +136,7 @@ export class CompaniesController {
   @ApiResponse({ status: 400, description: 'Invalid file' })
   @ApiResponse({ status: 404, description: 'Company not found' })
   uploadLogo(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('companyId', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
@@ -131,13 +160,14 @@ export class CompaniesController {
     return this.companiesService.uploadLogo(id, file);
   }
 
-  @Delete(':id')
+  @Delete(':companyId')
+  @CompanyScoped()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a company' })
   @ApiResponse({ status: 204, description: 'Company deleted successfully' })
   @ApiResponse({ status: 404, description: 'Company not found' })
   @ApiResponse({ status: 409, description: 'Cannot delete: has dependencies' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('companyId', ParseUUIDPipe) id: string) {
     return this.companiesService.remove(id);
   }
 }

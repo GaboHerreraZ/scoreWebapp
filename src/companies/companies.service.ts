@@ -97,7 +97,18 @@ export class CompaniesService {
       throw new NotFoundException(`Empresa con id=${id} no encontrada`);
     }
 
-    if (dto.nit && dto.nit !== current.nit) {
+    // El NIT se escribe UNA sola vez: es la llave natural del tenant y queda
+    // impreso en documentos firmados (autorizaciones, pagarés). Editable solo
+    // mientras esté vacío (onboarding diferido).
+    if (dto.nit !== undefined && dto.nit !== current.nit) {
+      if (!dto.nit.trim()) {
+        throw new ConflictException('El NIT no puede quedar vacío');
+      }
+      if (current.nit) {
+        throw new ConflictException(
+          'El NIT ya fue registrado y no puede modificarse. Contacta a soporte si necesitas corregirlo.',
+        );
+      }
       const duplicate = await this.repository.findByNit(dto.nit);
       if (duplicate) {
         throw new ConflictException(
