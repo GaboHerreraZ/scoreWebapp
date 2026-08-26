@@ -67,6 +67,17 @@ export class PromoCodesController {
     return this.service.findOne(id, userId);
   }
 
+  @Get(':id/redemptions')
+  @ApiOperation({
+    summary: 'Canjes de un código: empresas que lo usaron y en qué compra',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de canjes (más reciente primero)' })
+  @ApiResponse({ status: 404, description: 'No encontrado' })
+  findRedemptions(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const userId = (req as any).user.id as string;
+    return this.service.findRedemptions(id, userId);
+  }
+
   @Patch(':id')
   @ApiOperation({
     summary:

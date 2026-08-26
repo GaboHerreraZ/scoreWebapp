@@ -303,6 +303,15 @@ export class PromoCodesService {
   }
 
   /**
+   * Canjes de un código: qué empresas lo usaron, cuándo y en qué compra.
+   * findOne ya valida existencia y propiedad (un vendedor solo ve los suyos).
+   */
+  async findRedemptions(id: string, userId: string) {
+    await this.findOne(id, userId);
+    return this.repository.findRedemptionsByPromoCode(id);
+  }
+
+  /**
    * Edición acotada: solo isActive, vigencia y nota. El code, scope, tipo, %,
    * empresa, financiador y cupo son inmutables (cambiarlos rompería la
    * consistencia con los canjes y con las comisiones ya causadas).

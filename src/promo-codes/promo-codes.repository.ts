@@ -183,6 +183,36 @@ export class PromoCodesRepository {
     });
   }
 
+  /**
+   * Canjes de un código con la empresa que lo usó y la compra donde se aplicó.
+   * Se consulta por código al expandir la fila en el portal (lazy): el volumen
+   * lo acota maxRedemptions y lo cubre el índice [promoCodeId, redeemedAt].
+   */
+  async findRedemptionsByPromoCode(promoCodeId: string) {
+    return this.prisma.promoCodeRedemption.findMany({
+      where: { promoCodeId },
+      orderBy: { redeemedAt: 'desc' },
+      select: {
+        id: true,
+        redeemedAt: true,
+        discountPercent: true,
+        discountAmount: true,
+        company: { select: { id: true, name: true, nit: true } },
+        redeemedByUser: {
+          select: { name: true, lastName: true, email: true },
+        },
+        analysisPack: {
+          select: {
+            id: true,
+            totalPaid: true,
+            currencyCode: true,
+            packOffering: { select: { name: true, quantity: true } },
+          },
+        },
+      },
+    });
+  }
+
   /** ¿La empresa ya canjeó este código? (regla "una vez por empresa"). */
   async findRedemption(promoCodeId: string, companyId: string) {
     return this.prisma.promoCodeRedemption.findUnique({
