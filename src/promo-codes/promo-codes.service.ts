@@ -250,6 +250,13 @@ export class PromoCodesService {
     // nunca es null aquí: findAll corta antes si no tiene ficha.)
     if (!caller.isAdmin && caller.salesRepId) {
       where.salesRepId = caller.salesRepId;
+    } else if (caller.isAdmin && filters.mine === 'true') {
+      // "Mis códigos": los que emití yo, más los que financia mi comisión si
+      // además soy vendedor. Un admin no debe ver ahí los de los demás.
+      where.OR = [
+        { createdBy: caller.platformAdminId },
+        ...(caller.salesRepId ? [{ salesRepId: caller.salesRepId }] : []),
+      ];
     } else if (caller.isAdmin && filters.fundedBy) {
       where.salesRepId =
         filters.fundedBy === 'creditia' ? null : filters.fundedBy;

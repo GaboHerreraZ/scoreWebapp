@@ -39,4 +39,14 @@ export class FilterPromoCodeDto extends PaginationDto {
   @IsOptional()
   @IsString()
   fundedBy?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Solo los códigos propios: los que creé yo o los que financia mi ' +
+      'comisión. Lo usa la pantalla "Mis códigos", donde un admin no debe ' +
+      'ver los de los demás.',
+  })
+  @IsOptional()
+  @IsBooleanString()
+  mine?: string;
 }
