@@ -1,13 +1,26 @@
-import { IsOptional, IsInt, IsUUID, IsDateString } from 'class-validator';
+import { IsIn, IsOptional, IsInt, IsUUID, IsDateString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../common/dto/pagination.dto.js';
+import {
+  STUDY_TYPE_CODES,
+  type StudyTypeCode,
+} from './create-study-from-bureau.dto.js';
 
 export class FilterCreditStudyDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Filter by customer' })
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @ApiPropertyOptional({
+    example: 'paymentCapacity',
+    enum: STUDY_TYPE_CODES,
+    description: 'Filtrar por tipo de estudio',
+  })
+  @IsOptional()
+  @IsIn(STUDY_TYPE_CODES)
+  studyType?: StudyTypeCode;
 
   @ApiPropertyOptional({ example: 1, description: 'Filter by status' })
   @IsOptional()

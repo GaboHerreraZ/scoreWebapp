@@ -999,6 +999,7 @@ export class AdminService {
       where: { id: creditStudyId },
       include: {
         status: { select: { code: true, label: true } },
+        studyType: { select: { code: true } },
         customer: {
           select: { businessName: true, identificationNumber: true },
         },
@@ -1009,6 +1010,25 @@ export class AdminService {
             },
           },
         },
+        // Estudio de capacidad: documentos (metadatos, SIN extractedData — los
+        // movimientos pesan cientos de KB y la evidencia cruda ya vive en
+        // AiAnalysis.result) + análisis de capacidad para el snapshot forense.
+        studyDocuments: {
+          select: {
+            id: true,
+            documentTypeId: true,
+            fileName: true,
+            storagePath: true,
+            extractionStatus: true,
+            summary: true,
+            extractionFlags: true,
+            validationResults: true,
+            periodFrom: true,
+            periodTo: true,
+            accountLast4: true,
+          },
+        },
+        paymentCapacityAnalysis: true,
       },
     });
     if (!study) {
@@ -1022,12 +1042,23 @@ export class AdminService {
       );
     }
 
-    const pendingStatus = await this.parametersRepository.findByCode(
-      'pendingFinancialStatements',
+    // Capacidad: los documentos NO se borran (siguen siendo válidos; el usuario
+    // puede eliminar/re-subir el que salió mal leído). Si la cobertura sigue
+    // completa, el estudio vuelve directo a "pendiente de análisis"; si no, al
+    // paso de documentos.
+    const isCapacity = study.studyType?.code === 'paymentCapacity';
+    const hasSuccessDocuments = study.studyDocuments.some(
+      (d) => d.extractionStatus === 'success',
     );
+    const targetStatusCode =
+      isCapacity && hasSuccessDocuments
+        ? 'pendingStudyAnalysis'
+        : 'pendingFinancialStatements';
+    const pendingStatus =
+      await this.parametersRepository.findByCode(targetStatusCode);
     if (!pendingStatus) {
       throw new BadRequestException(
-        'Falta el parámetro pendingFinancialStatements: no se puede regresar el estudio al paso de carga de EEFF.',
+        `Falta el parámetro ${targetStatusCode}: no se puede regresar el estudio a su paso de carga.`,
       );
     }
 
@@ -1071,6 +1102,7 @@ export class AdminService {
     const snapshot = {
       study: {
         statusCode: study.status?.code ?? null,
+        studyTypeCode: study.studyType?.code ?? null,
         requestedCreditLine: study.requestedCreditLine,
         requestedTerm: study.requestedTerm,
         viabilityScore: study.viabilityScore,
@@ -1082,6 +1114,15 @@ export class AdminService {
         scoringConfigurationId: study.scoringConfigurationId,
       },
       frozenAnalyses: analyses,
+      // Solo estudio de capacidad: documentos (metadatos) + análisis calculado.
+      ...(isCapacity
+        ? {
+            capacity: {
+              documents: study.studyDocuments,
+              analysis: study.paymentCapacityAnalysis,
+            },
+          }
+        : {}),
     };
 
     const reset = await this.prisma.$transaction(async (tx) => {
@@ -1099,6 +1140,14 @@ export class AdminService {
       await tx.creditStudyFinancialAnalysis.deleteMany({
         where: { creditStudyId },
       });
+
+      // Capacidad: se limpia el análisis calculado (el perform lo recrea con
+      // upsert); los documentos y sus PDFs en Storage quedan intactos.
+      if (isCapacity) {
+        await tx.paymentCapacityAnalysis.deleteMany({
+          where: { creditStudyId },
+        });
+      }
 
       if (analysisIds.length > 0) {
         // Un análisis congelado también en OTRO estudio (la join lo permite)
@@ -1144,7 +1193,7 @@ export class AdminService {
       creditStudyId,
       customer: study.customer.businessName,
       previousStatus: study.status?.code ?? null,
-      newStatus: 'pendingFinancialStatements',
+      newStatus: targetStatusCode,
       removedAnalyses: analysisIds.length,
       supportTicket,
     };

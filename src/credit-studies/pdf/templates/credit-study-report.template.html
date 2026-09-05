@@ -175,7 +175,7 @@
   <div class="doc-head">
     <div>
       <div class="brand">{{company.name}}</div>
-      <div class="doc-title">Estudio de Crédito · Concepto de Viabilidad</div>
+      <div class="doc-title">{{#if capacity}}Estudio de Capacidad de Pago · Concepto de Viabilidad{{else}}Estudio de Crédito · Concepto de Viabilidad{{/if}}</div>
       <div class="xs muted mt-1">NIT {{company.nit}} · {{company.city}}</div>
     </div>
     <div class="right xs muted">
@@ -183,6 +183,7 @@
       {{#if request.resolutionDate}}<div>Resolución: <span class="semibold">{{request.resolutionDate}}</span></div>{{/if}}
       <div class="mt-1">Cliente: <span class="semibold" style="color:var(--ink)">{{customer.businessName}}</span></div>
       <div>Identificación: <span class="semibold" style="color:var(--ink)">{{customer.identificationNumber}}</span></div>
+      {{#if capacity}}<div>Perfil: <span class="semibold" style="color:var(--ink)">{{capacity.employmentTypeLabel}}</span></div>{{/if}}
     </div>
   </div>
 
@@ -227,7 +228,7 @@
   {{#if keyFigures.length}}
   <div class="section">
     <div class="row between items-center" style="margin-bottom:8px">
-      <h2>Cifras Financieras Clave</h2>
+      <h2>{{#if capacity}}Cifras de Capacidad de Pago{{else}}Cifras Financieras Clave{{/if}}</h2>
       {{#if source.label}}<span class="pill {{#if source.verified}}green{{else}}amber{{/if}}">{{source.label}}</span>{{/if}}
     </div>
     <div class="grid g4">
@@ -235,6 +236,68 @@
       <div class="cell"><div class="k">{{this.label}}</div><div class="v">{{this.value}}</div></div>
       {{/each}}
     </div>
+  </div>
+  {{/if}}
+
+  <!-- ══════════ Detalle del estudio de capacidad (solo paymentCapacity) ══════════ -->
+  {{#if capacity}}
+  <div class="section">
+    <div class="row between items-center" style="margin-bottom:8px">
+      <h2>Flujo de Caja Verificado</h2>
+      {{#if capacity.paysOwnSocialSecurity}}<span class="pill green">Paga su propia seguridad social</span>{{/if}}
+    </div>
+    {{#if capacity.coverageLine}}<div class="xs muted" style="margin-bottom:10px">{{capacity.coverageLine}}{{#if capacity.verifiedHireDate}} · Antigüedad laboral verificada desde {{capacity.verifiedHireDate}}{{/if}}</div>{{/if}}
+
+    {{#if capacity.incomeSeries.length}}
+    <div class="block-label">Ingreso mensual verificado en los extractos</div>
+    <div class="table-wrap" style="margin-bottom:12px">
+      <table>
+        <thead><tr><th>Mes</th><th class="right">Ingreso</th><th class="center">Abonos de ingreso</th></tr></thead>
+        <tbody>
+          {{#each capacity.incomeSeries}}
+          <tr><td class="semibold">{{this.month}}</td><td class="right">{{this.income}}</td><td class="center">{{this.deposits}}</td></tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    {{/if}}
+
+    {{#if capacity.obligations.length}}
+    <div class="block-label">Obligaciones detectadas en los extractos (incluye deuda que la central no ve)</div>
+    <div class="table-wrap" style="margin-bottom:12px">
+      <table>
+        <thead><tr><th>Contraparte</th><th>Tipo</th><th class="right">Total pagado</th><th class="right">Promedio mensual</th><th class="center">Confianza</th></tr></thead>
+        <tbody>
+          {{#each capacity.obligations}}
+          <tr>
+            <td>
+              <div class="semibold">{{this.counterparty}}</div>
+              {{#if this.breakdown}}<div class="xs muted">{{this.breakdown}}</div>{{/if}}
+              <div class="xs muted">{{this.payments}}</div>
+            </td>
+            <td>{{this.kindLabel}}</td>
+            <td class="right semibold">{{this.total}}</td>
+            <td class="right">{{this.monthlyAverage}}</td>
+            <td class="center"><span class="pill {{#if this.probable}}amber{{else}}gray{{/if}}">{{this.confidenceLabel}}</span></td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    <div class="xs muted" style="margin-bottom:12px">
+      El total es lo efectivamente pagado en el período y se puede cuadrar contra el extracto; el promedio mensual es
+      ese total dividido entre los meses que cubre el extracto.
+    </div>
+    {{/if}}
+
+    {{#if capacity.behaviorRows.length}}
+    <div class="block-label">Comportamiento financiero (según extractos)</div>
+    <div class="grid g3">
+      {{#each capacity.behaviorRows}}
+      <div class="cell"><div class="k">{{this.label}}</div><div class="v">{{this.value}}</div></div>
+      {{/each}}
+    </div>
+    {{/if}}
   </div>
   {{/if}}
 
@@ -423,7 +486,7 @@
       <h2>Fiabilidad del Documento</h2>
       <span class="pill red">{{pdfReliabilityCount}} señal(es)</span>
     </div>
-    <div class="xs muted" style="margin-bottom:8px">Señales detectadas en los estados financieros cargados (el documento contra sí mismo).</div>
+    <div class="xs muted" style="margin-bottom:8px">{{#if capacity}}Señales de la extracción y de las verificaciones automáticas sobre los documentos aportados (extractos y comprobantes).{{else}}Señales detectadas en los estados financieros cargados (el documento contra sí mismo).{{/if}}</div>
     {{#each pdfReliabilityFlags}}
     <div class="block-label">{{this.label}}</div>
     {{#each this.flags}}

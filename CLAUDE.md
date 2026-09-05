@@ -93,7 +93,36 @@ npm run test:e2e           # Run e2e tests
 - `SUPABASE_JWT_SECRET` — (opcional) JWT secret para validar tokens HS256 localmente; proyectos con signing keys nuevas usan JWKS y no lo necesitan
 - `PORT` — Server port (default 3000)
 - `AI_MAX_TOKENS` — Output limit for the credit-study narrative analysis
-- `AI_MAX_TOKENS_EXTRACTION` — Output limit for PDF extraction (data + reliability flags)
+- `AI_MAX_TOKENS_EXTRACTION` — Default output limit for PDF extraction (data + reliability flags)
+- `AI_EXTRACTION_MODEL` — Default model for PDF extraction
+- `AI_CLASSIFICATION_MODEL` — Model for the consolidated movement classification
+  (payment-capacity perform: one call with ALL months so a single criterion
+  decides income vs self-transfer; falls back to `AI_EXTRACTION_MODEL`)
+- `AI_MAX_TOKENS_CLASSIFICATION` — Output limit for that pass (falls back to
+  `AI_MAX_TOKENS_EXTRACTION`)
+
+**Model → provider routing:** any per-call model override that starts with
+`claude` routes to the Anthropic provider and `gemini` to the Gemini one,
+regardless of the global `AI_PROVIDER`. This lets you run e.g. bank-statement
+extraction + classification on Claude while the rest stays on Gemini. Anthropic
+models need `ANTHROPIC_API_KEY`; on Claude Opus/Sonnet 5 the model *thinks* by
+default and those tokens count against max_tokens — give bank statements
+headroom (e.g. `AI_MAX_TOKENS_BANK_STATEMENT=32000`).
+
+### Extraction profiles (per document type)
+
+Each document type can override the model and the output budget:
+`AI_EXTRACTION_MODEL_<TYPE>` / `AI_MAX_TOKENS_<TYPE>`, where `<TYPE>` is
+`FINANCIAL_STATEMENTS`, `BANK_STATEMENT`, `PAYROLL_STUB` or `CONTRACTOR_INVOICE`.
+Anything not set falls back to `AI_EXTRACTION_MODEL` / `AI_MAX_TOKENS_EXTRACTION`.
+
+**Why it matters:** Gemini `*-pro` models only run in *thinking mode* and those
+reasoning tokens are charged against `maxOutputTokens`. A quarterly bank statement
+(hundreds of movements) blows past a 16k budget, the JSON comes back truncated and
+the ```json fence never closes. Bank statements are bulk transcription, not fine
+arithmetic → `gemini-2.5-flash` (thinking off, whole budget for data, ~15x cheaper);
+V1/V2 validations catch any transcription slip. Truncation is now detected explicitly
+(`AiCompletionResult.truncated`) and surfaces an actionable message.
 
 ## Migrations & Environments
 

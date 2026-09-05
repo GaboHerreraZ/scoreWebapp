@@ -99,6 +99,10 @@ model Parameter {
   customerAuthorizationsByType          CustomerAuthorization[] @relation("CustomerAuthorizationType")
   customerAuthorizationsByIdentType     CustomerAuthorization[] @relation("CustomerAuthorizationIdentType")
   salesCommissionsByStatus              SalesCommission[]     @relation("SalesCommissionStatus")
+  creditStudiesByStudyType              CreditStudy[]         @relation("CreditStudyType")
+  creditStudiesByEmploymentType         CreditStudy[]         @relation("CreditStudyEmploymentType")
+  studyDocumentsByType                  StudyDocument[]       @relation("StudyDocumentType")
+  scoringConfigurationsByStudyType      ScoringConfiguration[] @relation("ScoringConfigurationStudyType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -275,19 +279,24 @@ model ScoringConfiguration {
   // pesa la veracidad (hay dos fuentes de EEFF); en PN pesa el riesgo de central
   // (no hay contraste posible). Cada empresa tiene UNA config vigente por tipo.
   personTypeId Int    @map("person_type_id")
+  // Tipo de estudio al que aplica (Parameter study_type: financialStatements |
+  // paymentCapacity). El estudio de capacidad usa OTRO set de dimensiones, así
+  // que la vigencia es por (empresa, tipo de persona, tipo de estudio).
+  studyTypeId  Int    @map("study_type_id")
 
-  isActive  Boolean  @default(true) @map("is_active") // config vigente (por empresa+tipo)
+  isActive  Boolean  @default(true) @map("is_active") // config vigente (por empresa+tipo+estudio)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 
   company       Company       @relation(fields: [companyId], references: [id])
   personType    Parameter     @relation("ScoringConfigurationPersonType", fields: [personTypeId], references: [id])
+  studyType     Parameter     @relation("ScoringConfigurationStudyType", fields: [studyTypeId], references: [id])
   createdByUser Profile       @relation("ScoringConfigurationCreatedBy", fields: [createdBy], references: [id])
   creditStudies CreditStudy[]
   // Dimensiones HABILITADAS por esta config con su peso. Suman 100.
   weights ScoringConfigurationWeight[]
 
-  @@index([companyId, personTypeId, isActive])
+  @@index([companyId, personTypeId, studyTypeId, isActive], map: "scoring_configs_company_person_study_active_idx")
   @@map("scoring_configurations")
 }
 
@@ -671,6 +680,9 @@ model CreditStudy {
   customerId     String    @map("customer_id") @db.Uuid
   companyId      String    @map("company_id") @db.Uuid
   statusId       Int       @map("status_id")
+  // Tipo de estudio (Parameter study_type): financialStatements (EEFF, el flujo
+  // clásico PN/PJ) | paymentCapacity (capacidad de pago PN: extractos + nómina).
+  studyTypeId    Int       @map("study_type_id")
   studyDate      DateTime  @map("study_date") @db.Date
   resolutionDate DateTime? @map("resolution_date") @db.Date
   createdBy      String    @map("created_by") @db.Uuid
@@ -682,11 +694,19 @@ model CreditStudy {
   // ── Solicitud ──────────────────────────────────────────
   requestedTerm       Int?   @map("requested_term") // Plazo solicitado
   requestedCreditLine Float? @map("requested_credit_line") // Cupo total solicitado
+  // Declarados del estudio de capacidad (null en estudios EEFF). Viven en el
+  // ESTUDIO y no en el Customer: son una declaración por solicitud (la persona
+  // puede cambiar de empleo entre estudios) y quedan congelados con el resultado.
+  employmentTypeId            Int?      @map("employment_type_id") // Parameter employment_type
+  declaredEmploymentStartDate DateTime? @map("declared_employment_start_date") @db.Date
 
   // ── Resultado / Viabilidad (lo llena el endpoint de cálculo) ──
   recommendedTerm       Int?    @map("recommended_term") // Plazo recomendado (días)
   recommendedCreditLine Float?  @map("recommended_credit_line") // Cupo recomendado ($)
-  viabilityScore        Int?    @map("viability_score") // Score 0-100
+  // Score 0-100 con UN decimal: es la suma de las contribuciones por dimensión
+  // que ve el usuario. Era Int y el decimal se truncaba (20,9 → 20), así que el
+  // listado no cuadraba con el detalle.
+  viabilityScore        Float?  @map("viability_score")
   viabilityStatus       String? @map("viability_status") // 'approved' | 'conditional' | 'rejected'
   viabilityConditions   Json?   @map("viability_conditions") // JSON con dimensiones, alertas y resumen
 
@@ -698,6 +718,8 @@ model CreditStudy {
   customer            Customer                       @relation(fields: [customerId], references: [id])
   company             Company                        @relation(fields: [companyId], references: [id])
   status              Parameter                      @relation("CreditStudyStatus", fields: [statusId], references: [id])
+  studyType           Parameter                      @relation("CreditStudyType", fields: [studyTypeId], references: [id])
+  employmentType      Parameter?                     @relation("CreditStudyEmploymentType", fields: [employmentTypeId], references: [id])
   createdByUser       Profile                        @relation("CreditStudyCreatedBy", fields: [createdBy], references: [id])
   updatedByUser       Profile                        @relation("CreditStudyUpdatedBy", fields: [updatedBy], references: [id])
   scoringConfiguration ScoringConfiguration?         @relation(fields: [scoringConfigurationId], references: [id])
@@ -707,9 +729,12 @@ model CreditStudy {
   financialAnalyses   CreditStudyFinancialAnalysis[]
   resets              CreditStudyReset[]
   supportTickets      SupportTicket[]                @relation("SupportTicketCreditStudy")
+  studyDocuments          StudyDocument[]
+  paymentCapacityAnalysis PaymentCapacityAnalysis?
 
   @@index([companyId, studyDate]) // listado principal y dashboard (orden por fecha)
   @@index([companyId, statusId]) // conteos/filtros por estado (dashboard)
+  @@index([companyId, studyTypeId]) // filtro por tipo de estudio (listado)
   @@index([customerId]) // estudios de un cliente (ficha + métricas)
   @@map("credit_studies")
 }
@@ -748,6 +773,111 @@ model CreditStudyReset {
   @@index([supportTicketId]) // resets originados por un ticket
   @@index([companyId, createdAt]) // historial de resets por empresa
   @@map("credit_study_resets")
+}
+
+// ─── Documento del estudio de capacidad de pago ─────────────────────────
+// Un PDF aportado por el titular (extracto bancario, desprendible de nómina o
+// factura de contratista) + el resultado de su extracción IA. El binario vive
+// en Supabase Storage (bucket privado study-documents), NUNCA en la BBDD: un
+// estudio puede acumular 6+ extractos y el patrón bytea de AiAnalysis no escala.
+// Los movimientos bancarios normalizados van dentro de extractedData (JSONB):
+// no hay tabla de movimientos en v1. extractedData JAMÁS se serializa completo
+// en steps/listados (solo resúmenes): puede pesar cientos de KB.
+
+model StudyDocument {
+  id             String @id @default(uuid()) @db.Uuid
+  creditStudyId  String @map("credit_study_id") @db.Uuid
+  companyId      String @map("company_id") @db.Uuid
+  documentTypeId Int    @map("document_type_id") // Parameter study_document_type
+
+  fileName      String @map("file_name") @db.VarChar(255)
+  fileSizeBytes Int    @map("file_size_bytes")
+  // Path en el bucket privado: `${companyId}/${creditStudyId}/${id}.pdf`
+  storagePath   String @map("storage_path") @db.VarChar(500)
+
+  // Resultado de la extracción IA por documento
+  extractionStatus String  @default("pending") @db.VarChar(20) @map("extraction_status") // pending|success|error
+  extractionError  String? @map("extraction_error") @db.Text
+  aiAnalysisId     String? @map("ai_analysis_id") @db.Uuid // corrida (tokens/costo) en AiAnalysis
+  // Schema del doc de extracción: §2 (extracto, con movimientos), §4 (factura), §5 (nómina)
+  extractedData    Json?   @map("extracted_data") @db.JsonB
+  // Resumen chico por tipo (conteo de movimientos, totales, neto…): lo que el
+  // listado/steps serializa SIN abrir extractedData (que puede pesar cientos de KB).
+  summary          Json?   @db.JsonB
+  extractionFlags  Json?   @map("extraction_flags") @db.JsonB
+  // Validaciones determinísticas intra-documento (V1-V3, V6, V8-V10):
+  // [{code, label, passed, severity, detail}]
+  validationResults Json?  @map("validation_results") @db.JsonB
+
+  // Desnormalizados de extractedData: cobertura/continuidad sin abrir el JSONB
+  periodFrom   DateTime? @map("period_from") @db.Date
+  periodTo     DateTime? @map("period_to") @db.Date
+  accountLast4 String?   @map("account_last4") @db.VarChar(4)
+
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  creditStudy  CreditStudy @relation(fields: [creditStudyId], references: [id])
+  documentType Parameter   @relation("StudyDocumentType", fields: [documentTypeId], references: [id])
+  aiAnalysis   AiAnalysis? @relation(fields: [aiAnalysisId], references: [id])
+
+  @@index([creditStudyId])
+  @@index([companyId, createdAt])
+  @@map("study_documents")
+}
+
+// ─── Análisis de capacidad de pago (indicadores calculados) ─────────────
+// Análogo de FinancialAnalysis para el estudio de capacidad, pero 1:1 con el
+// ESTUDIO (no con el Customer): los documentos pertenecen al estudio, así que
+// la congelación es implícita — no hace falta join congelante. Se UPSERTA en
+// cada perform (recalcular sobrescribe; la auditoría de corridas queda en
+// AiAnalysis y en el snapshot del reset de soporte). Escalares = indicadores
+// del §4 del diseño; bloques Json = detalle para display y narrativa.
+
+model PaymentCapacityAnalysis {
+  id            String @id @default(uuid()) @db.Uuid
+  creditStudyId String @unique @map("credit_study_id") @db.Uuid
+  companyId     String @map("company_id") @db.Uuid
+
+  // ── Ingreso verificado (§4.1) ──
+  verifiedMonthlyIncome   Float?    @map("verified_monthly_income")
+  payrollNetIncome        Float?    @map("payroll_net_income") // prom. neto de los desprendibles
+  bankStatementIncome     Float?    @map("bank_statement_income") // prom. abonos-ingreso por mes
+  incomeVerificationIndex Float?    @map("income_verification_index") // abono/neto (~1.0 OK, <0.9 flag)
+  incomeCv                Float?    @map("income_cv") // coeficiente de variación
+  monthsWithIncome        Int?      @map("months_with_income")
+  windowMonths            Int?      @map("window_months") // requerida: 3 (asalariado) | 6 (independiente)
+  coveredMonths           Int?      @map("covered_months") // cubierta por los extractos
+  paysOwnSocialSecurity   Boolean   @default(false) @map("pays_own_social_security")
+  verifiedHireDate        DateTime? @map("verified_hire_date") @db.Date // Fecha de Ingreso del desprendible
+
+  // ── Capacidad (§4.2) ──
+  recurringFixedExpenses  Float? @map("recurring_fixed_expenses")
+  existingDebtPayments    Float? @map("existing_debt_payments") // cuotas detectadas + libranzas
+  availableIncome         Float? @map("available_income")
+  maxSuggestedInstallment Float? @map("max_suggested_installment") // min(30% neto, 70% disponible)
+  payrollLoanCapacity     Float? @map("payroll_loan_capacity") // cupo libranza Ley 1527 (null si no aplica)
+
+  // ── Endeudamiento (§4.3) ──
+  currentDti   Float? @map("current_dti")
+  projectedDti Float? @map("projected_dti")
+
+  // ── Bloques de detalle (forma evolutiva, solo display/narrativa) ──
+  behavior            Json? // §4.4: saldo prom/mín, días en negativo, retiro 48h, apuestas %, rechazos
+  monthlyIncomeSeries Json? @map("monthly_income_series") // [{month, income, nonIncomeCredits}]
+  detectedObligations Json? @map("detected_obligations") // [{counterparty, monthlyAmount, kind, confidence}]
+  crossValidations    Json? @map("cross_validations") // V4, V5, V7 + índice de verificación
+  reliabilityFlags    Json? @map("reliability_flags") // agregado de extractionFlags de los documentos
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  creditStudy CreditStudy @relation(fields: [creditStudyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("payment_capacity_analyses")
 }
 
 // ─── Período financiero del cliente (cifras crudas de UN año) ───────────
@@ -1041,6 +1171,7 @@ model AiAnalysis {
   customer        Customer?    @relation(fields: [customerId], references: [id])
   creditStudy     CreditStudy? @relation(fields: [creditStudyId], references: [id])
   performedByUser Profile      @relation("AiAnalysisPerformedBy", fields: [performedBy], references: [id])
+  studyDocuments  StudyDocument[]
 
   // Soporta el conteo de consumo por ciclo (companyId + typeId + createdAt)
   // usado en getUsage y en los chequeos de límite de plan.

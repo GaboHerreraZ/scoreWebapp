@@ -17,11 +17,13 @@ import { PdfService } from '../common/pdf/pdf.service.js';
 import { toDateOnly } from '../common/utils/date-only.js';
 import { buildReportViewModel } from './pdf/credit-study-report.mapper.js';
 import type { StepsData } from './pdf/credit-study-report.mapper.js';
+import { buildCapacityReportViewModel } from '../payment-capacity/pdf/payment-capacity-report.mapper.js';
 import { renderReportHtml } from './pdf/credit-study-report.renderer.js';
 import { AnalysisPacksService } from '../analysis-packs/analysis-packs.service.js';
 import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
 import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
 import { PromissoryNotesService } from '../documents/promissory-notes/promissory-notes.service.js';
+import { PaymentCapacityService } from '../payment-capacity/payment-capacity.service.js';
 import { runScoring } from '../scoring/scoring.engine.js';
 import {
   defaultWeightsFor,
@@ -175,6 +177,7 @@ export class CreditStudiesService {
     private readonly authorizationsService: CustomerAuthorizationsService,
     private readonly pdfService: PdfService,
     private readonly promissoryNotesService: PromissoryNotesService,
+    private readonly paymentCapacityService: PaymentCapacityService,
   ) {}
 
   /**
@@ -194,6 +197,38 @@ export class CreditStudiesService {
     userId: string,
     dto: CreateStudyFromBureauDto,
   ) {
+    // 0a. Tipo de estudio (default: EEFF). El de capacidad de pago es SOLO para
+    //     persona natural: con NIT se corta aquí, antes de cualquier side-effect
+    //     (ni autorización, ni consulta a la central, ni consumo de bolsa).
+    const studyTypeCode = dto.studyTypeCode ?? 'financialStatements';
+    const isPaymentCapacity = studyTypeCode === 'paymentCapacity';
+    if (isPaymentCapacity && dto.identificationTypeCode === 'nit') {
+      throw new BadRequestException(
+        'El estudio de capacidad de pago aplica solo a personas naturales',
+      );
+    }
+    const studyType = await this.parametersRepository.findByTypeAndCode(
+      'study_type',
+      studyTypeCode,
+    );
+    if (!studyType) {
+      throw new BadRequestException(
+        `No se encontró el tipo de estudio "${studyTypeCode}" en parámetros.`,
+      );
+    }
+    // Declarados del estudio de capacidad (el DTO ya los exigió con ValidateIf).
+    const employmentType = isPaymentCapacity
+      ? await this.parametersRepository.findByTypeAndCode(
+          'employment_type',
+          dto.employmentTypeCode!,
+        )
+      : null;
+    if (isPaymentCapacity && !employmentType) {
+      throw new BadRequestException(
+        `No se encontró el perfil laboral "${dto.employmentTypeCode}" en parámetros.`,
+      );
+    }
+
     // 0. Autorización del titular (gate del bureau). Si NO ha firmado, se le envía
     //    el documento (si hay contacto) y se corta el flujo devolviendo
     //    'authorization_pending' —NO un error—: el front notifica al usuario que
@@ -233,9 +268,26 @@ export class CreditStudiesService {
       dto.titularEmail,
     );
 
-    // 2. Estado inicial: TODO estudio (PN y PJ) exige estados financieros antes
-    //    de analizar. Para PN, como Experian no reporta EEFF, el análisis corre
-    //    sobre el PDF que el usuario debe cargar → mismo estado inicial que PJ.
+    // 1b. Cinturón: la central pudo resolver la identidad como persona jurídica
+    //     aunque el documento no fuera NIT. El estudio de capacidad exige PN; se
+    //     corta ANTES de consumir bolsa (la consulta ya ocurrió, igual que en el
+    //     flujo EEFF cuando la creación falla después del consult).
+    if (isPaymentCapacity) {
+      const naturalPerson = await this.parametersRepository.findByTypeAndCode(
+        'person_type',
+        'naturalPerson',
+      );
+      if (customer.personTypeId !== naturalPerson?.id) {
+        throw new BadRequestException(
+          'El estudio de capacidad de pago aplica solo a personas naturales',
+        );
+      }
+    }
+
+    // 2. Estado inicial compartido por ambos tipos: pendingFinancialStatements.
+    //    En EEFF significa "cargar estados financieros"; en capacidad de pago,
+    //    "cargar documentos" (extractos/nómina) — el front remapea el label. El
+    //    flujo avanza igual: → pendingStudyAnalysis → (perform) studyCompleted.
     const initialStatus = await this.parametersRepository.findByCode(
       'pendingFinancialStatements',
     );
@@ -256,7 +308,14 @@ export class CreditStudiesService {
             customerId: customer.id,
             companyId,
             studyDate: new Date(),
-            requestedTerm: dto.requestedTerm,
+            studyTypeId: studyType.id,
+            employmentTypeId: employmentType?.id ?? null,
+            declaredEmploymentStartDate: dto.declaredEmploymentStartDate
+              ? new Date(dto.declaredEmploymentStartDate)
+              : null,
+            // El estudio de capacidad NO pide plazo: mide la cuota máxima que
+            // el titular sostiene y el otorgante decide en cuántas cuotas.
+            requestedTerm: isPaymentCapacity ? null : dto.requestedTerm,
             requestedCreditLine: dto.requestedCreditLine,
             createdBy: userId,
             updatedBy: userId,
@@ -313,10 +372,15 @@ export class CreditStudiesService {
       : null;
     const centralRisk = buildCentralRisk(riskSnapshots?.[0] ?? null);
 
-    // step2: estados financieros por fuente (pdf_upload / datacredito). Cada
-    // fuente trae sus 2 años más recientes (cifras crudas) + indicadores del
-    // núcleo + ratios de presentación. null si aún no hay ningún análisis.
-    const step2 = await this.buildFinancialStep(id);
+    // step2 discriminado por tipo de estudio:
+    //  - EEFF: estados financieros por fuente (pdf_upload / datacredito).
+    //  - Capacidad: documentos aportados (resumen, sin movimientos) + cobertura
+    //    + análisis de capacidad persistido.
+    // null si el paso aún no se ha iniciado.
+    const step2 =
+      study.studyType?.code === 'paymentCapacity'
+        ? await this.paymentCapacityService.buildDocumentsStep(id, companyId)
+        : await this.buildFinancialStep(id);
 
     // step3: análisis de viabilidad realizado (score + dimensiones + veredicto).
     // null hasta que se realiza el estudio (POST /:id/perform). El núcleo se arma
@@ -378,6 +442,9 @@ export class CreditStudiesService {
     return {
       creditStudyId: study.id,
       status: study.status,
+      // Tipo de estudio: el front elige con esto qué wizard renderiza
+      // (financialStatements → EEFF; paymentCapacity → documentos).
+      studyType: study.studyType,
       // Información básica del estudio (la solicitud), al mismo nivel que el id
       // para que el front la muestre en la cabecera sin abrir un step. NO es el
       // resultado del análisis (eso vive en step3).
@@ -385,6 +452,9 @@ export class CreditStudiesService {
       request: {
         requestedTerm: study.requestedTerm,
         requestedCreditLine: study.requestedCreditLine,
+        // Declarados del estudio de capacidad (null en estudios EEFF).
+        employmentType: study.employmentType,
+        declaredEmploymentStartDate: study.declaredEmploymentStartDate,
       },
       promissoryNote,
       step1: { isLegalEntity, customer, centralRisk },
@@ -410,17 +480,28 @@ export class CreditStudiesService {
       year: 'numeric',
     }).format(new Date());
 
-    const viewModel = buildReportViewModel(
-      steps as unknown as StepsData,
-      company
-        ? {
-            name: company.name,
-            nit: company.nit,
-            city: company.daneCity?.name ?? null,
-          }
-        : { name: null, nit: null, city: null },
-      generatedAt,
-    );
+    // Misma plantilla para ambos tipos de estudio; el mapper de capacidad
+    // reemplaza las cifras EEFF por las de capacidad y agrega su bloque propio
+    // (secciones {{#if capacity}} de la plantilla).
+    const isCapacity = steps.studyType?.code === 'paymentCapacity';
+    const companyHeader = company
+      ? {
+          name: company.name,
+          nit: company.nit,
+          city: company.daneCity?.name ?? null,
+        }
+      : { name: null, nit: null, city: null };
+    const viewModel = isCapacity
+      ? buildCapacityReportViewModel(
+          steps as unknown as StepsData,
+          companyHeader,
+          generatedAt,
+        )
+      : buildReportViewModel(
+          steps as unknown as StepsData,
+          companyHeader,
+          generatedAt,
+        );
     const html = renderReportHtml(viewModel);
     const buffer = await this.pdfService.htmlToPdf(html, {
       // Sin encabezado: Gotenberg solo lo dibuja si se le envía header.html.
@@ -436,7 +517,7 @@ export class CreditStudiesService {
       .replace(/[^a-zA-Z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .toLowerCase();
-    const fileName = `concepto-viabilidad-${safeName || 'estudio'}.pdf`;
+    const fileName = `${isCapacity ? 'estudio-capacidad' : 'concepto-viabilidad'}-${safeName || 'estudio'}.pdf`;
 
     return { buffer, fileName };
   }
@@ -536,6 +617,30 @@ export class CreditStudiesService {
       throw new BadRequestException(
         'No se puede re-analizar un estudio ya confirmado o cerrado.',
       );
+    }
+
+    // ── Branch: estudio de capacidad de pago ──
+    // El pipeline es otro (documentos → indicadores → engine de capacidad),
+    // pero la persistencia y el shape del resultado son los mismos, así que la
+    // respuesta sale del MISMO buildStep3. La config de scoring y el snapshot
+    // de la central ya vienen resueltos por findAnalysisInputs (la config es
+    // por tipo de estudio: aquí llega la de capacidad).
+    if (study.studyType?.code === 'paymentCapacity') {
+      if (requestedSource) {
+        throw new BadRequestException(
+          'El estudio de capacidad de pago no admite selección de fuente: siempre se calcula sobre los documentos aportados.',
+        );
+      }
+      const updatedCapacity = await this.paymentCapacityService.perform({
+        creditStudyId: id,
+        companyId,
+        userId,
+        centralRisk: this.riskToCentralInput(riskSnapshot),
+        scoringConfig: scoringConfig
+          ? { id: scoringConfig.id, weights: scoringConfig.weights }
+          : null,
+      });
+      return this.buildStep3(updatedCapacity);
     }
 
     // Fuente de verdad = DataCrédito; fallback = PDF. Cada uno es un análisis
@@ -848,6 +953,10 @@ export class CreditStudiesService {
       where.statusId = filters.statusId;
     }
 
+    if (filters.studyType) {
+      where.studyType = { code: filters.studyType };
+    }
+
     if (filters.studyDateFrom || filters.studyDateTo) {
       where.studyDate = {};
       if (filters.studyDateFrom) {
@@ -936,8 +1045,16 @@ export class CreditStudiesService {
     const hasAiAnalysis = successful.some(
       (a) => a.type?.code === 'creditReview',
     );
+    // Cuenta también las extracciones del estudio de capacidad (extracto,
+    // nómina, factura): "ya se extrajo un documento" aplica a ambos tipos.
+    const EXTRACTION_TYPE_CODES = new Set([
+      'financialStatementsPdfUpload',
+      'bankStatementPdfExtraction',
+      'payrollStubPdfExtraction',
+      'contractorInvoicePdfExtraction',
+    ]);
     const hasPdfExtraction = successful.some(
-      (a) => a.type?.code === 'financialStatementsPdfUpload',
+      (a) => a.type?.code && EXTRACTION_TYPE_CODES.has(a.type.code),
     );
 
     return { ...study, hasAiAnalysis, hasPdfExtraction };
@@ -953,6 +1070,7 @@ export class CreditStudiesService {
     const mainRows = studies.map((s) => ({
       studyDate: s.studyDate,
       resolutionDate: s.resolutionDate,
+      studyType: s.studyType?.label ?? null,
       status: s.status?.label ?? null,
       customerBusinessName: s.customer?.businessName ?? null,
       customerIdentification: s.customer?.identificationNumber ?? null,
@@ -974,6 +1092,12 @@ export class CreditStudiesService {
         key: 'resolutionDate',
         type: 'date',
         width: 16,
+      },
+      {
+        header: 'Tipo de estudio',
+        key: 'studyType',
+        type: 'string',
+        width: 24,
       },
       { header: 'Estado', key: 'status', type: 'string', width: 18 },
       {

@@ -26,6 +26,7 @@ const WEIGHTS_INCLUDE = {
 
 const CONFIG_INCLUDE = {
   personType: PERSON_TYPE_SELECT,
+  studyType: { select: { id: true, code: true, label: true } },
   weights: WEIGHTS_INCLUDE,
 } as const;
 
@@ -33,10 +34,14 @@ const CONFIG_INCLUDE = {
 export class ScoringRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Config vigente (isActive) de una empresa para un tipo de persona. */
-  async findActive(companyId: string, personTypeId: number) {
+  /** Config vigente (isActive) para (empresa, tipo de persona, tipo de estudio). */
+  async findActive(
+    companyId: string,
+    personTypeId: number,
+    studyTypeId: number,
+  ) {
     return this.prisma.scoringConfiguration.findFirst({
-      where: { companyId, personTypeId, isActive: true },
+      where: { companyId, personTypeId, studyTypeId, isActive: true },
       orderBy: { createdAt: 'desc' },
       include: CONFIG_INCLUDE,
     });
@@ -44,38 +49,48 @@ export class ScoringRepository {
 
   /**
    * Historial de configuraciones de una empresa (más reciente primero).
-   * Opcionalmente acotado a un tipo de persona.
+   * Opcionalmente acotado a un tipo de persona y/o de estudio.
    */
-  async findHistory(companyId: string, personTypeId?: number) {
+  async findHistory(
+    companyId: string,
+    personTypeId?: number,
+    studyTypeId?: number,
+  ) {
     return this.prisma.scoringConfiguration.findMany({
-      where: { companyId, ...(personTypeId ? { personTypeId } : {}) },
+      where: {
+        companyId,
+        ...(personTypeId ? { personTypeId } : {}),
+        ...(studyTypeId ? { studyTypeId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: CONFIG_INCLUDE,
     });
   }
 
   /**
-   * Crea una configuración nueva para un tipo de persona con sus filas de pesos
-   * (solo dimensiones habilitadas) y la marca vigente, desactivando la anterior
-   * DEL MISMO TIPO en una transacción (versionado por (empresa, tipo)). No borra
-   * nada → el historial se preserva; los estudios viejos siguen atados a su config.
+   * Crea una configuración nueva para (tipo de persona, tipo de estudio) con sus
+   * filas de pesos (solo dimensiones habilitadas) y la marca vigente,
+   * desactivando la anterior DEL MISMO PAR en una transacción. No borra nada →
+   * el historial se preserva; los estudios viejos siguen atados a su config.
    */
   async createVersion(params: {
     companyId: string;
     personTypeId: number;
+    studyTypeId: number;
     createdBy: string;
     weights: Array<{ dimensionId: number; weight: number }>;
   }) {
-    const { companyId, personTypeId, createdBy, weights } = params;
+    const { companyId, personTypeId, studyTypeId, createdBy, weights } = params;
     return this.prisma.$transaction(async (tx) => {
       await tx.scoringConfiguration.updateMany({
-        where: { companyId, personTypeId, isActive: true },
+        where: { companyId, personTypeId, studyTypeId, isActive: true },
         data: { isActive: false },
       });
       return tx.scoringConfiguration.create({
         data: {
           companyId,
           personTypeId,
+          studyTypeId,
           createdBy,
           isActive: true,
           weights: { create: weights },

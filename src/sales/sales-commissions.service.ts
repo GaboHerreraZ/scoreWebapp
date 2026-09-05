@@ -789,7 +789,9 @@ export class SalesCommissionsService {
 
       const pdf = await this.pdfService.htmlToPdf(
         renderPayoutReceiptHtml(view),
-        { margin: { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' } },
+        {
+          margin: { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' },
+        },
       );
 
       await this.mailService.sendCommissionPayoutEmail({
@@ -804,9 +806,7 @@ export class SalesCommissionsService {
       });
 
       await this.repository.markReceiptSent(payoutId);
-      this.logger.log(
-        `Comprobante ${payout.reference} enviado a ${email}`,
-      );
+      this.logger.log(`Comprobante ${payout.reference} enviado a ${email}`);
       return true;
     } catch (e) {
       this.logger.error(

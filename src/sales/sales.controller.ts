@@ -347,14 +347,20 @@ export class SalesController {
       'Genera el comprobante y se lo envía por correo.',
   })
   @ApiResponse({ status: 201, description: 'Liquidación creada' })
-  @ApiResponse({ status: 409, description: 'No hay nada pendiente en el rango' })
+  @ApiResponse({
+    status: 409,
+    description: 'No hay nada pendiente en el rango',
+  })
   async createPayout(@Body() dto: CreatePayoutDto, @Req() req: Request) {
     return this.commissionsService.createPayout(dto, await this.caller(req));
   }
 
   @Get('payouts/:id')
   @ApiOperation({ summary: 'Detalle de un giro con sus líneas' })
-  async findPayout(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+  async findPayout(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ) {
     return this.commissionsService.findPayout(id, await this.caller(req));
   }
 

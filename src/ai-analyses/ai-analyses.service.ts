@@ -5,7 +5,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { AiAnalysesRepository } from './ai-analyses.repository.js';
-import { AiService } from '../ai/ai.service.js';
+import {
+  AiService,
+  type AiCompletionResult,
+  type ExtractionKind,
+} from '../ai/ai.service.js';
 import { ParametersRepository } from '../parameters/parameters.repository.js';
 import {
   buildFinancialPdfExtractionPrompt,
@@ -14,6 +18,11 @@ import {
   type CreditStudyPromptInput,
   type PromptFinancialSource,
 } from '../ai/prompts/credit-study-analysis.prompt.js';
+import {
+  PAYMENT_CAPACITY_SYSTEM_PROMPT,
+  buildPaymentCapacityUserMessage,
+  type PaymentCapacityPromptInput,
+} from '../ai/prompts/payment-capacity-analysis.prompt.js';
 import { scoreToBand } from '../scoring/scoring.constants.js';
 import { FilterAiAnalysisDto } from './dto/filter-ai-analysis.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -116,6 +125,10 @@ interface ScoringResultShape {
     title: string;
     detail: string;
   }>;
+  /** Bloque propio del estudio de capacidad de pago (solo en ese tipo). */
+  capacityFigures?: PaymentCapacityPromptInput['capacityFigures'] & {
+    employmentType?: 'salaried' | 'independent';
+  };
 }
 
 @Injectable()
@@ -159,7 +172,7 @@ export class AiAnalysesService {
         `Estudio de credito con id=${creditStudyId} no encontrado en esta empresa`,
       );
     }
-    const { study, analyses, riskSnapshot } = inputs;
+    const { study, analyses, riskSnapshot, capacityAnalysis } = inputs;
     const customer = study.customer;
 
     // 3. El estudio debe estar realizado (tiene el ScoringResult persistido).
@@ -179,6 +192,28 @@ export class AiAnalysesService {
     // 5. Armar la entrada del prompt desde el ScoringResult + fuentes + central.
     const result = study.viabilityConditions as unknown as ScoringResultShape;
     const isLegalEntity = customer.personType?.code === 'legalEntity';
+
+    // ── Branch: narrativa del estudio de capacidad de pago ──
+    // Misma corrida (registro en AiAnalysis con typeId creditReview, que los
+    // steps adjuntan sin cambios); cambia el prompt: indicadores de flujo de
+    // caja + validaciones documentales en lugar de fuentes de EEFF.
+    if (study.studyType?.code === 'paymentCapacity') {
+      const capacityMessage = this.buildCapacityNarrativeMessage(
+        study,
+        result,
+        riskSnapshot,
+        capacityAnalysis,
+      );
+      return this.runNarrative({
+        typeId,
+        companyId,
+        customerId: study.customerId,
+        creditStudyId,
+        userId,
+        systemPrompt: PAYMENT_CAPACITY_SYSTEM_PROMPT,
+        userMessage: capacityMessage,
+      });
+    }
 
     const financialSources: PromptFinancialSource[] = analyses.map((a) => ({
       source: a.source === 'datacredito' ? 'datacredito' : 'pdf_upload',
@@ -249,13 +284,37 @@ export class AiAnalysesService {
     };
 
     const userMessage = buildCreditStudyUserMessage(promptInput);
-    const fullPrompt = `[SYSTEM]\n${CREDIT_STUDY_SYSTEM_PROMPT}\n\n[USER]\n${userMessage}`;
+    return this.runNarrative({
+      typeId,
+      companyId,
+      customerId: study.customerId,
+      creditStudyId,
+      userId,
+      systemPrompt: CREDIT_STUDY_SYSTEM_PROMPT,
+      userMessage,
+    });
+  }
 
-    // 6. Call Claude AI
+  /**
+   * Corrida compartida del INFORME EJECUTIVO IA (EEFF y capacidad): llama al
+   * modelo, registra la corrida en AiAnalysis (éxito o error) y devuelve la
+   * fila. Sin notificación: el análisis corre dentro del wizard con el usuario
+   * esperando el resultado en pantalla.
+   */
+  private async runNarrative(params: {
+    typeId: number;
+    companyId: string;
+    customerId: string;
+    creditStudyId: string;
+    userId: string;
+    systemPrompt: string;
+    userMessage: string;
+  }) {
+    const fullPrompt = `[SYSTEM]\n${params.systemPrompt}\n\n[USER]\n${params.userMessage}`;
     try {
       const aiResult = await this.aiService.generateCompletion(
-        CREDIT_STUDY_SYSTEM_PROMPT,
-        userMessage,
+        params.systemPrompt,
+        params.userMessage,
       );
 
       const estimatedCostUsd = this.aiService.estimateCostUsd(
@@ -264,13 +323,12 @@ export class AiAnalysesService {
         aiResult.completionTokens,
       );
 
-      // 7. Save the analysis record
-      const analysis = await this.repository.create({
-        typeId,
-        companyId,
-        customerId: study.customerId,
-        creditStudyId,
-        performedBy: userId,
+      return await this.repository.create({
+        typeId: params.typeId,
+        companyId: params.companyId,
+        customerId: params.customerId,
+        creditStudyId: params.creditStudyId,
+        performedBy: params.userId,
         prompt: fullPrompt,
         result: aiResult.content,
         model: aiResult.model,
@@ -281,25 +339,21 @@ export class AiAnalysesService {
         durationMs: aiResult.durationMs,
         status: 'success',
       });
-
-      // Sin notificación: el análisis corre dentro del wizard con el usuario
-      // esperando el resultado en pantalla; notificar era ruido.
-      return analysis;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Error desconocido';
 
       this.logger.error(
-        `Analisis IA fallido para estudio de credito ${creditStudyId}`,
+        `Analisis IA fallido para estudio de credito ${params.creditStudyId}`,
         error,
       );
 
       await this.repository.create({
-        typeId,
-        companyId,
-        customerId: study.customerId,
-        creditStudyId,
-        performedBy: userId,
+        typeId: params.typeId,
+        companyId: params.companyId,
+        customerId: params.customerId,
+        creditStudyId: params.creditStudyId,
+        performedBy: params.userId,
         prompt: fullPrompt,
         result: null,
         model: 'unknown',
@@ -309,6 +363,108 @@ export class AiAnalysesService {
 
       throw new BadRequestException(`El analisis IA fallo: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Arma el mensaje de usuario de la narrativa del estudio de CAPACIDAD desde
+   * el resultado congelado (capacityFigures incluidas) + el análisis de
+   * capacidad persistido (obligaciones/comportamiento) + la central.
+   */
+  private buildCapacityNarrativeMessage(
+    study: {
+      requestedTerm: number | null;
+      requestedCreditLine: number | null;
+      viabilityScore: number | null;
+      viabilityStatus: string | null;
+      recommendedCreditLine: number | null;
+      employmentType: { code: string; label: string } | null;
+      customer: {
+        businessName: string;
+        bureauCity: string | null;
+        daneCity: { name: string } | null;
+      };
+    },
+    result: ScoringResultShape,
+    riskSnapshot: {
+      score: number | null;
+      viabilidad: string | null;
+      montoSugerido: number | null;
+      paymentBehavior: unknown;
+    } | null,
+    capacityAnalysis: {
+      detectedObligations: unknown;
+      behavior: unknown;
+    } | null,
+  ): string {
+    const cf = result.capacityFigures;
+    if (!cf) {
+      throw new BadRequestException(
+        'El resultado congelado del estudio no trae las cifras de capacidad. Vuelva a realizar el estudio.',
+      );
+    }
+
+    const obligationsRaw = capacityAnalysis?.detectedObligations;
+    const detectedObligations = Array.isArray(obligationsRaw)
+      ? (obligationsRaw as PaymentCapacityPromptInput['detectedObligations'])
+      : [];
+    const behaviorRaw = capacityAnalysis?.behavior as Record<
+      string,
+      unknown
+    > | null;
+    const behavior = behaviorRaw
+      ? {
+          averageBalance: (behaviorRaw.averageBalance as number | null) ?? null,
+          daysNegative: (behaviorRaw.daysNegative as number) ?? 0,
+          daysAtZero: (behaviorRaw.daysAtZero as number) ?? 0,
+          pctWithdrawn48h:
+            (behaviorRaw.pctWithdrawn48h as number | null) ?? null,
+          gamblingPctOfIncome:
+            (behaviorRaw.gamblingPctOfIncome as number | null) ?? null,
+          walletTransfersCount:
+            (behaviorRaw.walletTransfersCount as number) ?? 0,
+        }
+      : null;
+
+    const input: PaymentCapacityPromptInput = {
+      customerName: study.customer.businessName,
+      customerCity:
+        study.customer.daneCity?.name ??
+        study.customer.bureauCity ??
+        'No especificada',
+      employmentTypeLabel:
+        study.employmentType?.label ??
+        (cf.employmentType === 'independent' ? 'Independiente' : 'Asalariado'),
+      requestedCreditLine: study.requestedCreditLine ?? 0,
+      viabilityScore: study.viabilityScore ?? 0,
+      viabilityStatus: study.viabilityStatus ?? 'rejected',
+      approvedCreditLine: result.approvedCreditLine ?? {
+        amount: study.recommendedCreditLine ?? null,
+        requested: study.requestedCreditLine ?? null,
+        suggestedByBureau: riskSnapshot?.montoSugerido ?? null,
+        cappedByCapacity: false,
+      },
+      capacityFigures: cf,
+      detectedObligations,
+      behavior,
+      centralRisk: riskSnapshot
+        ? {
+            score: riskSnapshot.score,
+            scoreBandLabel:
+              riskSnapshot.score !== null
+                ? scoreToBand(riskSnapshot.score).label
+                : null,
+            viabilidad: riskSnapshot.viabilidad,
+            hasArrears: this.detectArrears(riskSnapshot.paymentBehavior),
+            montoSugerido: riskSnapshot.montoSugerido,
+          }
+        : null,
+      dimensions: result.dimensions ?? {},
+      alerts: result.alerts ?? [],
+      eliminatoryReason: result.summary?.eliminatoryReason ?? null,
+      reliabilityFlags: result.pdfReliabilityFlags ?? [],
+      centralRiskFlags: result.centralRiskFlags ?? [],
+    };
+    return buildPaymentCapacityUserMessage(input);
   }
 
   /**
@@ -386,6 +542,195 @@ export class AiAnalysesService {
   }
 
   /**
+   * Extracción IA genérica de un DOCUMENTO del estudio de capacidad de pago
+   * (extracto bancario, desprendible de nómina o factura de contratista). A
+   * diferencia de extractPdf (EEFF):
+   *  - NO guarda el PDF en la fila de AiAnalysis (el binario ya vive en
+   *    Supabase Storage vía StudyDocument; 6+ extractos en bytea no escalan).
+   *  - No interpreta el shape: devuelve el JSON parseado tal cual + las
+   *    extractionFlags; la normalización y validación son del llamador.
+   * La corrida (tokens/costo/prompt) sí queda en AiAnalysis, ligada al estudio.
+   */
+  async extractStudyDocument(params: {
+    pdfBuffer: Buffer;
+    prompt: string;
+    /** Code del Parameter ai_analysis_type (p. ej. bankStatementPdfExtraction). */
+    typeCode: string;
+    /** Perfil de extracción (modelo + presupuesto) según el tipo de documento. */
+    extractionKind: ExtractionKind;
+    companyId: string;
+    userId: string;
+    creditStudyId: string;
+    customerId: string;
+  }): Promise<{
+    parsed: Record<string, unknown>;
+    extractionFlags: ReliabilityFlag[];
+    aiAnalysisId: string;
+    usage: AiRunUsage;
+  }> {
+    const typeId = await this.getTypeId(params.typeCode);
+
+    try {
+      const aiResult = await this.aiService.extractFromPdf(
+        params.pdfBuffer,
+        params.prompt,
+        params.extractionKind,
+      );
+      const estimatedCostUsd = this.aiService.estimateCostUsd(
+        aiResult.model,
+        aiResult.promptTokens,
+        aiResult.completionTokens,
+      );
+
+      const parsed = this.parseAiJson(aiResult);
+      const extractionFlags: ReliabilityFlag[] = Array.isArray(
+        parsed.extractionFlags,
+      )
+        ? (parsed.extractionFlags as ReliabilityFlag[])
+        : [];
+      delete parsed.extractionFlags;
+
+      const row = await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        prompt: params.prompt,
+        // Sin pdfFile: el binario vive en Storage (StudyDocument.storagePath).
+        result: aiResult.content,
+        model: aiResult.model,
+        promptTokens: aiResult.promptTokens,
+        completionTokens: aiResult.completionTokens,
+        totalTokens: aiResult.totalTokens,
+        estimatedCostUsd,
+        durationMs: aiResult.durationMs,
+        status: 'success',
+      });
+
+      return {
+        parsed,
+        extractionFlags,
+        aiAnalysisId: row.id,
+        usage: {
+          model: aiResult.model,
+          promptTokens: aiResult.promptTokens,
+          completionTokens: aiResult.completionTokens,
+          totalTokens: aiResult.totalTokens,
+          estimatedCostUsd,
+          durationMs: aiResult.durationMs,
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error('Extraccion de documento del estudio fallida', error);
+
+      await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        prompt: params.prompt,
+        result: null,
+        model: 'unknown',
+        status: 'error',
+        errorMessage,
+      });
+
+      throw new BadRequestException(
+        `La extraccion del documento fallo: ${errorMessage}`,
+      );
+    }
+  }
+
+  /**
+   * CLASIFICACIÓN CONSOLIDADA de movimientos del estudio de capacidad: una
+   * sola llamada con todos los meses para que un único criterio decida qué es
+   * ingreso, traslado propio o gasto (la extracción por PDF deja solo un
+   * borrador). No lanza BadRequest: si falla, registra la corrida en error y
+   * relanza el Error crudo — el llamador decide el fallback (usar el borrador),
+   * porque el estudio debe poder realizarse aunque esta pasada se caiga.
+   */
+  async classifyStudyMovements(params: {
+    systemPrompt: string;
+    userMessage: string;
+    companyId: string;
+    userId: string;
+    creditStudyId: string;
+    customerId: string;
+  }): Promise<{ parsed: Record<string, unknown>; usage: AiRunUsage }> {
+    const typeId = await this.getTypeId('movementClassification');
+
+    try {
+      const aiResult = await this.aiService.classifyMovements(
+        params.systemPrompt,
+        params.userMessage,
+      );
+      const estimatedCostUsd = this.aiService.estimateCostUsd(
+        aiResult.model,
+        aiResult.promptTokens,
+        aiResult.completionTokens,
+      );
+      const parsed = this.parseAiJson(aiResult);
+
+      await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        // Solo el system prompt: el userMessage son los movimientos completos
+        // (pesados y con datos del titular) que ya viven en StudyDocument.
+        prompt: params.systemPrompt,
+        result: aiResult.content,
+        model: aiResult.model,
+        promptTokens: aiResult.promptTokens,
+        completionTokens: aiResult.completionTokens,
+        totalTokens: aiResult.totalTokens,
+        estimatedCostUsd,
+        durationMs: aiResult.durationMs,
+        status: 'success',
+      });
+
+      return {
+        parsed,
+        usage: {
+          model: aiResult.model,
+          promptTokens: aiResult.promptTokens,
+          completionTokens: aiResult.completionTokens,
+          totalTokens: aiResult.totalTokens,
+          estimatedCostUsd,
+          durationMs: aiResult.durationMs,
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error(
+        'Clasificación consolidada de movimientos fallida',
+        error,
+      );
+
+      await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        prompt: params.systemPrompt,
+        result: null,
+        model: 'unknown',
+        status: 'error',
+        errorMessage,
+      });
+
+      throw error instanceof Error ? error : new Error(errorMessage);
+    }
+  }
+
+  /**
    * Corre la MISMA extracción IA sobre un PDF pero SIN persistir nada: ni la
    * fila de AiAnalysis, ni el PDF, ni períodos. Es la herramienta de prueba del
    * portal admin (afinar el prompt / verificar cómo lee un documento) y por eso
@@ -431,6 +776,7 @@ export class AiAnalysesService {
     const aiResult = await this.aiService.extractFromPdf(
       pdfBuffer,
       extractionPrompt,
+      'financialStatements',
     );
 
     const estimatedCostUsd = this.aiService.estimateCostUsd(
@@ -439,13 +785,7 @@ export class AiAnalysesService {
       aiResult.completionTokens,
     );
 
-    let rawContent = aiResult.content || '{}';
-    // Claude may wrap JSON in ```json ... ``` blocks — strip them
-    const jsonBlockMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonBlockMatch) {
-      rawContent = jsonBlockMatch[1].trim();
-    }
-    const parsed = JSON.parse(rawContent) as ExtractPdfResponse;
+    const parsed = this.parseAiJson(aiResult) as ExtractPdfResponse;
 
     // The prompt returns { financialData, reliabilityFlags }. Fall back to the
     // old flat shape (financial fields at the top level) for resilience.
@@ -465,6 +805,55 @@ export class AiAnalysesService {
     }
 
     return { aiResult, financialData, reliabilityFlags, estimatedCostUsd };
+  }
+
+  /**
+   * Parsea la respuesta JSON de una extracción. El modelo suele envolverla en
+   * un bloque ```json; si además se quedó sin presupuesto de salida, el bloque
+   * NUNCA cierra y el JSON llega a medias — de ahí que primero se declare el
+   * truncamiento (mensaje accionable) en vez de dejar reventar a JSON.parse
+   * con un "Unexpected token" que no le dice nada a nadie.
+   */
+  private parseAiJson(aiResult: AiCompletionResult): Record<string, unknown> {
+    if (aiResult.truncated) {
+      throw new Error(
+        'El documento es demasiado extenso para procesarlo en una sola lectura y la respuesta quedó incompleta. ' +
+          'Carga el documento por períodos más cortos (por ejemplo, un extracto por mes) o aumenta AI_MAX_TOKENS_EXTRACTION.',
+      );
+    }
+
+    let raw = (aiResult.content || '').trim();
+    if (!raw) {
+      throw new Error('El modelo no devolvió contenido para el documento.');
+    }
+
+    // Bloque de código cerrado; si no cierra, se quita solo la apertura.
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    raw = fenced
+      ? fenced[1].trim()
+      : raw.replace(/^```(?:json)?\s*/i, '').trim();
+
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      // Último recurso: recortar a lo que va del primer { al último }, por si
+      // el modelo antepuso o añadió prosa al JSON.
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start !== -1 && end > start) {
+        try {
+          return JSON.parse(raw.slice(start, end + 1)) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          /* cae al error de abajo */
+        }
+      }
+      throw new Error(
+        'La respuesta del modelo no es un JSON válido (probablemente quedó incompleta). Intenta de nuevo o carga el documento por períodos más cortos.',
+      );
+    }
   }
 
   async getPdf(id: string, companyId: string) {
