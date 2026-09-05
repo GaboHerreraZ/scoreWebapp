@@ -9,6 +9,7 @@ import {
   Post,
   Req,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -25,6 +26,10 @@ import { StudyDocumentsService } from './study-documents.service.js';
 import { UploadStudyDocumentDto } from './dto/upload-study-document.dto.js';
 import { CompanyScoped } from '../common/decorators/company-scoped.decorator.js';
 import { MAX_PDF_UPLOAD_BYTES } from '../common/constants/upload-limits.js';
+import {
+  FeatureFlagGuard,
+  RequireFeature,
+} from '../feature-flags/feature-flag.guard.js';
 
 @ApiTags('Study Documents')
 @ApiBearerAuth()
@@ -34,6 +39,10 @@ export class StudyDocumentsController {
   constructor(private readonly studyDocumentsService: StudyDocumentsService) {}
 
   @Post()
+  // Kill switch: sin flag no entra trabajo nuevo (aquí vive el costo de IA).
+  // Ver/listar/descargar quedan libres: lo existente no se rompe.
+  @RequireFeature('paymentCapacity')
+  @UseGuards(FeatureFlagGuard)
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: MAX_PDF_UPLOAD_BYTES } }),
   )
@@ -143,6 +152,8 @@ export class StudyDocumentsController {
   }
 
   @Delete(':documentId')
+  @RequireFeature('paymentCapacity')
+  @UseGuards(FeatureFlagGuard)
   @ApiOperation({
     summary:
       'Eliminar un documento del estudio (recalcula cobertura y estado del flujo)',

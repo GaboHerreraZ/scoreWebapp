@@ -24,6 +24,7 @@ import { CreditBureauService } from '../credit-bureau/credit-bureau.service.js';
 import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
 import { PromissoryNotesService } from '../documents/promissory-notes/promissory-notes.service.js';
 import { PaymentCapacityService } from '../payment-capacity/payment-capacity.service.js';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service.js';
 import { runScoring } from '../scoring/scoring.engine.js';
 import {
   defaultWeightsFor,
@@ -178,6 +179,7 @@ export class CreditStudiesService {
     private readonly pdfService: PdfService,
     private readonly promissoryNotesService: PromissoryNotesService,
     private readonly paymentCapacityService: PaymentCapacityService,
+    private readonly featureFlagsService: FeatureFlagsService,
   ) {}
 
   /**
@@ -205,6 +207,15 @@ export class CreditStudiesService {
     if (isPaymentCapacity && dto.identificationTypeCode === 'nit') {
       throw new BadRequestException(
         'El estudio de capacidad de pago aplica solo a personas naturales',
+      );
+    }
+    // Kill switch: bloquea crear estudios nuevos; los existentes siguen vivos.
+    if (
+      isPaymentCapacity &&
+      !(await this.featureFlagsService.isEnabled('paymentCapacity'))
+    ) {
+      throw new BadRequestException(
+        'El estudio de capacidad de pago no está disponible en este momento.',
       );
     }
     const studyType = await this.parametersRepository.findByTypeAndCode(
