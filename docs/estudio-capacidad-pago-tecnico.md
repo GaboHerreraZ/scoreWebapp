@@ -194,9 +194,14 @@ Sobre los movimientos ya clasificados:
 - **Gastos fijos recurrentes** y **costo de vida** observados.
 - **Disponible** = ingreso − fijos − cuotas. **Cuota máxima** =
   min(30% del ingreso, 70% del disponible) (`MAX_INSTALLMENT_*`).
-- **DTI sin tarjeta**: el pago de TC del extracto no distingue pago mínimo de
-  pago total, así que la tarjeta resta del disponible pero no entra al DTI
-  (entraría con doble filo). Umbral 30% sano / 45% crítico.
+- **DTI bi-fuente y sin tarjeta**: el numerador es
+  `max(cuotas detectadas en extractos, cuota según la central)` — la cuenta ve
+  la deuda no reportada (fintech, informal) pero solo la que pasa por ELLA; la
+  central ve lo reportado aunque se pague desde otra cuenta. Manda el peor
+  caso, y la divergencia entre fuentes genera flag para el analista. La cuota
+  de la central = `reportedIncome × quotaToIncomePct` del snapshot. El pago de
+  TC no entra al DTI (el extracto no distingue pago mínimo de pago total) pero
+  sí resta del disponible. Umbral 30% sano / 45% crítico.
 - **Señales de comportamiento**: días en negativo, % retirado en las 48h
   siguientes al abono, apuestas (5%/15% del ingreso), avances de TC, colchón.
 - **Cruce factura↔abono**: COP busca un abono individual que corresponda al
@@ -225,10 +230,37 @@ estudio viejo siempre puede explicarse con los pesos que lo produjeron.
 
 No hay dimensión "capacidad de pago": la capacidad actúa como **eliminatoria**
 (ingreso verificado = 0 o disponible ≤ 0 → rechazo directo) y como **cifra
-operativa** (cuota máxima en `capacityFigures`). Una dimensión no evaluable
-(central sin historia) redistribuye su peso entre las demás — no castiga al
-cliente por falta de dato externo. Umbrales de veredicto compartidos con EEFF:
-≥75 aprobado, ≥40 condicional.
+operativa** (cuota máxima en `capacityFigures`). Umbrales de veredicto
+compartidos con EEFF: ≥75 aprobado, ≥40 condicional.
+
+**Las cinco vías de DataCrédito en el resultado:**
+
+1. **Dimensión** (20/100 default, obligatoria): reutiliza `evalCentralRisk`
+   del motor EEFF — puntaje, viabilidad, moras y comportamiento → ratio 0–1.
+2. **Techo del veredicto**: central en riesgo alto o `montoSugerido = 0` →
+   un "aprobado" baja a "condicional" con alerta explícita. La central puede
+   degradar el resultado aunque el flujo de caja sea perfecto.
+3. **Red flags**: las banderas de la central se agregan como alertas
+   (excepto `legal_status`, que es de PJ).
+4. **Referencia visible**: montoSugerido, score Experian y viabilidad viajan
+   en `reference`/`approvedCreditLine` para contraste del analista.
+5. **Cuota reportada en el DTI** (bi-fuente, §7.5): la cuota mensual que la
+   central certifica compite con la detectada en extractos y gana la mayor —
+   afecta DTI, disponible y cuota máxima.
+
+**Sin historia crediticia** (`hasNoBureauHistory`, política 2026-09-05): la
+dimensión queda **visible con su peso completo y contribución CERO** — prudencia
+ante lo desconocido: prestar a quien no ha demostrado comportamiento de pago es
+un riesgo en sí mismo, así que esos puntos se pierden (con pesos default, el
+máximo alcanzable de un thin file es 80). No se fabrican red flags sobre un
+score que no existe. Distinto de **sin consulta** (`centralRisk` null): esa
+ausencia de dato es nuestra, no del titular → no evaluable y el peso sí se
+redistribuye.
+
+**Diferencia deliberada vs el EEFF de PN**: el `reportedIncome` de la central
+NO acota la capacidad aquí. En EEFF los estados son autoreportados y la central
+sirve de techo; en capacidad el ingreso sale de extractos verificados con
+checksums — evidencia directa superior a la estimación de la central.
 
 Devuelve el mismo shape `ScoringResult` del estudio EEFF → steps, front,
 narrativa y PDF reutilizan toda la anatomía del resultado.

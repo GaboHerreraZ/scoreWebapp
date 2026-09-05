@@ -46,9 +46,11 @@ Todo se carga en la plataforma en minutos; el análisis corre solo.
    que entra y sale de paso, avances de tarjeta disfrazados de depósito. Y qué
    tan estable es ese ingreso mes a mes.
 
-2. **Endeudamiento real** — Las cuotas que ya paga cada mes, **incluidas las
-   deudas que la central de riesgo no ve**: fintechs, créditos informales,
-   pagos de tarjeta detectados directamente en el extracto.
+2. **Endeudamiento real** — Las cuotas que ya paga cada mes, combinando las
+   dos fuentes: lo que se ve salir de la cuenta (incluye fintechs y créditos
+   que no llegan a la central) y lo que DataCrédito reporta (incluye deudas
+   que paga desde otras cuentas). **Siempre manda el peor caso**, y si las dos
+   fuentes no cuadran, el estudio lo alerta.
 
 3. **Comportamiento financiero** — Señales que ningún papel muestra: ¿retira
    toda la plata apenas le llega? ¿vive en saldo cero? ¿gasta en apuestas
@@ -62,8 +64,12 @@ Todo se carga en la plataforma en minutos; el análisis corre solo.
 
 5. **Historial en la central de riesgo** — La consulta a DataCrédito (score,
    moras, comportamiento) viene incluida en el mismo estudio, con la misma
-   consulta de la bolsa. Si la persona no tiene historial, el estudio no la
-   castiga: se apoya en los documentos.
+   consulta de la bolsa. Pesa en el score y **nunca se ignora**: si la central
+   marca a la persona en riesgo alto, el estudio limita el veredicto a
+   "aprobado con condiciones" aunque el flujo de caja sea favorable. Y si la
+   persona no tiene historial, esa dimensión no aporta puntos — prudencia ante
+   lo desconocido — y el veredicto depende de qué tan sólidos sean sus
+   documentos.
 
 ## Qué entrega
 
@@ -80,8 +86,9 @@ Todo se carga en la plataforma en minutos; el análisis corre solo.
 
 ## Diferenciadores (lo que se puede prometer con confianza)
 
-- **Ve la deuda invisible.** La central solo conoce el crédito formal; el
-  extracto muestra TODAS las cuotas que salen cada mes.
+- **Endeudamiento con dos fuentes.** Cruza lo que sale de la cuenta con lo que
+  DataCrédito reporta y siempre toma el peor caso — ni las cuotas que se pagan
+  desde otro banco ni las que no llegan a la central se le escapan.
 - **Anti-fraude matemático.** No es "la IA leyó el PDF y le creemos": cada
   documento se verifica con aritmética exacta. Documento adulterado = alerta.
 - **Cada peso es rastreable.** El ingreso y las obligaciones se muestran con su
@@ -104,8 +111,10 @@ sistema, y el score sale de fórmulas fijas — el mismo estudio con los mismos
 documentos da siempre el mismo resultado.
 
 **"Mi cliente no tiene vida crediticia."**
-Ese es justamente el caso ideal: el estudio evalúa el flujo de caja real y no
-castiga la falta de historial en la central.
+El estudio sí lo puede evaluar: el flujo de caja real de sus extractos pesa la
+mayor parte del score. La falta de historial resta los puntos de la dimensión
+de la central — prudencia ante lo desconocido — así que el veredicto depende de
+qué tan sólidos sean sus documentos.
 
 **"¿Cuánto se demora?"**
 La carga de documentos toma minutos y el análisis corre automáticamente.

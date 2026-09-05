@@ -65,8 +65,11 @@ export interface CapacityFigures {
   recurringFixedExpenses: number;
   /** Todo lo que sale por obligaciones: cuotas + tarjeta. */
   existingDebtPayments: number;
-  /** Servicio de deuda comprometido, sin tarjeta: es el que mide el DTI. */
+  /** Servicio de deuda comprometido, sin tarjeta: es el que mide el DTI.
+   *  Bi-fuente: max(cuotas del extracto, cuota según la central). */
   debtServicePayments: number;
+  /** Cuota mensual según la central; null si no trajo el dato. */
+  centralMonthlyQuota: number | null;
   /** Pagos a tarjeta: salen de la cuenta, pero no son cuota de deuda. */
   cardPayments: number;
   /** Costo de vida observado (mercado, transporte, compras, retiros). Se
@@ -136,21 +139,21 @@ export function runPaymentCapacityScoring(
     financialBehavior: () => evalFinancialBehavior(ind),
     docVeracity: () =>
       evalDocVeracity(input.validationOutcomes, input.reliabilityFlags),
-    // Thin file: si la central declara que no tiene historia del titular, no
-    // hay señal externa que puntuar. Se marca no evaluable (su peso se
-    // redistribuye) en vez de asumir riesgo máximo — castigar la ausencia de
-    // información golpearía justo a la población que este estudio atiende.
+    // Thin file: la central respondió pero SIN historia del titular. Política
+    // (2026-09-05): prudencia ante lo desconocido — la dimensión queda visible
+    // y en CERO, no se redistribuye. Sin consulta (null) sí se marca no
+    // evaluable: esa ausencia de dato es nuestra, no del titular.
     centralRisk: () =>
       hasNoBureauHistory(input.centralRisk)
         ? {
-            ratio: null,
-            status: 'not_evaluable',
+            ratio: 0,
+            status: 'no_history',
             alerts: [
               {
-                type: 'info',
+                type: 'warning',
                 dimension: 'centralRisk',
                 message:
-                  'La central no tiene historia crediticia de este titular: sin puntaje, sin obligaciones reportadas y sin comportamiento de pago. No hay señal externa que evaluar, así que esa dimensión no puntúa y el análisis se apoya enteramente en los documentos aportados.',
+                  'La central no tiene historia crediticia de este titular: sin puntaje, sin obligaciones reportadas y sin comportamiento de pago. Prestar a quien no ha demostrado comportamiento de pago es un riesgo en sí mismo, así que la dimensión no aporta puntos y el análisis se apoya en los documentos verificados.',
               },
             ],
           }
@@ -383,6 +386,10 @@ export function runPaymentCapacityScoring(
       recurringFixedExpenses: Math.round(ind.recurringFixedExpenses),
       existingDebtPayments: Math.round(ind.existingDebtPayments),
       debtServicePayments: Math.round(ind.debtServicePayments),
+      centralMonthlyQuota:
+        ind.centralMonthlyQuota !== null
+          ? Math.round(ind.centralMonthlyQuota)
+          : null,
       cardPayments: Math.round(ind.cardPayments),
       livingCost: Math.round(ind.livingCost),
       availableIncome: Math.round(ind.availableIncome),

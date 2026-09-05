@@ -25,6 +25,7 @@ const healthyIndicators = (
   recurringFixedExpenses: 1_000_000,
   existingDebtPayments: 2_000_000,
   debtServicePayments: 2_000_000,
+  centralMonthlyQuota: null,
   cardPayments: 0,
   livingCost: 1_500_000,
   availableIncome: 13_000_000,
@@ -193,7 +194,7 @@ describe('runPaymentCapacityScoring', () => {
     expect(result.summary.eliminatoryReason).toContain('ingreso');
   });
 
-  it('la central sin historia no puntúa como riesgo alto (thin file)', () => {
+  it('la central sin historia puntúa CERO: prudencia ante lo desconocido', () => {
     // MiDecisor responde así a un titular sin historial: score 0 (fuera de la
     // escala real, que arranca en ~150) y rating 'N' = sin información.
     const thinFile: CentralRiskInput = {
@@ -212,27 +213,32 @@ describe('runPaymentCapacityScoring', () => {
       centralRisk: thinFile,
     });
 
-    // No evaluable: su peso se redistribuye, no se castiga con ratio 0.
-    expect(result.dimensions.centralRisk.evaluable).toBe(false);
-    expect(result.dimensions.centralRisk.weight).toBe(0);
+    // Política 2026-09-05: la dimensión queda VISIBLE con su peso completo y
+    // contribución 0 — no se redistribuye. Sin vida crediticia se pierden
+    // esos puntos.
+    expect(result.dimensions.centralRisk.evaluable).toBe(true);
+    expect(result.dimensions.centralRisk.ratio).toBe(0);
+    expect(result.dimensions.centralRisk.status).toBe('no_history');
+    expect(result.dimensions.centralRisk.weight).toBeGreaterThan(0);
+    expect(result.dimensions.centralRisk.contribution).toBe(0);
     const weightSum = Object.values(result.dimensions).reduce(
       (a, d) => a + d.weight,
       0,
     );
     expect(weightSum).toBeCloseTo(100, 5);
-    // Y no se levantan red flags sobre un puntaje que la central no dio.
+    // Sin red flags fabricadas sobre un puntaje que la central no dio.
     expect(result.centralRiskFlags).toHaveLength(0);
     expect(
       result.alerts.some((a) => a.message.includes('no tiene historia')),
     ).toBe(true);
 
-    // Sin el castigo, el mismo titular puntúa por encima que con score 0 real.
-    const withRealBadScore = runPaymentCapacityScoring({
+    // El desconocido nunca puntúa por encima de alguien con historia buena.
+    const withGoodHistory = runPaymentCapacityScoring({
       ...baseInput(),
-      centralRisk: { ...thinFile, ratingRecaudos: 'C', hasArrears: true },
+      centralRisk: goodCentral,
     });
-    expect(result.summary.totalScore).toBeGreaterThan(
-      withRealBadScore.summary.totalScore,
+    expect(withGoodHistory.summary.totalScore).toBeGreaterThan(
+      result.summary.totalScore,
     );
   });
 
