@@ -31,6 +31,8 @@ import {
   FX_PLAUSIBLE_MIN,
   GAMBLING_DANGER_PCT,
   GAMBLING_WARNING_PCT,
+  DEBT_DIVERGENCE_MIN,
+  DEBT_DIVERGENCE_RATIO,
   INVOICE_FX_TOLERANCE,
   INVOICE_RETENTION_TOLERANCE,
   MAX_INSTALLMENT_AVAILABLE_PCT,
@@ -281,6 +283,9 @@ export interface PaymentCapacityIndicatorsInput {
   contractorInvoices: ContractorInvoiceExtraction[];
   /** Fecha declarada de inicio laboral (ISO), fallback de la verificada. */
   declaredEmploymentStartDate?: string | null;
+  /** Cuota mensual según la central (reportedIncome × % comprometido).
+   *  null = la central no trae el dato (thin file o sin consulta). */
+  centralMonthlyQuota?: number | null;
 }
 
 export interface PaymentCapacityIndicatorsResult {
@@ -300,8 +305,11 @@ export interface PaymentCapacityIndicatorsResult {
   recurringFixedExpenses: number;
   /** Todo lo que sale por obligaciones: cuotas + tarjeta. Resta del disponible. */
   existingDebtPayments: number;
-  /** Servicio de deuda comprometido (sin tarjeta): numerador del DTI. */
+  /** Servicio de deuda comprometido (sin tarjeta): numerador del DTI.
+   *  Bi-fuente: max(cuotas detectadas en extractos, cuota según la central). */
   debtServicePayments: number;
+  /** Cuota mensual según la central; null si no trajo el dato. */
+  centralMonthlyQuota: number | null;
   /** Pagos a tarjeta de crédito: salen de la cuenta, pero no son cuota. */
   cardPayments: number;
   /** Costo de vida observado (mercado, transporte, compras, retiros). Se
@@ -580,12 +588,6 @@ export function computePaymentCapacityIndicators(
     );
   }
 
-  // Todo lo que sale por obligaciones resta del disponible: la plata se va,
-  // sea cuota o consumo de tarjeta.
-  const existingDebtPayments = obligations.reduce(
-    (a, o) => a + o.monthlyAverage,
-    0,
-  );
   // El pago de tarjeta se separa: sale de la cuenta (resta del disponible) pero
   // NO es servicio de deuda comprometido. Quien paga la tarjeta COMPLETA cada
   // mes está moviendo su consumo, no amortizando; el extracto no distingue el
@@ -594,7 +596,20 @@ export function computePaymentCapacityIndicators(
   const cardPayments = obligations
     .filter((o) => o.kind === 'card')
     .reduce((a, o) => a + o.monthlyAverage, 0);
-  const debtServicePayments = existingDebtPayments - cardPayments;
+  const statementDebtService =
+    obligations.reduce((a, o) => a + o.monthlyAverage, 0) - cardPayments;
+
+  // Endeudamiento bi-fuente: la cuenta ve lo que pasa por ELLA (incluida deuda
+  // no reportada); la central ve lo reportado aunque se pague desde otra
+  // cuenta. Manda el peor caso.
+  const centralMonthlyQuota = input.centralMonthlyQuota ?? null;
+  const debtServicePayments = Math.max(
+    statementDebtService,
+    centralMonthlyQuota ?? 0,
+  );
+  // Todo lo que sale por obligaciones resta del disponible: la plata se va,
+  // sea cuota o consumo de tarjeta.
+  const existingDebtPayments = debtServicePayments + cardPayments;
   const availableIncome =
     verifiedMonthlyIncome - recurringFixedExpenses - existingDebtPayments;
   const livingCost = livingCostMonthly(allMovements, months.length);
@@ -635,6 +650,32 @@ export function computePaymentCapacityIndicators(
       detail: `Las cuotas de crédito que ya paga toman el ${Math.round(currentDti * 100)}% del ingreso verificado (umbral crítico: ${DTI_CRITICAL * 100}%). No incluye el pago de tarjetas.`,
     });
   }
+  // Divergencia entre fuentes: la diferencia misma es información para el
+  // analista, gane quien gane.
+  if (centralMonthlyQuota !== null) {
+    if (
+      centralMonthlyQuota - statementDebtService > DEBT_DIVERGENCE_MIN &&
+      centralMonthlyQuota > statementDebtService * DEBT_DIVERGENCE_RATIO
+    ) {
+      flags.push({
+        severity: 'warning',
+        category: 'indebtedness',
+        title: 'La central reporta más cuotas de las que se ven en la cuenta',
+        detail: `DataCrédito reporta cuotas por $${money(centralMonthlyQuota)}/mes y en el extracto solo se detectan $${money(statementDebtService)}/mes: probablemente paga deudas desde otra cuenta. El DTI y el disponible usan la cifra de la central (el peor caso).`,
+      });
+    } else if (
+      statementDebtService - centralMonthlyQuota > DEBT_DIVERGENCE_MIN &&
+      statementDebtService > centralMonthlyQuota * DEBT_DIVERGENCE_RATIO
+    ) {
+      flags.push({
+        severity: 'warning',
+        category: 'indebtedness',
+        title: 'La cuenta paga cuotas que la central no reporta',
+        detail: `En el extracto se detectan cuotas por $${money(statementDebtService)}/mes y DataCrédito reporta $${money(centralMonthlyQuota)}/mes: hay deuda que no llega a la central (fintech o crédito informal). El DTI usa lo que muestra la cuenta.`,
+      });
+    }
+  }
+
   // Una tarjeta que se lleva más de la mitad del ingreso merece revisión aunque
   // no se cuente como deuda: o es consumo desbordado, o es cuota disfrazada.
   if (
@@ -704,6 +745,7 @@ export function computePaymentCapacityIndicators(
     recurringFixedExpenses,
     existingDebtPayments,
     debtServicePayments,
+    centralMonthlyQuota,
     cardPayments,
     livingCost,
     availableIncome,

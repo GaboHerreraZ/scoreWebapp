@@ -959,3 +959,62 @@ describe('cruce factura ↔ extracto (COP y ventana)', () => {
     ).toBe(false);
   });
 });
+
+// ─── Endeudamiento bi-fuente: extractos vs cuota reportada por la central ──
+
+describe('endeudamiento bi-fuente (extractos vs central)', () => {
+  // La fixture independiente detecta cuotas por 2.153.200/mes en extractos
+  // (FINESA + traslado fijo + global) y tarjetas por 7.400.000/mes.
+  const base = {
+    employmentType: 'independent' as const,
+    statements: [april, may, june],
+    payrollStubs: [],
+    contractorInvoices: [],
+  };
+
+  it('cuando la central reporta más, manda la central (peor caso)', () => {
+    const result = computePaymentCapacityIndicators({
+      ...base,
+      centralMonthlyQuota: 5_000_000,
+    });
+    expect(result.debtServicePayments).toBe(5_000_000);
+    expect(result.currentDti).toBeCloseTo(5_000_000 / 16_356_718.67, 4);
+    // El disponible también se encoge con la cifra de la central.
+    expect(result.availableIncome).toBeCloseTo(
+      16_356_718.67 - 609_800 - (5_000_000 + 7_400_000),
+      0,
+    );
+    expect(
+      result.indicatorFlags.some((f) =>
+        f.title.includes('central reporta más cuotas'),
+      ),
+    ).toBe(true);
+  });
+
+  it('cuando la cuenta paga más de lo reportado, mandan los extractos + flag de deuda no reportada', () => {
+    const result = computePaymentCapacityIndicators({
+      ...base,
+      centralMonthlyQuota: 300_000,
+    });
+    expect(result.debtServicePayments).toBeCloseTo(2_153_200, 0);
+    expect(result.currentDti).toBeCloseTo(2_153_200 / 16_356_718.67, 4);
+    expect(
+      result.indicatorFlags.some((f) =>
+        f.title.includes('la central no reporta'),
+      ),
+    ).toBe(true);
+  });
+
+  it('sin dato de la central (thin file) nada cambia y no hay flags de divergencia', () => {
+    const result = computePaymentCapacityIndicators(base);
+    expect(result.centralMonthlyQuota).toBeNull();
+    expect(result.debtServicePayments).toBeCloseTo(2_153_200, 0);
+    expect(
+      result.indicatorFlags.some(
+        (f) =>
+          f.title.includes('central reporta') ||
+          f.title.includes('la central no reporta'),
+      ),
+    ).toBe(false);
+  });
+});

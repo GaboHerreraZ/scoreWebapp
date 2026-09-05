@@ -97,6 +97,11 @@ export const MAX_INSTALLMENT_AVAILABLE_PCT = 0.7;
 export const DTI_HEALTHY = 0.3; // < 30% sano
 export const DTI_CRITICAL = 0.45; // > 45% crítico
 
+/** Divergencia entre las cuotas del extracto y las de la central que dispara
+ *  flag: la mayor debe superar a la otra en este ratio Y en el mínimo absoluto. */
+export const DEBT_DIVERGENCE_RATIO = 1.2;
+export const DEBT_DIVERGENCE_MIN = 100_000;
+
 /** Pago de tarjeta sobre el ingreso a partir del cual se pide revisión. No es
  *  deuda comprometida, pero sí es plata que sale todos los meses. */
 export const CARD_PAYMENT_REVIEW_PCT = 0.5;

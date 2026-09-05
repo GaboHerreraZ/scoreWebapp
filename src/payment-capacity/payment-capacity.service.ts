@@ -233,6 +233,18 @@ export class PaymentCapacityService {
 
     // ── 4. Indicadores (§4 del diseño) ──
     // Sin plazo: los indicadores miden a la persona, no la operación.
+    // Cuota mensual según la central: entra al DTI bi-fuente (manda el peor
+    // caso entre lo que ve la cuenta y lo que reporta DataCrédito).
+    const centralMonthlyQuota =
+      params.centralRisk?.reportedIncome != null &&
+      params.centralRisk.reportedIncome > 0 &&
+      params.centralRisk.quotaToIncomePct != null
+        ? Math.round(
+            (params.centralRisk.reportedIncome *
+              params.centralRisk.quotaToIncomePct) /
+              100,
+          )
+        : null;
     const indicators = computePaymentCapacityIndicators({
       employmentType,
       statements: classifiedStatements,
@@ -241,6 +253,7 @@ export class PaymentCapacityService {
       declaredEmploymentStartDate: study.declaredEmploymentStartDate
         ? study.declaredEmploymentStartDate.toISOString().slice(0, 10)
         : null,
+      centralMonthlyQuota,
     });
 
     const allValidations = [...intraDocValidations, ...crossValidations];
