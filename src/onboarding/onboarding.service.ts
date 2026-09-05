@@ -11,6 +11,7 @@ import {
   defaultWeightsFor,
   type PersonTypeCode,
 } from '../scoring/scoring.constants.js';
+import { PAYMENT_CAPACITY_DEFAULT_WEIGHTS } from '../payment-capacity/engine/payment-capacity.constants.js';
 import { FiscalProfileValidator } from '../e-invoicing/fiscal-profile.validator.js';
 import { isLegalEntityDocument } from '../e-invoicing/domain/dian.catalogs.js';
 import { SalesService } from '../sales/sales.service.js';
@@ -65,17 +66,35 @@ export class OnboardingService {
       );
     }
 
-    // Tipos de persona: se crea una config de scoring default por cada uno.
-    const [naturalPerson, legalEntity] = await Promise.all([
-      this.parametersRepository.findByTypeAndCode(
-        'person_type',
-        'naturalPerson',
-      ),
-      this.parametersRepository.findByTypeAndCode('person_type', 'legalEntity'),
-    ]);
+    // Tipos de persona y de estudio: se crea una config de scoring default por
+    // cada combinación válida (EEFF: PJ y PN; capacidad de pago: solo PN).
+    const [naturalPerson, legalEntity, eeffStudyType, capacityStudyType] =
+      await Promise.all([
+        this.parametersRepository.findByTypeAndCode(
+          'person_type',
+          'naturalPerson',
+        ),
+        this.parametersRepository.findByTypeAndCode(
+          'person_type',
+          'legalEntity',
+        ),
+        this.parametersRepository.findByTypeAndCode(
+          'study_type',
+          'financialStatements',
+        ),
+        this.parametersRepository.findByTypeAndCode(
+          'study_type',
+          'paymentCapacity',
+        ),
+      ]);
     if (!naturalPerson || !legalEntity) {
       throw new BadRequestException(
         'Faltan los parámetros person_type (naturalPerson / legalEntity)',
+      );
+    }
+    if (!eeffStudyType || !capacityStudyType) {
+      throw new BadRequestException(
+        'Faltan los parámetros study_type (financialStatements / paymentCapacity)',
       );
     }
 
@@ -185,30 +204,31 @@ export class OnboardingService {
         },
       });
 
-      // 4. ScoringConfiguration v1 por tipo de persona (PN y PJ) con las
-      //    dimensiones default del sistema y sus pesos (filas en
-      //    scoring_configuration_weights). Toda empresa nace con una config
-      //    vigente por tipo para que el análisis funcione sin obligar a
-      //    configurar; después puede reconfigurar cada una (habilitar/
-      //    deshabilitar dimensiones opcionales, ajustar pesos). PN y PJ tienen
-      //    defaults distintos (en PN no aplica veracidad; pesa más la central).
+      // 4. ScoringConfiguration v1 por combinación (tipo de persona, tipo de
+      //    estudio) con las dimensiones default del sistema y sus pesos. Toda
+      //    empresa nace con las 3 configs vigentes (EEFF-PJ, EEFF-PN y
+      //    capacidad-PN) para que el análisis funcione sin obligar a
+      //    configurar; después puede reconfigurar cada una.
       const dimensions = await tx.scoringDimension.findMany({
         where: { isActive: true },
       });
       const dimensionIdByCode = new Map(dimensions.map((d) => [d.code, d.id]));
-      const defaultWeightRows = (personType: PersonTypeCode) => {
-        const defaults = defaultWeightsFor(personType);
-        return Object.entries(defaults).flatMap(([code, weight]) => {
+      const weightRows = (defaults: Partial<Record<string, number>>) =>
+        Object.entries(defaults).flatMap(([code, weight]) => {
           const dimensionId = dimensionIdByCode.get(code);
           // Dimensión default ausente del catálogo (no debería pasar: el seed
           // de la migración las crea): se omite en vez de romper el onboarding.
-          return dimensionId ? [{ dimensionId, weight }] : [];
+          return dimensionId && weight !== undefined
+            ? [{ dimensionId, weight }]
+            : [];
         });
-      };
+      const defaultWeightRows = (personType: PersonTypeCode) =>
+        weightRows(defaultWeightsFor(personType));
       await tx.scoringConfiguration.create({
         data: {
           companyId: company.id,
           personTypeId: legalEntity.id,
+          studyTypeId: eeffStudyType.id,
           createdBy: profile.id,
           isActive: true,
           weights: { create: defaultWeightRows('legalEntity') },
@@ -218,9 +238,20 @@ export class OnboardingService {
         data: {
           companyId: company.id,
           personTypeId: naturalPerson.id,
+          studyTypeId: eeffStudyType.id,
           createdBy: profile.id,
           isActive: true,
           weights: { create: defaultWeightRows('naturalPerson') },
+        },
+      });
+      await tx.scoringConfiguration.create({
+        data: {
+          companyId: company.id,
+          personTypeId: naturalPerson.id,
+          studyTypeId: capacityStudyType.id,
+          createdBy: profile.id,
+          isActive: true,
+          weights: { create: weightRows(PAYMENT_CAPACITY_DEFAULT_WEIGHTS) },
         },
       });
 

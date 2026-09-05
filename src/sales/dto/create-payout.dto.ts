@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -11,7 +17,8 @@ export class CreatePayoutDto {
   salesRepId!: string;
 
   @ApiPropertyOptional({
-    description: 'Desde qué mes de causación liquidar (YYYY-MM). Sin esto, desde el principio.',
+    description:
+      'Desde qué mes de causación liquidar (YYYY-MM). Sin esto, desde el principio.',
     example: '2026-08',
   })
   @IsOptional()
@@ -19,7 +26,8 @@ export class CreatePayoutDto {
   fromMonth?: string;
 
   @ApiPropertyOptional({
-    description: 'Hasta qué mes de causación liquidar (YYYY-MM). Sin esto, hasta hoy.',
+    description:
+      'Hasta qué mes de causación liquidar (YYYY-MM). Sin esto, hasta hoy.',
     example: '2026-08',
   })
   @IsOptional()

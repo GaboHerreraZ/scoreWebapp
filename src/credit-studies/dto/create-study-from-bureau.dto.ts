@@ -1,5 +1,6 @@
 import { IntersectionType } from '@nestjs/swagger';
 import {
+  IsDateString,
   IsEmail,
   IsIn,
   IsInt,
@@ -8,16 +9,69 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ConsultCreditBureauDto } from '../../credit-bureau/dto/consult-credit-bureau.dto.js';
 
+/** Tipos de estudio (Parameter study_type). Default: financialStatements. */
+export const STUDY_TYPE_CODES = [
+  'financialStatements',
+  'paymentCapacity',
+] as const;
+export type StudyTypeCode = (typeof STUDY_TYPE_CODES)[number];
+
+/** Perfil laboral del titular (Parameter employment_type); solo capacidad. */
+export const EMPLOYMENT_TYPE_CODES = ['salaried', 'independent'] as const;
+export type EmploymentTypeCode = (typeof EMPLOYMENT_TYPE_CODES)[number];
+
 // Datos de la solicitud del estudio + el correo del titular para la
 // autorización (lo único que el usuario aporta; el resto del estudio queda null
 // hasta que se realice). studyDate NO se pide: se setea a hoy al crear.
 class StudyRequestDto {
-  @ApiPropertyOptional({ example: 12, description: 'Plazo solicitado (meses)' })
+  // ── Tipo de estudio ────────────────────────────────────────────────
+  // financialStatements (default, flujo EEFF PN/PJ) | paymentCapacity
+  // (capacidad de pago: solo persona natural, documentos en vez de EEFF).
+  @ApiPropertyOptional({
+    example: 'paymentCapacity',
+    enum: STUDY_TYPE_CODES,
+    description: 'Tipo de estudio; default financialStatements',
+  })
+  @IsOptional()
+  @IsIn(STUDY_TYPE_CODES)
+  studyTypeCode?: StudyTypeCode;
+
+  // ── Declarados del estudio de capacidad (requeridos con paymentCapacity) ──
+  @ApiPropertyOptional({
+    example: 'salaried',
+    enum: EMPLOYMENT_TYPE_CODES,
+    description: 'Capacidad de pago: perfil laboral declarado del titular',
+  })
+  @ValidateIf((o: StudyRequestDto) => o.studyTypeCode === 'paymentCapacity')
+  @IsIn(EMPLOYMENT_TYPE_CODES)
+  employmentTypeCode?: EmploymentTypeCode;
+
+  // Opcional a propósito: se pide como mes y año aproximados y el titular
+  // puede no recordarlo. En el asalariado la fecha VERIFICADA la trae el
+  // desprendible; sin dato, la antigüedad no penaliza (puntaje neutral).
+  @ApiPropertyOptional({
+    example: '2024-07-01',
+    description:
+      'Capacidad de pago: inicio laboral/actividad declarado (mes y año aproximados). Opcional; se contrasta con los documentos',
+  })
+  @IsOptional()
+  @IsDateString()
+  declaredEmploymentStartDate?: string;
+
+  // Solo aplica al estudio con EEFF (ciclo de cartera: el cupo se paga al
+  // vencimiento). En capacidad de pago se IGNORA y se persiste null: ese
+  // estudio mide la cuota máxima sostenible y el plazo lo decide quien otorga.
+  @ApiPropertyOptional({
+    example: 90,
+    description:
+      'Plazo solicitado en días. Solo estudio con EEFF; en capacidad de pago se ignora',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

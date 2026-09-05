@@ -5,6 +5,10 @@ export interface AiCompletionResult {
   totalTokens: number | null;
   model: string;
   durationMs: number;
+  /** true si el modelo se quedó sin presupuesto de salida: la respuesta viene
+   *  CORTADA (JSON incompleto). Sin esto el fallo aparece como un SyntaxError
+   *  incomprensible en vez de un mensaje accionable. */
+  truncated?: boolean;
 }
 
 export interface AiProvider {
@@ -14,6 +18,8 @@ export interface AiProvider {
     systemPrompt: string,
     userMessage: string,
     maxTokens: number,
+    // Modelo opcional para esta llamada (misma semántica que en extractFromPdf).
+    model?: string,
   ): Promise<AiCompletionResult>;
 
   extractFromPdf(

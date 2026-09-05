@@ -57,6 +57,13 @@ export class CreditStudiesRepository {
               label: true,
             },
           },
+          studyType: {
+            select: {
+              id: true,
+              code: true,
+              label: true,
+            },
+          },
         },
       }),
       this.prisma.creditStudy.count({ where }),
@@ -82,6 +89,13 @@ export class CreditStudiesRepository {
           },
         },
         status: {
+          select: {
+            id: true,
+            label: true,
+            code: true,
+          },
+        },
+        studyType: {
           select: {
             id: true,
             label: true,
@@ -143,6 +157,13 @@ export class CreditStudiesRepository {
         viabilityStatus: true,
         viabilityConditions: true,
         resolutionDate: true,
+        studyType: {
+          select: { id: true, code: true, label: true },
+        },
+        employmentType: {
+          select: { id: true, code: true, label: true },
+        },
+        declaredEmploymentStartDate: true,
         customer: {
           select: {
             id: true,
@@ -282,6 +303,8 @@ export class CreditStudiesRepository {
         customerId: true,
         requestedTerm: true,
         requestedCreditLine: true,
+        studyTypeId: true,
+        studyType: { select: { code: true } },
         status: { select: { code: true } },
         customer: {
           select: {
@@ -306,6 +329,9 @@ export class CreditStudiesRepository {
         where: {
           companyId,
           personTypeId: study.customer.personTypeId,
+          // La config es por (persona, tipo de estudio): un estudio EEFF jamás
+          // debe tomar la config del estudio de capacidad, ni al revés.
+          studyTypeId: study.studyTypeId,
           isActive: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -364,6 +390,7 @@ export class CreditStudiesRepository {
           select: { id: true, businessName: true, identificationNumber: true },
         },
         status: { select: { id: true, label: true, code: true } },
+        studyType: { select: { id: true, label: true, code: true } },
       },
     });
   }

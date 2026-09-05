@@ -35,12 +35,19 @@ export class ScoringController {
       'Devuelve la config activa del tipo (naturalPerson | legalEntity). Si la empresa no tiene ninguna, devuelve los pesos default del sistema con isDefault=true (aún no persistidos).',
   })
   @ApiQuery({ name: 'personType', enum: ['naturalPerson', 'legalEntity'] })
+  @ApiQuery({
+    name: 'studyType',
+    enum: ['financialStatements', 'paymentCapacity'],
+    required: false,
+    description: 'Tipo de estudio; default financialStatements',
+  })
   @ApiResponse({ status: 200, description: 'Config vigente (o defaults)' })
   getActive(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query('personType') personType: string,
+    @Query('studyType') studyType?: string,
   ) {
-    return this.scoringService.getActive(companyId, personType);
+    return this.scoringService.getActive(companyId, personType, studyType);
   }
 
   @Get()
@@ -54,11 +61,17 @@ export class ScoringController {
     status: 200,
     description: 'Lista de configs (reciente primero)',
   })
+  @ApiQuery({
+    name: 'studyType',
+    enum: ['financialStatements', 'paymentCapacity'],
+    required: false,
+  })
   getHistory(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query('personType') personType?: string,
+    @Query('studyType') studyType?: string,
   ) {
-    return this.scoringService.getHistory(companyId, personType);
+    return this.scoringService.getHistory(companyId, personType, studyType);
   }
 
   @Get(':id')
@@ -96,9 +109,15 @@ export class ScoringController {
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query('personType') personType: string,
     @Req() req: Request,
+    @Query('studyType') studyType?: string,
   ) {
     const userId = (req as any).user.id as string;
-    return this.scoringService.resetToDefaults(companyId, userId, personType);
+    return this.scoringService.resetToDefaults(
+      companyId,
+      userId,
+      personType,
+      studyType,
+    );
   }
 
   @Post()
@@ -120,6 +139,7 @@ export class ScoringController {
     @Query('personType') personType: string,
     @Body() dto: CreateScoringConfigurationDto,
     @Req() req: Request,
+    @Query('studyType') studyType?: string,
   ) {
     const userId = (req as any).user.id as string;
     return this.scoringService.createVersion(
@@ -127,6 +147,7 @@ export class ScoringController {
       userId,
       personType,
       dto,
+      studyType,
     );
   }
 }

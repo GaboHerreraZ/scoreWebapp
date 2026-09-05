@@ -86,6 +86,20 @@ export class SupabaseService {
   }
 
   /**
+   * Deletes a file from Supabase Storage. Best-effort: logs and swallows
+   * errors (an orphan object in the bucket is preferable to blocking the
+   * caller's transaction/UX over storage hiccups).
+   */
+  async deleteFile(bucket: string, path: string): Promise<void> {
+    const { error } = await this.client.storage.from(bucket).remove([path]);
+    if (error) {
+      this.logger.error(
+        `Supabase Storage delete failed for ${bucket}/${path}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Creates a short-lived signed URL for private files in Supabase Storage.
    */
   async createSignedUrl(

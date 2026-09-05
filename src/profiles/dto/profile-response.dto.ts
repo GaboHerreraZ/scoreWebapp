@@ -53,7 +53,7 @@ export class ProfileResponseDto {
     enum: ['no_pack', 'payment_pending', 'ready'],
     example: 'ready',
     description:
-      "Estado de onboarding para el enrutamiento post-login: 'no_pack' (nunca compró → elegir plan), 'payment_pending' (pagó/inició compra, esperando confirmación del webhook → pantalla de pago en proceso, sin ofrecer comprar de nuevo), 'ready' (bolsa activa → dashboard).",
+      "Estado de onboarding para el enrutamiento post-login. Responde si el usuario puede ENTRAR a la app, no si tiene saldo (para eso está permissions.availableCredits): 'no_pack' (nunca completó el onboarding → asistente), 'payment_pending' (primera compra iniciada, esperando el webhook → pantalla de pago en proceso, sin ofrecer comprar de nuevo), 'ready' (onboarding completo → dashboard, con o sin créditos disponibles).",
   })
   onboardingStatus?: 'no_pack' | 'payment_pending' | 'ready';
 

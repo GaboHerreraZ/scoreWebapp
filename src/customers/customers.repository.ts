@@ -75,7 +75,8 @@ export class CustomersRepository {
     return this.prisma.creditStudy.findMany({
       where: { customerId, companyId },
       orderBy,
-      include: { status: true },
+      // studyType: el front rutea al detalle que corresponde (EEFF o capacidad).
+      include: { status: true, studyType: true },
     });
   }
 

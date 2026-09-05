@@ -26,6 +26,7 @@ import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { FinancialStatementsModule } from './financial-statements/financial-statements.module.js';
+import { PaymentCapacityModule } from './payment-capacity/payment-capacity.module.js';
 import { ScoringModule } from './scoring/scoring.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
@@ -75,6 +76,7 @@ import { HealthController } from './common/health/health.controller.js';
     DashboardModule,
     AiAnalysesModule,
     FinancialStatementsModule,
+    PaymentCapacityModule,
     InvitationsModule,
     DocumentsModule,
     NotificationsModule,

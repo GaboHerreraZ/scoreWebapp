@@ -117,11 +117,14 @@ export class AiAnalysesRepository {
           },
         },
         status: true,
+        // El branch de la narrativa depende del tipo de estudio.
+        studyType: { select: { code: true } },
+        employmentType: { select: { code: true, label: true } },
       },
     });
     if (!study) return null;
 
-    const [frozen, riskSnapshot] = await Promise.all([
+    const [frozen, riskSnapshot, capacityAnalysis] = await Promise.all([
       this.prisma.creditStudyFinancialAnalysis.findMany({
         where: { creditStudyId },
         orderBy: { createdAt: 'asc' },
@@ -137,9 +140,13 @@ export class AiAnalysesRepository {
         where: { customerId: study.customerId },
         orderBy: { createdAt: 'desc' },
       }),
+      // Solo existe en estudios de capacidad (1:1); null en EEFF.
+      this.prisma.paymentCapacityAnalysis.findUnique({
+        where: { creditStudyId },
+      }),
     ]);
 
     const analyses = frozen.map((r) => r.financialAnalysis);
-    return { study, analyses, riskSnapshot };
+    return { study, analyses, riskSnapshot, capacityAnalysis };
   }
 }

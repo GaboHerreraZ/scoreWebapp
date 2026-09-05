@@ -92,12 +92,13 @@ export class ProfilesService {
       canExtractPdf: false,
     };
 
-    // Estado de onboarding para el enrutamiento post-login del front. Distingue
-    // la ventana entre pagar y que el webhook confirme, para no ofrecer comprar
-    // de nuevo (evita doble compra):
-    //   'no_pack'          → nunca compró → pantalla de elegir plan.
-    //   'payment_pending'  → pagó/inició compra, esperando webhook → "pago en proceso".
-    //   'ready'            → bolsa activa → dashboard.
+    // Estado de onboarding para el enrutamiento post-login del front. Responde
+    // "¿este usuario puede entrar a la app?", NO "¿tiene saldo?" — para el saldo
+    // está `permissions` (hasCredits / availableCredits), que es lo que apaga
+    // los botones que consumen créditos.
+    //   'no_pack'          → nunca completó el onboarding → asistente.
+    //   'payment_pending'  → primera compra iniciada, esperando webhook → "pago en proceso".
+    //   'ready'            → onboarding completo → dashboard, con o sin saldo.
     let onboardingStatus: 'no_pack' | 'payment_pending' | 'ready' = 'no_pack';
 
     if (userCompany) {
@@ -119,11 +120,21 @@ export class ProfilesService {
         await this.analysisPacksRepository.getOnboardingPackState(
           userCompany.companyId,
         );
-      onboardingStatus = hasActive
-        ? 'ready'
-        : hasPending
-          ? 'payment_pending'
-          : 'no_pack';
+      // `isOnboardingReady` lo marca el webhook al confirmar la PRIMERA bolsa
+      // pagada, y no se revierte: una empresa que ya lo tiene completó el
+      // onboarding aunque hoy esté sin saldo. Sin esta condición, agotar los
+      // créditos devolvía al cliente al asistente de "registrar empresa" —
+      // derivando el estado solo del pack vigente, quedarse en cero era
+      // indistinguible de no haber comprado nunca.
+      // Manda sobre `payment_pending` a propósito: esa pantalla existe para no
+      // ofrecer una segunda compra durante la PRIMERA; un cliente que recarga
+      // debe poder seguir usando la app mientras se confirma el pago.
+      onboardingStatus =
+        userCompany.company.isOnboardingReady || hasActive
+          ? 'ready'
+          : hasPending
+            ? 'payment_pending'
+            : 'no_pack';
     }
 
     const { userCompanies, ...rest } = profile;

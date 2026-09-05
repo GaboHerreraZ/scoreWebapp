@@ -17,6 +17,14 @@ import {
   CENTRAL_RISK_FLAG_CATEGORY_LABEL,
   type ScoringDimension,
 } from './scoring.constants.js';
+import {
+  clamp,
+  money,
+  normalizeText,
+  pct,
+  round1,
+  round2,
+} from '../common/utils/format.utils.js';
 import type {
   ScoringEngineInput,
   ScoringResult,
@@ -45,8 +53,10 @@ import type {
 // habilitado la empresa. El montoSugerido de la central NO es techo del monto:
 // el monto lo mandan los EEFF; la central aporta señal (alertas/cap).
 
-const APPROVED_THRESHOLD = 75;
-const CONDITIONAL_THRESHOLD = 40;
+// Exportados: el engine del estudio de capacidad de pago usa los MISMOS
+// umbrales de veredicto y reutiliza la evaluación de la central.
+export const APPROVED_THRESHOLD = 75;
+export const CONDITIONAL_THRESHOLD = 40;
 
 // Contraste de veracidad (Dim 6): diferencia relativa que dispara cada nivel.
 const VERACITY_WARNING = 0.1; // 10%
@@ -62,7 +72,7 @@ const LABELS: Record<ScoringDimension, string> = {
 };
 
 /** Resultado bruto de una dimensión antes de ponderar. */
-interface RawDimension {
+export interface RawDimension {
   ratio: number | null; // null = no evaluable
   status: string;
   alerts: ScoringAlert[];
@@ -169,7 +179,9 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
     const r = raw[dim];
     const weight = effectiveWeights[dim];
     const evaluable = r.ratio !== null;
-    const contribution = evaluable ? r.ratio! * weight : 0;
+    // Se redondea la contribución ANTES de sumarla: el total es la suma exacta
+    // de las partes que ve el usuario, así el desglose siempre cuadra.
+    const contribution = evaluable ? round1(r.ratio! * weight) : 0;
     totalScore += contribution;
     dimensions[dim] = {
       dimension: dim,
@@ -177,17 +189,15 @@ export function runScoring(input: ScoringEngineInput): ScoringResult {
       label: input.labels?.[dim] ?? LABELS[dim],
       ratio: r.ratio,
       weight,
-      contribution: round2(contribution),
+      contribution,
       status: r.status,
       evaluable,
     };
     alerts.push(...r.alerts);
   }
 
-  // Misma precisión (2 decimales) que las contribuciones por dimensión, para que
-  // el score total cuadre con la suma de las partes visibles (Math.round lo subía
-  // a entero, p. ej. 7.5 → 8, y descuadraba con el desglose).
-  totalScore = round2(totalScore);
+  // Un decimal, como las contribuciones (el round mata el ruido del float).
+  totalScore = round1(totalScore);
 
   // Declarar cuando el ingreso acotó la capacidad (transparencia del cálculo).
   if (cappedByIncome) {
@@ -801,12 +811,42 @@ function evalVeracity(
   };
 }
 
+/**
+ * ¿La central declara que NO tiene historia de este titular? No es lo mismo que
+ * un titular malo: la escala real arranca en ~150, así que un score de 0 no es
+ * "el peor puntaje" sino "no hay puntaje", y la central lo confirma con el
+ * rating de recaudos 'N' — su forma explícita de decir "sin información
+ * suficiente para calificar".
+ *
+ * Se exige ese rating 'N' (campo que solo llega en persona natural) además de
+ * la ausencia de score, mora y comportamiento de pago: así la regla no puede
+ * dispararse con una PJ ni con un PN que sí tiene historial.
+ *
+ * NO se usa dentro de evalCentralRisk: el motor EEFF conserva su comportamiento.
+ * Lo aplica el motor de capacidad de pago, donde el thin file es la población
+ * objetivo y castigarlo por falta de datos contradice el producto.
+ */
+export function hasNoBureauHistory(central: CentralRiskInput | null): boolean {
+  if (!central) return false;
+  if ((central.ratingRecaudos ?? '').trim().toUpperCase() !== 'N') return false;
+  const noScore = central.score === null || central.score <= 0;
+  const noDebt =
+    !central.hasArrears &&
+    !(central.saldoMora ?? 0) &&
+    !(central.porcentajeDeuda ?? 0);
+  const noBehavior =
+    !central.paymentBehavior || central.paymentBehavior.length === 0;
+  return noScore && noDebt && noBehavior;
+}
+
 // ─── Dim 7: Riesgo de la central (puntajeScore + sector + mora) ─────────────
 // Base = el puntaje de DataCrédito (150-950) mapeado a su banda estándar (ver
 // SCORE_BANDS). Se penaliza por sector riesgoso y por mora reciente. El `nivel`
 // (BAJO/MEDIO/ALTO) NO es la base: es solo contexto para el mensaje. Si no hay
 // score, cae al nivel como respaldo; si tampoco hay nivel, no es evaluable.
-function evalCentralRisk(central: CentralRiskInput | null): RawDimension {
+export function evalCentralRisk(
+  central: CentralRiskInput | null,
+): RawDimension {
   if (
     !central ||
     (central.score === null && !central.nivelRiesgo && !central.viabilidad)
@@ -893,7 +933,9 @@ function eliminatoryLegalReason(legal: LegalStatusInput | null): string | null {
 // ¿La central marca a este cliente como riesgo alto? True si el puntaje está por
 // debajo del piso (banda de riesgo alto) o el nivel de riesgo es MÁXIMO/ALTO.
 // Usado para topar el veredicto a 'conditional' (el PDF no lo puede aprobar).
-function centralMarksHighRisk(central: CentralRiskInput | null): boolean {
+export function centralMarksHighRisk(
+  central: CentralRiskInput | null,
+): boolean {
   if (!central) return false;
   if (central.score !== null && central.score < CENTRAL_SCORE_CONDITIONAL_CAP) {
     return true;
@@ -932,7 +974,7 @@ function weightedArrearsIndex(vector: PaymentBehaviorMonth[] | null): number {
 // ─── Red flags de la central ────────────────────────────────────────────────
 // Deriva señales de riesgo del snapshot de la central (estado legal, mora,
 // endeudamiento, monto sugerido 0, score muy bajo) como red flags tipadas.
-function buildCentralRiskFlags(
+export function buildCentralRiskFlags(
   legal: LegalStatusInput | null,
   central: CentralRiskInput | null,
 ): CentralRiskFlag[] {
@@ -1137,27 +1179,4 @@ function maxPayableForTerm(ind: ScoringIndicators, req: StudyRequest): number {
   const term = req.requestedTerm ?? 0;
   const months = term > 0 ? term / 30 : 1;
   return Math.max(ind.monthlyPaymentCapacity, 0) * months;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-function clamp(v: number, min: number, max: number): number {
-  return Math.min(Math.max(v, min), max);
-}
-function round2(v: number): number {
-  return Math.round(v * 100) / 100;
-}
-function pct(ratio: number): string {
-  return `${Math.round(ratio * 100)}%`;
-}
-function money(v: number): string {
-  return `$${Math.round(v).toLocaleString('es-CO')}`;
-}
-/** minúsculas, sin tildes ni espacios extra (para comparar estados legales). */
-function normalizeText(value: string | null | undefined): string {
-  return (value ?? '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
 }

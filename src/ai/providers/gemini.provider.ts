@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { FinishReason, GoogleGenerativeAI } from '@google/generative-ai';
 import { AiProvider, AiCompletionResult } from './ai-provider.interface.js';
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -22,14 +22,16 @@ export class GeminiProvider implements AiProvider {
     systemPrompt: string,
     userMessage: string,
     maxTokens: number,
+    modelOverride?: string,
   ): Promise<AiCompletionResult> {
     const startTime = Date.now();
+    const modelName = modelOverride || this.model;
 
     // gemini-2.5-pro solo funciona en "thinking mode": no acepta thinkingBudget
     // 0 (mismo guard que extractFromPdf). Para esos modelos no se envía
     // thinkingConfig; ojo: sus tokens de razonamiento cuentan dentro de
     // maxOutputTokens (subir AI_MAX_TOKENS al usar un modelo pro).
-    const supportsDisablingThinking = !this.model.includes('pro');
+    const supportsDisablingThinking = !modelName.includes('pro');
     const generationConfig: Record<string, unknown> = {
       maxOutputTokens: maxTokens,
     };
@@ -38,7 +40,7 @@ export class GeminiProvider implements AiProvider {
     }
 
     const model = this.client.getGenerativeModel({
-      model: this.model,
+      model: modelName,
       systemInstruction: systemPrompt,
       generationConfig,
     });
@@ -59,8 +61,10 @@ export class GeminiProvider implements AiProvider {
         promptTokens != null && completionTokens != null
           ? promptTokens + completionTokens
           : null,
-      model: this.model,
+      model: modelName,
       durationMs,
+      truncated:
+        response.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS,
     };
   }
 
@@ -108,8 +112,19 @@ export class GeminiProvider implements AiProvider {
     const completionTokens =
       response.usageMetadata?.candidatesTokenCount ?? null;
 
+    // Con los modelos "pro" el razonamiento consume maxOutputTokens, así que un
+    // documento largo agota el presupuesto y devuelve el JSON a medias.
+    const truncated =
+      response.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS;
+
     return {
-      content: response.text() ?? null,
+      // response.text() lanza si el candidato no terminó bien; con la respuesta
+      // cortada igual queremos el texto parcial para diagnosticar.
+      content: truncated
+        ? (response.candidates?.[0]?.content?.parts
+            ?.map((p) => p.text ?? '')
+            .join('') ?? null)
+        : (response.text() ?? null),
       promptTokens,
       completionTokens,
       totalTokens:
@@ -118,6 +133,7 @@ export class GeminiProvider implements AiProvider {
           : null,
       model: modelName,
       durationMs,
+      truncated,
     };
   }
 

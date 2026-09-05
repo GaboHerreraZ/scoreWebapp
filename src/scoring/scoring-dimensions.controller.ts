@@ -1,8 +1,9 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
 } from '@nestjs/swagger';
 import { ScoringService } from './scoring.service.js';
@@ -23,8 +24,15 @@ export class ScoringDimensionsController {
     description:
       'Cada dimensión incluye las reglas del motor: required (no se puede deshabilitar), appliesTo (a qué tipo de persona aplica) y supported (si el motor ya la evalúa).',
   })
+  @ApiQuery({
+    name: 'studyType',
+    enum: ['financialStatements', 'paymentCapacity'],
+    required: false,
+    description:
+      'Tipo de estudio: las reglas (required/appliesTo/supported) dependen del motor de ese estudio',
+  })
   @ApiResponse({ status: 200, description: 'Dimensiones activas del catálogo' })
-  list() {
-    return this.scoringService.listDimensions(false);
+  list(@Query('studyType') studyType?: string) {
+    return this.scoringService.listDimensions(false, studyType);
   }
 }
