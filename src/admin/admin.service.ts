@@ -57,6 +57,7 @@ const ALL_SCREENS = [
   'sales-reps', // programa de referidos: vendedores y plan de comisiones
   'sales-commissions', // ganancias mes a mes
   'sales-promo-codes', // códigos de descuento propios (un admin también vende)
+  'feature-flags', // kill switches de funcionalidades: SOLO rol admin
 ] as const;
 
 // Pantallas que ve cualquier usuario no-admin del portal.

@@ -172,11 +172,14 @@
       "Bash(grep -v \"^$\")",
       "Bash(grep -cv \"^$\")",
       "Bash(grep -v \"\\\\.ts$\")",
-      "Bash(npx jest *)"
+      "Bash(npx jest *)",
+      "Bash(sed -i \"s|    { key: 'company-purge', label: 'Eliminar empresa', icon: 'pi pi-fw pi-trash', routerLink: '/app/eliminar-empresa', section: 'Administración' }|    { key: 'feature-flags', label: 'Feature flags', icon: 'pi pi-fw pi-power-off', routerLink: '/app/feature-flags', section: 'Administración' },\\\\n    { key: 'company-purge', label: 'Eliminar empresa', icon: 'pi pi-fw pi-trash', routerLink: '/app/eliminar-empresa', section: 'Administración' }|\" src/app/core/config/screens.ts)",
+      "Bash(sed -i \"s|            { path: 'eliminar-empresa', canActivate: \\\\[screenAccessGuard\\\\], data: { breadcrumb: 'Eliminar empresa', screen: 'company-purge' }, loadComponent: \\(\\) => import\\('@/app/features/company-purge/company-purge'\\).then\\(\\(c\\) => c.CompanyPurge\\) }|            { path: 'feature-flags', canActivate: [screenAccessGuard], data: { breadcrumb: 'Feature flags', screen: 'feature-flags' }, loadComponent: \\(\\) => import\\('@/app/features/feature-flags/feature-flags'\\).then\\(\\(c\\) => c.FeatureFlags\\) },\\\\n            { path: 'eliminar-empresa', canActivate: [screenAccessGuard], data: { breadcrumb: 'Eliminar empresa', screen: 'company-purge' }, loadComponent: \\(\\) => import\\('@/app/features/company-purge/company-purge'\\).then\\(\\(c\\) => c.CompanyPurge\\) }|\" src/app.routes.ts)"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
-      "C:\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi"
+      "C:\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
+      "c:\\Users\\User\\Documents\\Documentos Gabo\\new project\\angularScoreAdminWebApp\\src"
     ]
   }
 }

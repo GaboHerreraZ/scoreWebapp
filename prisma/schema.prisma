@@ -376,6 +376,7 @@ model PlatformAdmin {
   einvoicedPacks            AnalysisPack[]      @relation("AnalysisPackEinvoiceMarkedBy")
   linkedEinvoiceContacts    EInvoiceContactRef[] @relation("EInvoiceContactLinkedBy")
   voidedElectronicInvoices  ElectronicInvoice[] @relation("ElectronicInvoiceVoidedBy")
+  updatedFeatureFlags       FeatureFlag[]       @relation("FeatureFlagUpdatedBy")
   // Programa de referidos: su ficha de vendedor (solo rol 'sales') y su rastro
   // de gestión (planes creados, empresas vinculadas, comisiones liquidadas).
   salesRep                  SalesRep?           @relation("SalesRepPlatformAdmin")
@@ -2094,4 +2095,20 @@ model ElectronicInvoice {
   @@index([statusId, createdAt]) // cola de pendientes/rechazadas
   @@index([companyId, createdAt])
   @@map("electronic_invoices")
+}
+
+// Kill switches de funcionalidades, administrados desde el portal admin.
+// Fila por flag; el catálogo de codes válidos vive en el código
+// (src/feature-flags/feature-flags.constants.ts).
+model FeatureFlag {
+  code        String   @id @db.VarChar(60)
+  enabled     Boolean  @default(false)
+  description String?  @db.VarChar(255)
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  updatedByAdmin PlatformAdmin? @relation("FeatureFlagUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@map("feature_flags")
 }
