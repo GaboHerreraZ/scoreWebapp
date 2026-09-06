@@ -38,6 +38,7 @@ export interface MappedCustomer {
   gender: string | null;
   ageRange: string | null;
   documentStatus: string | null;
+  nationality: string | null; // PN; la central suele mandar '-' → null
   // Perfil PJ (dominio). null para PN. Se guarda como JSONB en Customer.bureauProfile.
   bureauProfile: MappedBureauProfile | null;
   // Rep. legal principal (solo PJ) para sembrar el Customer al crearlo; el
@@ -137,6 +138,10 @@ export interface MappedCreditSector {
   saldoActual: number | null;
   saldoMora: number | null;
   porcentajeDeuda: string | null;
+  valorInicial: number | null;
+  valorCuota: number | null; // cuota mensual comprometida en el sector
+  totalPrincipal: number | null; // obligaciones como deudor principal
+  totalCodeudorOtros: number | null; // obligaciones como codeudor/aval
 }
 
 // Alerta de la central. Unificada PN+PJ: en PN es una alerta de texto sobre el
@@ -149,6 +154,7 @@ export interface MappedRiskAlert {
   subject: string | null; // PJ: nombre de la entidad alertada. PN: null.
   identification: string | null; // PJ: documento de la entidad. PN: null.
   count: number | null; // PJ: nº de alertas del nodo. PN: null.
+  date: string | null; // PN: fecha de colocación de la alerta. PJ: null.
 }
 
 // Tabla 15 — nodo de la malla de vínculos (PJ), recursivo.
@@ -167,6 +173,13 @@ export interface MappedLinkNode {
 export interface MappedBureauSuggestion {
   title: string | null;
   items: string[];
+}
+
+// Punto de la evolución trimestral saldo/cuota (PN). Valores en PESOS COMPLETOS.
+export interface MappedBalanceEvolutionPoint {
+  period: string | null; // etiqueta del trimestre tal como la manda la central
+  saldo: number | null;
+  cuota: number | null;
 }
 
 export interface MappedRiskSnapshot {
@@ -193,6 +206,11 @@ export interface MappedRiskSnapshot {
   // EEFF de PN). null en PJ.
   reportedIncome: number | null;
   quotaToIncomePct: number | null;
+  // Narrativas de riesgo de la central (solo PN). Se muestran con atribución.
+  txtProbabilidad: string | null;
+  txtRecaudos: string | null;
+  // Evolución trimestral de saldo/cuota (solo PN). null si la central no la trae.
+  balanceEvolution: MappedBalanceEvolutionPoint[] | null;
   // Bloques temporales (JSONB en customer_risk_snapshots). null si no aplica.
   creditPortfolio: MappedCreditPortfolioItem[] | null; // Tabla 8 (PJ)
   paymentBehavior: MappedPaymentBehaviorItem[] | null; // Tabla 9 (PN+PJ)

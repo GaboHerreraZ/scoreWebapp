@@ -67,14 +67,16 @@ export class PricingCalculatorService {
 
   /**
    * Genera el menú de bolsas de consultas. El precio base (P₀) es SIEMPRE el
-   * precio de consulta activo en BD; el front solo define el piso, la técnica
-   * y opcionalmente tamaños, costo variable y costos fijos.
+   * precio activo en BD del producto indicado; el front solo define el piso,
+   * la técnica y opcionalmente tamaños, costo variable y costos fijos.
    */
   async simulate(dto: SimulatePricingDto) {
-    const active = await this.consultationPrices.getActivePrice();
+    const productCode = dto.productTypeCode ?? 'creditStudy';
+    const active = await this.consultationPrices.getActivePrice(productCode);
     if (!active) {
       throw new ConflictException(
-        'No hay un precio de consulta activo. Cree uno en Precios de Consulta antes de simular bolsas.',
+        `No hay un precio de consulta activo para el producto "${productCode}". ` +
+          'Cree uno en Precios de Consulta antes de simular bolsas.',
       );
     }
 
@@ -193,6 +195,7 @@ export class PricingCalculatorService {
         id: active.id,
         name: active.name,
         unitPrice: round(p0),
+        productTypeCode: productCode,
       },
       technique: {
         id: technique,

@@ -34,9 +34,7 @@ export class AnthropicProvider implements AiProvider {
     params: Anthropic.MessageCreateParamsNonStreaming,
     startTime: number,
   ): Promise<AiCompletionResult> {
-    const response = await this.client.messages
-      .stream(params)
-      .finalMessage();
+    const response = await this.client.messages.stream(params).finalMessage();
 
     const durationMs = Date.now() - startTime;
     const textContent = response.content.find((block) => block.type === 'text');

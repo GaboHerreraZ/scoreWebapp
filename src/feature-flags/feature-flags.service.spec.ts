@@ -42,6 +42,7 @@ describe('FeatureFlagsService', () => {
     await expect(service.isEnabled('paymentCapacity')).resolves.toBe(false);
     await expect(service.getPublicFlags()).resolves.toEqual({
       paymentCapacity: false,
+      bureauCheck: false,
     });
   });
 

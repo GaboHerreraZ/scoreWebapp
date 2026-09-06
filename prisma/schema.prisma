@@ -103,6 +103,9 @@ model Parameter {
   creditStudiesByEmploymentType         CreditStudy[]         @relation("CreditStudyEmploymentType")
   studyDocumentsByType                  StudyDocument[]       @relation("StudyDocumentType")
   scoringConfigurationsByStudyType      ScoringConfiguration[] @relation("ScoringConfigurationStudyType")
+  consultationPricesByProductType       ConsultationPrice[]   @relation("ConsultationPriceProductType")
+  packOfferingsByProductType            PackOffering[]        @relation("PackOfferingProductType")
+  analysisPacksByProductType            AnalysisPack[]        @relation("AnalysisPackProductType")
 
   @@unique([type, code])
   @@map("parameters")
@@ -169,6 +172,9 @@ model ConsultationPrice {
   currencyCode  String    @default("COP") @map("currency_code") @db.VarChar(10)
   taxRate       Decimal   @default(19) @map("tax_rate") @db.Decimal(5, 2)
   taxIncluded   Boolean   @default(true) @map("tax_included")
+  // Qué producto cobra este precio: Parameter 'pack_product_type'
+  // (creditStudy | bureauCheck). Un activo por producto.
+  productTypeId Int       @map("product_type_id")
   isActive      Boolean   @default(true) @map("is_active")
   createdBy     String    @map("created_by") @db.Uuid
   updatedBy     String?   @map("updated_by") @db.Uuid
@@ -177,6 +183,7 @@ model ConsultationPrice {
 
   createdByAdmin       PlatformAdmin         @relation("ConsultationPriceCreatedBy", fields: [createdBy], references: [id])
   updatedByAdmin       PlatformAdmin?        @relation("ConsultationPriceUpdatedBy", fields: [updatedBy], references: [id])
+  productType          Parameter             @relation("ConsultationPriceProductType", fields: [productTypeId], references: [id])
   analysisPacks        AnalysisPack[]
 
   @@map("consultation_prices")
@@ -407,6 +414,9 @@ model PackOffering {
   hasDiscount    Boolean  @default(false) @map("has_discount")
   discountTypeId Int?     @map("discount_type_id") // Parameter 'discount_type': percentage | fixed
   discountValue  Float?   @map("discount_value") // 10 (=10%) o 5000 (=$5.000 menos)
+  // Qué producto vende la oferta: Parameter 'pack_product_type'. Create-only:
+  // se congela al crear (las bolsas compradas heredan el producto).
+  productTypeId  Int      @map("product_type_id")
   sortOrder      Int      @default(0) @map("sort_order")
   // Con qué ítem del catálogo facturable se emite. Sin esto no se puede facturar
   // la oferta: el facturador exige un código de producto que exista en su cuenta.
@@ -421,9 +431,11 @@ model PackOffering {
 
   createdByAdmin PlatformAdmin? @relation("PackOfferingCreatedBy", fields: [createdBy], references: [id])
   discountType   Parameter?     @relation("PackOfferingDiscountType", fields: [discountTypeId], references: [id])
+  productType    Parameter      @relation("PackOfferingProductType", fields: [productTypeId], references: [id])
   einvoiceItem   EInvoiceItem?  @relation(fields: [einvoiceItemId], references: [id])
   analysisPacks  AnalysisPack[]
 
+  @@index([productTypeId])
   @@map("pack_offerings")
 }
 
@@ -451,6 +463,10 @@ model AnalysisPack {
   totalPaid           Float    @map("total_paid")
   currencyCode        String   @default("COP") @map("currency_code") @db.VarChar(10)
   consultationPriceId String?  @map("consultation_price_id") @db.Uuid // precio que rigió (trazabilidad)
+
+  // Producto CONGELADO desde la oferta al comprar. El FIFO de consumo filtra
+  // por él: una bolsa jamás paga consumos del otro producto.
+  productTypeId       Int      @map("product_type_id")
 
   statusId            Int      @map("status_id") // Parameter 'analysis_pack_status'
 
@@ -510,6 +526,7 @@ model AnalysisPack {
 
   company           Company               @relation(fields: [companyId], references: [id])
   packOffering      PackOffering?         @relation(fields: [packOfferingId], references: [id])
+  productType       Parameter             @relation("AnalysisPackProductType", fields: [productTypeId], references: [id])
   status            Parameter             @relation("AnalysisPackStatus", fields: [statusId], references: [id])
   consultationPrice ConsultationPrice?    @relation(fields: [consultationPriceId], references: [id])
   promoCode         PromoCode?            @relation(fields: [promoCodeId], references: [id])
@@ -523,6 +540,7 @@ model AnalysisPack {
   salesCommission   SalesCommission? // comisión causada por esta venta
 
   @@index([companyId, statusId, endDate]) // buscar bolsas vigentes con saldo (FIFO por endDate)
+  @@index([companyId, productTypeId, statusId, endDate]) // FIFO filtrado por producto
   @@index([statusId, paidAt]) // métricas de venta por fecha (admin-stats)
   @@index([einvoiceSent, paidAt]) // cola de facturación electrónica pendiente
   @@map("analysis_packs")
@@ -614,6 +632,7 @@ model Customer {
   gender         String?   @db.VarChar(5)
   ageRange       String?   @map("age_range") @db.VarChar(10)
   documentStatus String?   @map("document_status") @db.VarChar(50) // estadoDocumento: Vigente, Cancelada...
+  nationality    String?   @db.VarChar(50) // PN; la central suele mandar '-' → null
 
   // ── Representante legal (solo PJ; editable, el refresh del bureau no lo pisa) ──
   // Sembrado en la 1ª consulta si la central lo trae; firma el pagaré de PJ.
@@ -732,6 +751,7 @@ model CreditStudy {
   supportTickets      SupportTicket[]                @relation("SupportTicketCreditStudy")
   studyDocuments          StudyDocument[]
   paymentCapacityAnalysis PaymentCapacityAnalysis?
+  bureauCheckAnalysis     BureauCheckAnalysis?
 
   @@index([companyId, studyDate]) // listado principal y dashboard (orden por fecha)
   @@index([companyId, statusId]) // conteos/filtros por estado (dashboard)
@@ -879,6 +899,36 @@ model PaymentCapacityAnalysis {
 
   @@index([companyId, createdAt])
   @@map("payment_capacity_analyses")
+}
+
+// ─── Análisis de la consulta de riesgo (bureauCheck) ────────────────────
+// EL ENTREGABLE del producto: el snapshot de la central re-presentado en formato
+// propio (dato transformado + interpretación IA), nunca el reporte crudo.
+// Upsert en cada perform; el crudo sigue viviendo solo en CustomerRiskSnapshot.
+
+model BureauCheckAnalysis {
+  id            String @id @default(uuid()) @db.Uuid
+  creditStudyId String @unique @map("credit_study_id") @db.Uuid
+  companyId     String @map("company_id") @db.Uuid
+
+  summary          String? @db.Text
+  riskLevel        String? @map("risk_level") @db.VarChar(10) // low | medium | high (interpretación IA)
+  redFlags         Json?   @map("red_flags") // [{severity, title, detail}]
+  positiveSignals  Json?   @map("positive_signals") // [{title, detail}]
+  sections         Json? // {indebtedness, paymentHabits, alerts, income}
+  keyFigures       Json?   @map("key_figures") // subset curado del snapshot, congelado al perform
+  amountComparison Json?   @map("amount_comparison") // solicitado vs montoSugerido (calculado en código)
+  recommendations  Json? // [{title, detail}] próximos pasos sugeridos por la IA
+  aiAnalysisId     String? @map("ai_analysis_id") @db.Uuid // corrida IA (costos/auditoría)
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  creditStudy CreditStudy @relation(fields: [creditStudyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("bureau_check_analyses")
 }
 
 // ─── Período financiero del cliente (cifras crudas de UN año) ───────────
@@ -1119,6 +1169,11 @@ model CustomerRiskSnapshot {
   reportedIncome   Float? @map("reported_income")
   quotaToIncomePct Float? @map("quota_to_income_pct")
 
+  // Narrativas de riesgo de la central (solo PN): probabilidad de pago y
+  // facilidad de recaudo. Se muestran transformadas y con atribución de fuente.
+  txtProbabilidad String? @map("txt_probabilidad") @db.Text
+  txtRecaudos     String? @map("txt_recaudos") @db.Text
+
   // Descripciones del manual Experian para los códigos escalares de riesgo
   // (Tablas 11-14). El código crudo vive en su columna; el label es puro display.
   viabilidadLabel      String? @map("viabilidad_label") @db.VarChar(80) // Tabla 11 (PN)
@@ -1135,6 +1190,7 @@ model CustomerRiskSnapshot {
   linkNetwork     Json? @map("link_network") // Tabla 15 (PJ): malla de vínculos
   alerts          Json? @map("alerts") // detalle de alertas (PN: textos; PJ: nodos alertados)
   suggestions     Json? @map("suggestions") // checklist de verificación de la central ([{title, items[]}])
+  balanceEvolution Json? @map("balance_evolution") // evolución trimestral saldo/cuota (PN) [{period, saldo, cuota}]
 
   createdAt DateTime @default(now()) @map("created_at")
 

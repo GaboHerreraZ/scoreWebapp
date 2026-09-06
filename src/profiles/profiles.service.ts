@@ -20,21 +20,29 @@ export class ProfilesService {
     private readonly parametersRepository: ParametersRepository,
   ) {}
 
-  /** Créditos disponibles de una empresa (bolsas activas y vigentes con saldo). */
-  private async getAvailableCredits(companyId: string): Promise<number> {
+  /** Saldos por producto de una empresa (bolsas activas y vigentes con saldo). */
+  private async getAvailableCredits(
+    companyId: string,
+  ): Promise<{ studies: number; bureauChecks: number }> {
     const activeStatus = await this.parametersRepository.findByTypeAndCode(
       'analysis_pack_status',
       'active',
     );
-    if (!activeStatus) return 0;
+    if (!activeStatus) return { studies: 0, bureauChecks: 0 };
 
     const packs = await this.analysisPacksRepository.findActivePacksWithBalance(
       companyId,
       activeStatus.id,
     );
     return packs.reduce(
-      (sum, p) => sum + (p.quantityPurchased - p.quantityConsumed),
-      0,
+      (acc, p) => {
+        const remaining = p.quantityPurchased - p.quantityConsumed;
+        if (p.productType?.code === 'bureauCheck')
+          acc.bureauChecks += remaining;
+        else acc.studies += remaining;
+        return acc;
+      },
+      { studies: 0, bureauChecks: 0 },
     );
   }
 
@@ -89,6 +97,8 @@ export class ProfilesService {
       canMakeAiAnalysis: false,
       hasCredits: false,
       availableCredits: 0,
+      hasBureauCredits: false,
+      availableBureauChecks: 0,
       canExtractPdf: false,
     };
 
@@ -102,10 +112,12 @@ export class ProfilesService {
     let onboardingStatus: 'no_pack' | 'payment_pending' | 'ready' = 'no_pack';
 
     if (userCompany) {
-      const availableCredits = await this.getAvailableCredits(
+      // availableCredits = bolsa de estudios (compat con el front existente);
+      // availableBureauChecks = bolsa de consultas de riesgo.
+      const { studies, bureauChecks } = await this.getAvailableCredits(
         userCompany.companyId,
       );
-      const hasCredits = availableCredits > 0;
+      const hasCredits = studies > 0;
 
       permissions = {
         canAddCreditStudy: hasCredits,
@@ -113,7 +125,9 @@ export class ProfilesService {
         canExtractPdf: hasCredits,
         canAddUser: true,
         hasCredits,
-        availableCredits,
+        availableCredits: studies,
+        hasBureauCredits: bureauChecks > 0,
+        availableBureauChecks: bureauChecks,
       };
 
       const { hasActive, hasPending } =

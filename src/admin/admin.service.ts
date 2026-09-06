@@ -1042,6 +1042,13 @@ export class AdminService {
         'No se puede resetear un estudio confirmado, en firma o cerrado.',
       );
     }
+    // La consulta de riesgo no tiene pasos que resetear: su análisis se
+    // regenera gratis desde su propio flujo (perform de bureau-checks).
+    if (study.studyType?.code === 'bureauCheck') {
+      throw new BadRequestException(
+        'La consulta de riesgo crediticio no admite reset: el análisis se puede regenerar sin costo desde la propia consulta.',
+      );
+    }
 
     // Capacidad: los documentos NO se borran (siguen siendo válidos; el usuario
     // puede eliminar/re-subir el que salió mal leído). Si la cobertura sigue

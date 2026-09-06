@@ -175,6 +175,14 @@ export class AiAnalysesService {
     const { study, analyses, riskSnapshot, capacityAnalysis } = inputs;
     const customer = study.customer;
 
+    // La consulta de riesgo genera su análisis en su propio flujo (perform de
+    // bureau-checks); este informe ejecutivo es de los estudios completos.
+    if (study.studyType?.code === 'bureauCheck') {
+      throw new BadRequestException(
+        'La consulta de riesgo crediticio genera su análisis desde su propio flujo (bureau-checks).',
+      );
+    }
+
     // 3. El estudio debe estar realizado (tiene el ScoringResult persistido).
     if (
       study.viabilityScore === null ||
@@ -712,6 +720,77 @@ export class AiAnalysesService {
         'Clasificación consolidada de movimientos fallida',
         error,
       );
+
+      await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        prompt: params.systemPrompt,
+        result: null,
+        model: 'unknown',
+        status: 'error',
+        errorMessage,
+      });
+
+      throw error instanceof Error ? error : new Error(errorMessage);
+    }
+  }
+
+  /**
+   * ANÁLISIS DE LA CONSULTA DE RIESGO (bureauCheck): interpreta el snapshot de
+   * la central y devuelve el JSON parseado + el id de la corrida (para
+   * auditoría en BureauCheckAnalysis). Registra éxito o error en AiAnalysis y
+   * relanza el Error crudo: la consulta queda pendiente de análisis y el
+   * reintento es gratis (la bolsa ya se descontó al crearla).
+   */
+  async runBureauCheckAnalysis(params: {
+    systemPrompt: string;
+    userMessage: string;
+    companyId: string;
+    userId: string;
+    creditStudyId: string;
+    customerId: string;
+  }): Promise<{ parsed: Record<string, unknown>; analysisId: string }> {
+    const typeId = await this.getTypeId('bureauCheckReview');
+
+    try {
+      const aiResult = await this.aiService.analyzeBureauCheck(
+        params.systemPrompt,
+        params.userMessage,
+      );
+      const estimatedCostUsd = this.aiService.estimateCostUsd(
+        aiResult.model,
+        aiResult.promptTokens,
+        aiResult.completionTokens,
+      );
+      const parsed = this.parseAiJson(aiResult);
+
+      const row = await this.repository.create({
+        typeId,
+        companyId: params.companyId,
+        creditStudyId: params.creditStudyId,
+        customerId: params.customerId,
+        performedBy: params.userId,
+        // Solo el system prompt: el userMessage es el snapshot de la central,
+        // que ya vive en CustomerRiskSnapshot.
+        prompt: params.systemPrompt,
+        result: aiResult.content,
+        model: aiResult.model,
+        promptTokens: aiResult.promptTokens,
+        completionTokens: aiResult.completionTokens,
+        totalTokens: aiResult.totalTokens,
+        estimatedCostUsd,
+        durationMs: aiResult.durationMs,
+        status: 'success',
+      });
+
+      return { parsed, analysisId: row.id };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error('Análisis de consulta de riesgo fallido', error);
 
       await this.repository.create({
         typeId,

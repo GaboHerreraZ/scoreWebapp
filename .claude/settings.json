@@ -180,12 +180,22 @@
       "Bash(sed -i \"s|ProductDemoWidget, StudyTeaserWidget|ProductDemoWidget, StudyTypesWidget, StudyTeaserWidget|\" src/app/features/landing/landing.ts)",
       "Bash(sed -i \"s|        <product-demo-widget />|        <product-demo-widget />\\\\n        <study-types-widget />|\" src/app/features/landing/landing.html)",
       "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx eslint --fix src/payment-capacity)",
-      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx eslint src/payment-capacity)"
+      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx eslint src/payment-capacity)",
+      "PowerShell(Set-Location \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; $job = Start-Job -ScriptBlock { Set-Location \"c:\\\\Users\\\\User\\\\Documents\\\\Documentos Gabo\\\\new project\\\\webAppApi\"; npx dotenv -e .env.staging -- node dist/src/main.js 2>&1 }; Start-Sleep -Seconds 40; Receive-Job $job | Select-Object -Last 40; Stop-Job $job; Remove-Job $job -Force)",
+      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx dotenv -e .env.staging -- node 'C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\d2c0ca46-bdc3-47dd-a93e-b0cbfb7cf3e4\\\\scratchpad\\\\check-auths.mjs')",
+      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx dotenv -e .env -- node 'C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\d2c0ca46-bdc3-47dd-a93e-b0cbfb7cf3e4\\\\scratchpad\\\\check-auths.mjs')",
+      "Bash(sed -i '/^# ZAPSIGN_SANDBOX: flag por documento/,/^ZAPSIGN_SANDBOX=/d' .env.staging)",
+      "Bash(sed -i '/^ZAPSIGN_SANDBOX=/d' .env .env.pro)",
+      "Bash(sed -i '/^# Flag POR DOCUMENTO, no un entorno aparte/,/^ZAPSIGN_SANDBOX=/d' .env.example)",
+      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx dotenv -e .env -- node --input-type=module -e ' *)",
+      "Bash(PATH=/c/Users/User/AppData/Roaming/nvm/v24.3.0:__TRACKED_VAR__ npx dotenv -e .env -- node 'C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Documents-Documentos-Gabo-new-project-webAppApi\\\\d2c0ca46-bdc3-47dd-a93e-b0cbfb7cf3e4\\\\scratchpad\\\\check-prod-seeds.mjs')"
     ],
     "additionalDirectories": [
       "c:\\c\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
       "C:\\Users\\User\\Documents\\Documentos Gabo\\new project\\webAppApi",
-      "c:\\Users\\User\\Documents\\Documentos Gabo\\new project\\angularScoreAdminWebApp\\src"
+      "c:\\Users\\User\\Documents\\Documentos Gabo\\new project\\angularScoreAdminWebApp\\src",
+      "c:\\Users\\User\\Documents\\Documentos Gabo\\new project\\angularScoreAdminWebApp\\src\\app\\features\\pack-offerings",
+      "c:\\Users\\User\\Documents\\Documentos Gabo\\new project\\angularScoreAdminWebApp\\src\\app\\features\\consultation-prices"
     ]
   }
 }

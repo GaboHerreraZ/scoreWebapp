@@ -29,6 +29,7 @@ import {
   calculateTax,
   type DiscountTypeCode,
 } from '../common/utils/pack-pricing.js';
+import type { PackProductCode } from '../common/constants/pack-products.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
 /**
@@ -82,10 +83,15 @@ export class AnalysisPacksService {
       );
     }
 
-    const activePrice = await this.consultationPricesService.getActivePrice();
+    // El precio se cotiza contra el vigente DEL PRODUCTO de la oferta.
+    const productCode = (offering.productType?.code ??
+      'creditStudy') as PackProductCode;
+    const activePrice =
+      await this.consultationPricesService.getActivePrice(productCode);
     if (!activePrice) {
       throw new BadRequestException(
-        'No hay un precio de consulta activo configurado. No es posible cotizar la compra.',
+        `No hay un precio activo para ${offering.productType?.label ?? 'este producto'}. ` +
+          'No es posible cotizar la compra.',
       );
     }
 
@@ -171,7 +177,11 @@ export class AnalysisPacksService {
       return this.purchaseFree({
         companyId,
         userId,
-        offering: { id: offering.id, quantity: offering.quantity },
+        offering: {
+          id: offering.id,
+          quantity: offering.quantity,
+          productTypeId: offering.productTypeId,
+        },
         activePrice: {
           id: activePrice.id,
           currencyCode: activePrice.currencyCode,
@@ -280,6 +290,7 @@ export class AnalysisPacksService {
           totalPaid: totalToCharge,
           currencyCode: activePrice.currencyCode,
           consultationPriceId: activePrice.id,
+          productTypeId: offering.productTypeId,
           statusId: pendingStatus.id,
           paymentToken,
           ...promoSnapshot,
@@ -407,7 +418,7 @@ export class AnalysisPacksService {
   private async purchaseFree(params: {
     companyId: string;
     userId?: string;
-    offering: { id: string; quantity: number };
+    offering: { id: string; quantity: number; productTypeId: number };
     activePrice: { id: string; currencyCode: string; taxIncluded: boolean };
     pricing: {
       unitPrice: number;
@@ -463,6 +474,7 @@ export class AnalysisPacksService {
           unitPricePaid: pricing.unitPrice,
           currencyCode: activePrice.currencyCode,
           consultationPriceId: activePrice.id,
+          productTypeId: offering.productTypeId,
           promoCodeId: promo.promoCodeId,
           promoDiscountPercent: new Prisma.Decimal(promo.discountPercent),
           promoDiscountAmount: promo.discountAmount,
@@ -550,9 +562,13 @@ export class AnalysisPacksService {
   async consumeCreditForStudy<T extends { id: string }>(params: {
     companyId: string;
     consumedBy: string;
+    // De qué bolsa descuenta: los estudios completos van contra creditStudy,
+    // las consultas de riesgo contra bureauCheck.
+    productCode?: PackProductCode;
     createStudy: (tx: Prisma.TransactionClient) => Promise<T>;
   }): Promise<T> {
-    const [activeStatus, depletedStatus] = await Promise.all([
+    const productCode = params.productCode ?? 'creditStudy';
+    const [activeStatus, depletedStatus, productType] = await Promise.all([
       this.repository.findParameterByTypeAndCode(
         'analysis_pack_status',
         'active',
@@ -561,9 +577,18 @@ export class AnalysisPacksService {
         'analysis_pack_status',
         'depleted',
       ),
+      this.repository.findParameterByTypeAndCode(
+        'pack_product_type',
+        productCode,
+      ),
     ]);
     if (!activeStatus || !depletedStatus) {
       throw new BadRequestException('Faltan parámetros de estado de bolsa');
+    }
+    if (!productType) {
+      throw new BadRequestException(
+        `Falta el parámetro de producto de bolsa (${productCode})`,
+      );
     }
 
     return this.repository.consumeCreditForStudy({
@@ -571,6 +596,11 @@ export class AnalysisPacksService {
       consumedBy: params.consumedBy,
       activeStatusId: activeStatus.id,
       depletedStatusId: depletedStatus.id,
+      productTypeId: productType.id,
+      noCreditsMessage:
+        productCode === 'bureauCheck'
+          ? 'La empresa no tiene consultas de riesgo disponibles. Compre una bolsa de consultas de riesgo para continuar.'
+          : 'La empresa no tiene estudios disponibles. Compre una bolsa de análisis para continuar.',
       createStudy: params.createStudy,
     });
   }
@@ -659,6 +689,8 @@ export class AnalysisPacksService {
       statusLabel: c.creditStudy.status.label,
       studyDate: c.creditStudy.studyDate,
       createdBy: c.creditStudy.createdBy,
+      // Con qué detalle se abre (cada tipo tiene su propia ruta en el front).
+      studyTypeCode: c.creditStudy.studyType?.code ?? null,
     });
 
     const toPaymentEvent = (e: (typeof paymentEvents)[number]) => ({
@@ -798,7 +830,7 @@ export class AnalysisPacksService {
       'active',
     );
     if (!activeStatus) {
-      return { availableCredits: 0, packs: [] };
+      return { availableCredits: 0, availableBureauChecks: 0, packs: [] };
     }
 
     const packs = await this.repository.findActivePacksWithBalance(
@@ -806,12 +838,18 @@ export class AnalysisPacksService {
       activeStatus.id,
     );
 
+    // Saldos por producto: availableCredits = estudios (compat con el front
+    // viejo), availableBureauChecks = consultas de riesgo.
     let availableCredits = 0;
+    let availableBureauChecks = 0;
     const detail = packs.map((p) => {
       const remaining = p.quantityPurchased - p.quantityConsumed;
-      availableCredits += remaining;
+      const productCode = p.productType?.code ?? 'creditStudy';
+      if (productCode === 'bureauCheck') availableBureauChecks += remaining;
+      else availableCredits += remaining;
       return {
         id: p.id,
+        productCode,
         quantityPurchased: p.quantityPurchased,
         quantityConsumed: p.quantityConsumed,
         remaining,
@@ -820,7 +858,7 @@ export class AnalysisPacksService {
       };
     });
 
-    return { availableCredits, packs: detail };
+    return { availableCredits, availableBureauChecks, packs: detail };
   }
 
   /**

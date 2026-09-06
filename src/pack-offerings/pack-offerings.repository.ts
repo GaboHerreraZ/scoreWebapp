@@ -9,6 +9,7 @@ export class PackOfferingsRepository {
   // Solo lo usan las rutas de admin; el catálogo público va por findOfferable.
   private readonly defaultInclude = {
     discountType: true,
+    productType: true,
     createdByAdmin: { select: { email: true } },
     // Con qué ítem se factura esta oferta. Sin él la venta no se puede emitir,
     // así que el panel tiene que verlo aquí y no en una segunda llamada.
@@ -50,7 +51,7 @@ export class PackOfferingsRepository {
     return this.prisma.packOffering.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { quantity: 'asc' }],
-      include: { discountType: true },
+      include: { discountType: true, productType: true },
     });
   }
 
@@ -83,6 +84,13 @@ export class PackOfferingsRepository {
   /** Resuelve el PlatformAdmin (PK) a partir del userId de Supabase. */
   async findPlatformAdminByUserId(userId: string) {
     return this.prisma.platformAdmin.findUnique({ where: { userId } });
+  }
+
+  /** Parameter 'pack_product_type' por code (creditStudy | bureauCheck). */
+  async findProductType(code: string) {
+    return this.prisma.parameter.findUnique({
+      where: { type_code: { type: 'pack_product_type', code } },
+    });
   }
 
   /** Code del Parameter de tipo de descuento (para interpretar el descuento). */

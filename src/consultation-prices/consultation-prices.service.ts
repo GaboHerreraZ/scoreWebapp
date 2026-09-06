@@ -8,15 +8,22 @@ import { ConsultationPricesRepository } from './consultation-prices.repository.j
 import { CreateConsultationPriceDto } from './dto/create-consultation-price.dto.js';
 import { UpdateConsultationPriceDto } from './dto/update-consultation-price.dto.js';
 import { FilterConsultationPriceDto } from './dto/filter-consultation-price.dto.js';
+import type { PackProductCode } from '../common/constants/pack-products.js';
 import { Prisma } from '../../generated/prisma/client.js';
 
 @Injectable()
 export class ConsultationPricesService {
   constructor(private readonly repository: ConsultationPricesRepository) {}
 
-  /** Precio de consulta vigente (registro activo más reciente). */
-  async getActivePrice() {
-    return this.repository.findActive();
+  /** Precio vigente de un producto (registro activo más reciente). */
+  async getActivePrice(productCode: PackProductCode = 'creditStudy') {
+    const productType = await this.repository.findProductType(productCode);
+    if (!productType) {
+      throw new BadRequestException(
+        `Producto de bolsa desconocido: ${productCode}`,
+      );
+    }
+    return this.repository.findActive(productType.id);
   }
 
   async create(dto: CreateConsultationPriceDto, userId: string) {
@@ -25,6 +32,15 @@ export class ConsultationPricesService {
     if (!admin) {
       throw new BadRequestException(
         'Solo un administrador del portal puede registrar precios de consulta',
+      );
+    }
+
+    const productType = await this.repository.findProductType(
+      dto.productTypeCode ?? 'creditStudy',
+    );
+    if (!productType) {
+      throw new BadRequestException(
+        `Producto de bolsa desconocido: ${dto.productTypeCode}`,
       );
     }
 
@@ -37,6 +53,7 @@ export class ConsultationPricesService {
         taxRate: new Prisma.Decimal(dto.taxRate),
       }),
       ...(dto.taxIncluded !== undefined && { taxIncluded: dto.taxIncluded }),
+      productTypeId: productType.id,
       isActive: dto.isActive,
       createdBy: admin.id,
     });
@@ -80,14 +97,29 @@ export class ConsultationPricesService {
       );
     }
 
-    // Siempre debe quedar al menos un precio activo (si no, el catálogo de packs
-    // no puede cotizar). No se permite desactivar el único registro activo:
-    // primero créese/actívese otro precio.
-    if (dto.isActive === false && current.isActive) {
-      const activeCount = await this.repository.countActive();
+    // El producto es inmutable: los packs de esta oferta ya se cotizan contra
+    // este precio; moverlo de producto cruzaría los catálogos.
+    if (dto.productTypeCode !== undefined) {
+      throw new ConflictException(
+        'No se puede cambiar el producto de un precio existente. ' +
+          'Cree un nuevo precio para el otro producto.',
+      );
+    }
+
+    // creditStudy siempre debe tener un precio activo (sin él, el catálogo de
+    // estudios no cotiza). bureauCheck sí puede quedarse sin precio: sus
+    // ofertas salen del catálogo y su compra se bloquea — retiro deliberado.
+    if (
+      dto.isActive === false &&
+      current.isActive &&
+      current.productType.code === 'creditStudy'
+    ) {
+      const activeCount = await this.repository.countActive(
+        current.productTypeId,
+      );
       if (activeCount <= 1) {
         throw new ConflictException(
-          'No se puede desactivar el único precio de consulta activo. ' +
+          'No se puede desactivar el único precio activo de estudios de crédito. ' +
             'Cree o active otro precio antes de desactivar este.',
         );
       }

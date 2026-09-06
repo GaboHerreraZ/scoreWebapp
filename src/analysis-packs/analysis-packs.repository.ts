@@ -4,9 +4,10 @@ import { Prisma } from '../../generated/prisma/client.js';
 
 /** Error de dominio: la empresa no tiene crédito disponible para consumir. */
 export class NoCreditsAvailableError extends ConflictException {
-  constructor() {
+  constructor(message?: string) {
     super(
-      'La empresa no tiene consultas disponibles. Compre una bolsa de análisis para continuar.',
+      message ??
+        'La empresa no tiene consultas disponibles. Compre una bolsa de análisis para continuar.',
     );
   }
 }
@@ -173,6 +174,7 @@ export class AnalysisPacksRepository {
       unitPricePaid: number;
       currencyCode: string;
       consultationPriceId: string;
+      productTypeId: number;
       promoCodeId: string;
       promoDiscountPercent: Prisma.Decimal;
       promoDiscountAmount: number;
@@ -415,6 +417,7 @@ export class AnalysisPacksRepository {
             createdBy: true,
             customer: { select: { id: true, businessName: true } },
             status: { select: { label: true, code: true } },
+            studyType: { select: { code: true } },
           },
         },
       },
@@ -437,7 +440,10 @@ export class AnalysisPacksRepository {
         endDate: { gte: today },
       },
       orderBy: { endDate: 'asc' },
-      include: this.defaultInclude,
+      include: {
+        ...this.defaultInclude,
+        productType: { select: { code: true } },
+      },
     });
   }
 
@@ -644,9 +650,18 @@ export class AnalysisPacksRepository {
     consumedBy: string;
     activeStatusId: number;
     depletedStatusId: number;
+    // Producto de la bolsa a consumir: una bolsa jamás paga el otro producto.
+    productTypeId: number;
+    noCreditsMessage?: string;
     createStudy: (tx: Prisma.TransactionClient) => Promise<T>;
   }): Promise<T> {
-    const { companyId, consumedBy, activeStatusId, depletedStatusId } = params;
+    const {
+      companyId,
+      consumedBy,
+      activeStatusId,
+      depletedStatusId,
+      productTypeId,
+    } = params;
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Bolsa consumible con lock (FIFO por endDate). FOR UPDATE serializa
@@ -655,6 +670,7 @@ export class AnalysisPacksRepository {
         SELECT "id"
         FROM "analysis_packs"
         WHERE "company_id" = ${companyId}::uuid
+          AND "product_type_id" = ${productTypeId}
           AND "status_id" = ${activeStatusId}
           AND "end_date" >= CURRENT_DATE
           AND "quantity_consumed" < "quantity_purchased"
@@ -665,7 +681,7 @@ export class AnalysisPacksRepository {
 
       const packRow = rows[0];
       if (!packRow) {
-        throw new NoCreditsAvailableError();
+        throw new NoCreditsAvailableError(params.noCreditsMessage);
       }
 
       // 3. Crear el estudio dentro de la misma transacción.

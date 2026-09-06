@@ -234,6 +234,54 @@ class CustomerLegalRepDto {
   phone!: string | null;
 }
 
+// ─── Autorización del titular (habeas data + tratamiento de datos) ────────────
+// Se llavea por identidad, no por customerId: se firma ANTES de que el Customer
+// exista (nace de la consulta al bureau, que exige esta firma).
+class CustomerAuthorizationDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: "'pending' | 'signed' | 'refused'",
+  })
+  status!: string | null;
+
+  @ApiProperty({ nullable: true })
+  statusLabel!: string | null;
+
+  @ApiProperty({ description: 'Firmada y no revocada' })
+  isSigned!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'URL de firma (si está pendiente)',
+  })
+  signUrl!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, format: 'date-time' })
+  sentAt!: Date | null;
+
+  @ApiProperty({ nullable: true, type: String, format: 'date-time' })
+  signedAt!: Date | null;
+
+  @ApiProperty({ nullable: true, type: String, format: 'date-time' })
+  refusedAt!: Date | null;
+
+  @ApiProperty({ nullable: true })
+  refusedReason!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, format: 'date-time' })
+  revokedAt!: Date | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Enlace de descarga del PDF firmado (URL temporal, vigencia 1 hora); null si aún no se ha firmado',
+  })
+  documentUrl!: string | null;
+}
+
 // ─── DTO raíz ─────────────────────────────────────────────────────────────────
 export class CustomerDetailResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -318,6 +366,15 @@ export class CustomerDetailResponseDto {
     description: 'Solo PJ; null en PN',
   })
   bureauProfile!: BureauProfileDto | null;
+
+  // ── Autorización del titular (null si nunca se solicitó) ──
+  @ApiProperty({
+    type: CustomerAuthorizationDto,
+    nullable: true,
+    description:
+      'Autorización de habeas data firmada por el titular; null si nunca se solicitó',
+  })
+  authorization!: CustomerAuthorizationDto | null;
 
   // ── Trazabilidad de la consulta ──
   @ApiProperty({ description: 'Nació de una consulta al bureau' })

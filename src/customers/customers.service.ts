@@ -14,6 +14,7 @@ import { LegalRepresentativeResponseDto } from './dto/legal-representative-respo
 import { Prisma } from '../../generated/prisma/client.js';
 import { ExcelService } from '../common/excel/excel.service.js';
 import type { ExcelColumn } from '../common/excel/excel.types.js';
+import { CustomerAuthorizationsService } from '../customer-authorizations/customer-authorizations.service.js';
 
 // El alta manual (create) se retiró: el Customer nace de una consulta al
 // bureau. El update edita SOLO los campos que el refresh no pisa.
@@ -50,6 +51,7 @@ export class CustomersService {
     private readonly repository: CustomersRepository,
     private readonly parametersRepository: ParametersRepository,
     private readonly excelService: ExcelService,
+    private readonly customerAuthorizations: CustomerAuthorizationsService,
   ) {}
 
   async findAll(companyId: string, filters: FilterCustomerDto) {
@@ -168,9 +170,9 @@ export class CustomersService {
   // la raíz) a la forma anidada del DTO unificado. Los bloques que no aplican al
   // tipo de persona quedan null: nameParts + demographics solo para PN;
   // verificationDigit + bureauProfile solo para PJ.
-  private toDetailResponse(
+  private async toDetailResponse(
     c: CustomerWithRelations,
-  ): CustomerDetailResponseDto {
+  ): Promise<CustomerDetailResponseDto> {
     const hasNameParts =
       c.firstName != null ||
       c.secondName != null ||
@@ -191,6 +193,14 @@ export class CustomersService {
       c.legalRepIdentificationNumber != null ||
       c.legalRepEmail != null ||
       c.legalRepPhone != null;
+
+    // Se busca por identidad (no por customerId): la firma existe desde antes
+    // que el Customer, y el backfill del customerId es best-effort.
+    const authorization =
+      await this.customerAuthorizations.getDetailForCustomer(
+        c.companyId,
+        c.identificationNumber,
+      );
 
     return {
       id: c.id,
@@ -257,6 +267,7 @@ export class CustomersService {
         : null,
       bureauProfile:
         (c.bureauProfile as CustomerDetailResponseDto['bureauProfile']) ?? null,
+      authorization,
       bureauCreated: c.bureauCreated,
       lastConsultedAt: c.lastConsultedAt,
       createdAt: c.createdAt,

@@ -21,6 +21,7 @@ import type {
   MappedLinkNode,
   MappedRiskAlert,
   MappedBureauSuggestion,
+  MappedBalanceEvolutionPoint,
 } from '../providers/provider-result.js';
 import {
   translate,
@@ -207,6 +208,7 @@ function mapCustomer(
       personType === 'PN'
         ? (datosBasicos.estadoDocumento ?? demografica.estadoDocumento ?? null)
         : null,
+    nationality: personType === 'PN' ? cleanDash(datosBasicos.nacionalidad) : null,
     bureauProfile: personType === 'PJ' ? mapBureauProfile(validacion) : null,
     legalRepSeed:
       personType === 'PJ'
@@ -372,6 +374,13 @@ function mapRisk(
     // Endeudamiento reportado (PN): ingreso mensual + % ya comprometido.
     reportedIncome: toNumber(endeudamiento.ingreso),
     quotaToIncomePct: toNumber(endeudamiento.porcentajeCuotaVsIngreso),
+    // Narrativas de riesgo (PN): se muestran transformadas y con atribución.
+    txtProbabilidad:
+      personType === 'PN' ? (riesgo.txtProbabilidad?.trim() || null) : null,
+    txtRecaudos:
+      personType === 'PN' ? (riesgo.txtRecaudos?.trim() || null) : null,
+    balanceEvolution:
+      personType === 'PN' ? mapBalanceEvolution(comportamiento) : null,
     // Bloques temporales (cambian por consulta)
     creditPortfolio:
       personType === 'PJ' ? mapCreditPortfolio(comportamiento) : null, // Tabla 8
@@ -451,7 +460,47 @@ function mapCreditSectors(
     saldoActual: thousandsToPesos(s.saldoActual),
     saldoMora: thousandsToPesos(s.saldoMora),
     porcentajeDeuda: s.porcentajeDeuda ?? null,
+    valorInicial: thousandsToPesos(s.valorInicial),
+    valorCuota: thousandsToPesos(s.valorCuota),
+    totalPrincipal: thousandsToPesos(s.totalPrincipal),
+    totalCodeudorOtros: thousandsToPesos(s.totalCodeudorOtros),
   }));
+}
+
+// Evolución trimestral saldo/cuota (PN). La forma de cada trimestre no está
+// documentada con muestra real → lectura defensiva por nombres candidatos; si
+// la forma difiere, los puntos salen null y no se persiste nada.
+function mapBalanceEvolution(
+  comportamiento: NonNullable<ExperianRespuesta['comportamientoCrediticio']>,
+): MappedBalanceEvolutionPoint[] | null {
+  const trimestres = comportamiento.evolucionSaldoCuotaPN?.trimestres;
+  if (!Array.isArray(trimestres) || trimestres.length === 0) return null;
+
+  const firstOf = (
+    o: Record<string, unknown>,
+    keys: string[],
+  ): string | number | null => {
+    for (const k of keys) {
+      const v = o[k];
+      if (typeof v === 'string' && v.trim() !== '') return v;
+      if (typeof v === 'number') return v;
+    }
+    return null;
+  };
+
+  const points = trimestres
+    .map((t): MappedBalanceEvolutionPoint => {
+      const o = (t ?? {}) as Record<string, unknown>;
+      const period = firstOf(o, ['trimestre', 'periodo', 'anioTrimestre', 'anioMes']);
+      return {
+        period: period === null ? null : String(period),
+        saldo: thousandsToPesos(firstOf(o, ['saldo', 'saldoActual', 'saldoTotal'])),
+        cuota: thousandsToPesos(firstOf(o, ['cuota', 'valorCuota'])),
+      };
+    })
+    .filter((p) => p.period !== null || p.saldo !== null || p.cuota !== null);
+
+  return points.length > 0 ? points : null;
 }
 
 // La central reporta los saldos/cuotas de `indicadoresValores` y sus sectores en
@@ -516,15 +565,19 @@ function resolveAlerts(
     const alertas = respuesta.informacionRiesgo?.alertas;
     if (!Array.isArray(alertas)) return null;
     const mapped = alertas
-      .map((a) => (a?.alerta ?? '').trim())
-      .filter((text) => text.length > 0)
+      .map((a) => ({
+        text: (a?.alerta ?? '').trim(),
+        date: a?.colocacion?.trim() || null,
+      }))
+      .filter((a) => a.text.length > 0)
       .map(
-        (text): MappedRiskAlert => ({
+        (a): MappedRiskAlert => ({
           source: 'self',
-          message: text,
+          message: a.text,
           subject: null,
           identification: null,
           count: null,
+          date: a.date,
         }),
       );
     return mapped.length > 0 ? mapped : null;
@@ -551,6 +604,7 @@ function collectAlertedNodes(
       subject: node.nombre ?? null,
       identification: node.id ?? null,
       count,
+      date: null,
     });
   }
   if (Array.isArray(node.nodos)) {
@@ -596,4 +650,10 @@ function toNumber(value?: string | number | null): number | null {
 
 function joinName(...parts: Array<string | undefined>): string {
   return parts.filter((p) => p && p.trim()).join(' ');
+}
+
+// La central usa '-' como "sin dato" en varios campos de texto.
+function cleanDash(value?: string): string | null {
+  const v = (value ?? '').trim();
+  return !v || v === '-' ? null : v;
 }
