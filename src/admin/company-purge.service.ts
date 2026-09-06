@@ -228,6 +228,19 @@ export class CompanyPurgeService {
       'promissory_notes',
       await tx.promissoryNote.deleteMany({ where: { companyId } }),
     );
+    // study_documents antes que ai_analyses: apunta a la corrida IA que lo extrajo.
+    push(
+      'study_documents',
+      await tx.studyDocument.deleteMany({ where: { companyId } }),
+    );
+    push(
+      'payment_capacity_analyses',
+      await tx.paymentCapacityAnalysis.deleteMany({ where: { companyId } }),
+    );
+    push(
+      'bureau_check_analyses',
+      await tx.bureauCheckAnalysis.deleteMany({ where: { companyId } }),
+    );
     push(
       'ai_analyses',
       await tx.aiAnalysis.deleteMany({ where: { companyId } }),
@@ -425,6 +438,15 @@ export class CompanyPurgeService {
         }),
       ],
       ['promissory_notes', p.promissoryNote.count({ where: { companyId } })],
+      ['study_documents', p.studyDocument.count({ where: { companyId } })],
+      [
+        'payment_capacity_analyses',
+        p.paymentCapacityAnalysis.count({ where: { companyId } }),
+      ],
+      [
+        'bureau_check_analyses',
+        p.bureauCheckAnalysis.count({ where: { companyId } }),
+      ],
       ['ai_analyses', p.aiAnalysis.count({ where: { companyId } })],
       ['credit_studies', p.creditStudy.count({ where: { companyId } })],
       [
