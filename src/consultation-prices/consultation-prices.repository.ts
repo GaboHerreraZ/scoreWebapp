@@ -9,15 +9,19 @@ export class ConsultationPricesRepository {
   private readonly defaultInclude = {
     createdByAdmin: true,
     updatedByAdmin: true,
+    productType: true,
   } as const;
 
   async create(data: Prisma.ConsultationPriceUncheckedCreateInput) {
-    // Si el nuevo precio entra activo, debe ser el ÚNICO activo: desactivamos
-    // el resto en la misma transacción para garantizar la exclusividad.
+    // Si el nuevo precio entra activo, debe ser el ÚNICO activo DE SU PRODUCTO:
+    // desactivamos el resto del mismo producto en la misma transacción.
     if (data.isActive !== false) {
       return this.prisma.$transaction(async (tx) => {
         await tx.consultationPrice.updateMany({
-          where: { isActive: true },
+          where: {
+            isActive: true,
+            productTypeId: data.productTypeId,
+          },
           data: { isActive: false },
         });
         return tx.consultationPrice.create({
@@ -60,23 +64,31 @@ export class ConsultationPricesRepository {
   }
 
   /**
-   * Precio de consulta vigente: el registro activo más reciente.
-   * Su unitPrice es el que se usa para calcular el precio de un pack.
+   * Precio vigente de UN producto: su registro activo más reciente. El unitPrice
+   * es el que se usa para cotizar los packs de ese producto.
    */
-  async findActive() {
+  async findActive(productTypeId: number) {
     return this.prisma.consultationPrice.findFirst({
-      where: { isActive: true },
+      where: { isActive: true, productTypeId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async update(id: string, data: Prisma.ConsultationPriceUncheckedUpdateInput) {
-    // Si este registro se activa, desactivamos cualquier otro activo para
-    // mantener un único precio vigente.
+    // Si este registro se activa, desactivamos cualquier otro activo DE SU
+    // PRODUCTO para mantener un único precio vigente por producto.
     if (data.isActive === true) {
       return this.prisma.$transaction(async (tx) => {
+        const current = await tx.consultationPrice.findUniqueOrThrow({
+          where: { id },
+          select: { productTypeId: true },
+        });
         await tx.consultationPrice.updateMany({
-          where: { isActive: true, id: { not: id } },
+          where: {
+            isActive: true,
+            productTypeId: current.productTypeId,
+            id: { not: id },
+          },
           data: { isActive: false },
         });
         return tx.consultationPrice.update({
@@ -98,15 +110,24 @@ export class ConsultationPricesRepository {
     return this.prisma.consultationPrice.delete({ where: { id } });
   }
 
-  /** Nº de precios actualmente activos (debe haber siempre al menos uno). */
-  async countActive(): Promise<number> {
-    return this.prisma.consultationPrice.count({ where: { isActive: true } });
+  /** Nº de precios activos de un producto (creditStudy exige al menos uno). */
+  async countActive(productTypeId: number): Promise<number> {
+    return this.prisma.consultationPrice.count({
+      where: { isActive: true, productTypeId },
+    });
   }
 
   /** Nº de bolsas compradas con este precio (impide borrado si > 0). */
   async countAnalysisPacks(id: string): Promise<number> {
     return this.prisma.analysisPack.count({
       where: { consultationPriceId: id },
+    });
+  }
+
+  /** Parameter 'pack_product_type' por code (creditStudy | bureauCheck). */
+  async findProductType(code: string) {
+    return this.prisma.parameter.findUnique({
+      where: { type_code: { type: 'pack_product_type', code } },
     });
   }
 

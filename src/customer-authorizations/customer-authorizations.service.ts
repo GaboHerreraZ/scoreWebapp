@@ -317,6 +317,23 @@ export class CustomerAuthorizationsService {
    * Estado de la autorización 'core' de una identidad, para el enrutamiento del
    * front. Devuelve status 'not_requested' si nunca se pidió.
    */
+  /**
+   * Nombre del titular tal como lo DIGITÓ el usuario al pedir la autorización.
+   * Insumo del match de identidad del informe bureau-check (digitado vs central).
+   */
+  async getTypedTitularName(
+    companyId: string,
+    identificationNumber: string,
+  ): Promise<string | null> {
+    const typeId = await this.coreTypeId();
+    const auth = await this.repository.findByIdentity({
+      companyId,
+      identificationNumber,
+      typeId,
+    });
+    return auth?.titularName ?? null;
+  }
+
   async getStatus(companyId: string, identificationNumber: string) {
     const typeId = await this.coreTypeId();
     const auth = await this.repository.findByIdentity({
@@ -337,6 +354,55 @@ export class CustomerAuthorizationsService {
       };
     }
     return this.toStatusResponse(auth);
+  }
+
+  /**
+   * Autorización 'core' de una identidad para el detalle del cliente, con el
+   * enlace de descarga del PDF firmado. Devuelve null si nunca se solicitó.
+   */
+  async getDetailForCustomer(companyId: string, identificationNumber: string) {
+    const typeId = await this.coreTypeId();
+    const auth = await this.repository.findByIdentity({
+      companyId,
+      identificationNumber,
+      typeId,
+    });
+    if (!auth) return null;
+
+    return {
+      ...this.toStatusResponse(auth),
+      documentUrl: await this.resolveSignedDocumentUrl(auth),
+    };
+  }
+
+  /**
+   * Enlace al PDF firmado: URL temporal del respaldo en Storage (bucket privado)
+   * y, si el respaldo falló, la del proveedor de firma. Sigue disponible aunque
+   * la autorización esté revocada: el documento firmado no deja de ser prueba.
+   * No lanza — el detalle del cliente no debe romperse porque Storage falle.
+   */
+  private async resolveSignedDocumentUrl(auth: {
+    id: string;
+    signedAt: Date | null;
+    signedFileStoragePath: string | null;
+    signedDocumentUrl: string | null;
+  }): Promise<string | null> {
+    if (!auth.signedAt) return null;
+
+    if (auth.signedFileStoragePath) {
+      try {
+        return await this.supabaseService.createSignedUrl(
+          this.storageBucket,
+          auth.signedFileStoragePath,
+          this.signedUrlTtlSeconds,
+        );
+      } catch (e) {
+        this.logger.error(
+          `No se pudo firmar la URL de la autorización ${auth.id}: ${(e as Error).message}`,
+        );
+      }
+    }
+    return auth.signedDocumentUrl;
   }
 
   /**

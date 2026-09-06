@@ -48,6 +48,9 @@ export class AiService {
   /** Clasificación consolidada de movimientos (una llamada con toda la ventana). */
   private readonly classificationModel: string | undefined;
   private readonly maxTokensClassification: number;
+  /** Análisis de la consulta de riesgo (bureauCheck). */
+  private readonly bureauCheckModel: string | undefined;
+  private readonly maxTokensBureauCheck: number;
   /** Providers instanciados bajo demanda para el routing por modelo. */
   private readonly providersByName = new Map<string, AiProvider>();
 
@@ -112,6 +115,19 @@ export class AiService {
     this.maxTokensClassification = Number.isFinite(maxTokensClassification)
       ? maxTokensClassification
       : this.maxTokensExtraction;
+
+    this.bureauCheckModel = this.configService.get<string>(
+      'AI_BUREAU_CHECK_MODEL',
+    );
+    const maxTokensBureauCheck = Number(
+      this.configService.get(
+        'AI_MAX_TOKENS_BUREAU_CHECK',
+        String(this.maxTokens),
+      ),
+    );
+    this.maxTokensBureauCheck = Number.isFinite(maxTokensBureauCheck)
+      ? maxTokensBureauCheck
+      : this.maxTokens;
 
     this.provider = this.createProvider(aiProvider);
     this.providersByName.set(this.provider.providerName, this.provider);
@@ -189,6 +205,25 @@ export class AiService {
       systemPrompt,
       userMessage,
       this.maxTokensClassification,
+      model,
+    );
+  }
+
+  /**
+   * Análisis de la consulta de riesgo (bureauCheck): interpreta el snapshot de
+   * la central y devuelve JSON estructurado. Modelo/presupuesto propios
+   * (AI_BUREAU_CHECK_MODEL / AI_MAX_TOKENS_BUREAU_CHECK); sin configurar caen
+   * al provider y límite por defecto.
+   */
+  async analyzeBureauCheck(
+    systemPrompt: string,
+    userMessage: string,
+  ): Promise<AiCompletionResult> {
+    const model = this.bureauCheckModel;
+    return this.providerFor(model).generateCompletion(
+      systemPrompt,
+      userMessage,
+      this.maxTokensBureauCheck,
       model,
     );
   }

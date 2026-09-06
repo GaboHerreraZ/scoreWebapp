@@ -3,12 +3,17 @@ import {
   IsOptional,
   IsBoolean,
   IsNumber,
+  IsIn,
   MaxLength,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import {
+  PACK_PRODUCT_CODES,
+  type PackProductCode,
+} from '../../common/constants/pack-products.js';
 
 export class CreateConsultationPriceDto {
   @ApiProperty({ example: 'Precio base 2026', maxLength: 150 })
@@ -55,6 +60,17 @@ export class CreateConsultationPriceDto {
   @IsOptional()
   @IsBoolean()
   taxIncluded?: boolean;
+
+  @ApiPropertyOptional({
+    enum: PACK_PRODUCT_CODES,
+    default: 'creditStudy',
+    description:
+      'Producto que cobra este precio. Cada producto mantiene su propio ' +
+      'precio activo. Inmutable después de crear.',
+  })
+  @IsOptional()
+  @IsIn(PACK_PRODUCT_CODES)
+  productTypeCode?: PackProductCode;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

@@ -98,9 +98,11 @@ export class PromoCodesRepository {
    * cuenta se le muestra en esos números y no en abstracto.
    */
   async findSimulationBasis() {
+    // Referencia SIEMPRE del producto creditStudy: el techo de comisión del
+    // vendedor se simula sobre los estudios, no sobre las consultas baratas.
     const [offering, price] = await Promise.all([
       this.prisma.packOffering.findFirst({
-        where: { isActive: true },
+        where: { isActive: true, productType: { code: 'creditStudy' } },
         orderBy: { quantity: 'asc' },
         select: {
           name: true,
@@ -111,7 +113,7 @@ export class PromoCodesRepository {
         },
       }),
       this.prisma.consultationPrice.findFirst({
-        where: { isActive: true },
+        where: { isActive: true, productType: { code: 'creditStudy' } },
         orderBy: { createdAt: 'desc' },
         select: {
           unitPrice: true,

@@ -360,6 +360,13 @@ export class CreditStudiesService {
         `Estudio de crédito con id=${id} no encontrado en esta empresa`,
       );
     }
+    // La consulta de riesgo no usa el stepper: su ciclo completo vive en el
+    // módulo bureau-check (GET companies/:companyId/bureau-checks/:id).
+    if (study.studyType?.code === 'bureauCheck') {
+      throw new BadRequestException(
+        'La consulta de riesgo crediticio se consulta desde su propio flujo (bureau-checks).',
+      );
+    }
 
     // Flag directo del tipo de persona para el front (evita comparar strings o
     // resolver el id opaco). El objeto customer.personType (code/label) queda
@@ -627,6 +634,13 @@ export class CreditStudiesService {
     if (study.status?.code && LOCKED_STUDY_STATUSES.has(study.status.code)) {
       throw new BadRequestException(
         'No se puede re-analizar un estudio ya confirmado o cerrado.',
+      );
+    }
+
+    // La consulta de riesgo se analiza desde su propio flujo (bureau-checks).
+    if (study.studyType?.code === 'bureauCheck') {
+      throw new BadRequestException(
+        'La consulta de riesgo crediticio se analiza desde su propio flujo (bureau-checks).',
       );
     }
 

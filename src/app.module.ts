@@ -27,6 +27,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AiAnalysesModule } from './ai-analyses/ai-analyses.module.js';
 import { FinancialStatementsModule } from './financial-statements/financial-statements.module.js';
 import { PaymentCapacityModule } from './payment-capacity/payment-capacity.module.js';
+import { BureauCheckModule } from './bureau-check/bureau-check.module.js';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module.js';
 import { ScoringModule } from './scoring/scoring.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
@@ -78,6 +79,7 @@ import { HealthController } from './common/health/health.controller.js';
     AiAnalysesModule,
     FinancialStatementsModule,
     PaymentCapacityModule,
+    BureauCheckModule,
     FeatureFlagsModule,
     InvitationsModule,
     DocumentsModule,

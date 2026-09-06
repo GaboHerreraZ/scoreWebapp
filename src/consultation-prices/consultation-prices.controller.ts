@@ -24,6 +24,7 @@ import { CreateConsultationPriceDto } from './dto/create-consultation-price.dto.
 import { UpdateConsultationPriceDto } from './dto/update-consultation-price.dto.js';
 import { FilterConsultationPriceDto } from './dto/filter-consultation-price.dto.js';
 import { AdminOnly } from '../common/decorators/admin-only.decorator.js';
+import type { PackProductCode } from '../common/constants/pack-products.js';
 
 @ApiTags('Consultation Prices')
 @ApiBearerAuth()
@@ -51,10 +52,12 @@ export class ConsultationPricesController {
   @ApiOperation({ summary: 'Get the currently active consultation price' })
   @ApiResponse({
     status: 200,
-    description: 'Active consultation price (or null)',
+    description: 'Active consultation price of a product (or null)',
   })
-  findActive() {
-    return this.service.getActivePrice();
+  findActive(@Query('product') product?: string) {
+    return this.service.getActivePrice(
+      (product ?? 'creditStudy') as PackProductCode,
+    );
   }
 
   @Get(':id')

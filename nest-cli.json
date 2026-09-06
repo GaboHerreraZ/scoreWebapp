@@ -21,6 +21,11 @@
         "watchAssets": true
       },
       {
+        "include": "bureau-check/pdf/templates/**/*.html",
+        "outDir": "dist/src",
+        "watchAssets": true
+      },
+      {
         "include": "sales/pdf/templates/**/*.html",
         "outDir": "dist/src",
         "watchAssets": true

@@ -4,11 +4,16 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsIn,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import {
+  PACK_PRODUCT_CODES,
+  type PackProductCode,
+} from '../../common/constants/pack-products.js';
 
 export class CreatePackOfferingDto {
   @ApiProperty({ example: 'Pack de 4 consultas', maxLength: 150 })
@@ -84,6 +89,17 @@ export class CreatePackOfferingDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({
+    enum: PACK_PRODUCT_CODES,
+    default: 'creditStudy',
+    description:
+      'Producto que vende la oferta (define su bolsa y su precio). ' +
+      'Inmutable después de crear: las bolsas compradas heredan el producto.',
+  })
+  @IsOptional()
+  @IsIn(PACK_PRODUCT_CODES)
+  productTypeCode?: PackProductCode;
 
   @ApiPropertyOptional({
     default: true,

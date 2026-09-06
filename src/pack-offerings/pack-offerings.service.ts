@@ -31,6 +31,15 @@ export class PackOfferingsService {
       );
     }
 
+    const productType = await this.repository.findProductType(
+      dto.productTypeCode ?? 'creditStudy',
+    );
+    if (!productType) {
+      throw new BadRequestException(
+        `Producto de bolsa desconocido: ${dto.productTypeCode}`,
+      );
+    }
+
     return this.repository.create({
       name: dto.name,
       description: dto.description,
@@ -39,10 +48,29 @@ export class PackOfferingsService {
       hasDiscount: dto.hasDiscount,
       discountTypeId: dto.discountTypeId,
       discountValue: dto.discountValue,
+      productTypeId: productType.id,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
       createdBy: admin.id,
     });
+  }
+
+  /** Precios vigentes de ambos productos, para cotizar listas mixtas. */
+  private async getActivePrices() {
+    const [creditStudy, bureauCheck] = await Promise.all([
+      this.consultationPricesService.getActivePrice('creditStudy'),
+      this.consultationPricesService.getActivePrice('bureauCheck'),
+    ]);
+    return { creditStudy, bureauCheck };
+  }
+
+  private priceFor(
+    prices: Awaited<ReturnType<PackOfferingsService['getActivePrices']>>,
+    productCode: string | undefined,
+  ) {
+    return productCode === 'bureauCheck'
+      ? prices.bureauCheck
+      : prices.creditStudy;
   }
 
   async findAll(filters: FilterPackOfferingDto) {
@@ -51,19 +79,20 @@ export class PackOfferingsService {
     const where: Prisma.PackOfferingWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
 
-    const [{ data, total }, activePrice] = await Promise.all([
+    const [{ data, total }, prices] = await Promise.all([
       this.repository.findMany({
         skip: (page - 1) * limit,
         take: limit,
         where,
       }),
-      this.consultationPricesService.getActivePrice(),
+      this.getActivePrices(),
     ]);
 
     // Cada oferta lleva la config cruda + el precio YA RESUELTO contra el
-    // ConsultationPrice vigente (unitPrice × quantity − descuento por volumen).
-    // Si no hay precio activo, los campos de pricing van en null (no cotizable).
+    // ConsultationPrice vigente DE SU PRODUCTO. Si ese producto no tiene precio
+    // activo, los campos de pricing van en null (no cotizable).
     const dataWithPricing = data.map((offering) => {
+      const activePrice = this.priceFor(prices, offering.productType?.code);
       const pricing = activePrice
         ? calculatePackPrice({
             quantity: offering.quantity,
@@ -131,6 +160,7 @@ export class PackOfferingsService {
       'hasDiscount',
       'discountTypeId',
       'discountValue',
+      'productTypeCode',
       'sortOrder',
     ] as const;
     const attempted = frozenFields.filter((f) => dto[f] !== undefined);
@@ -138,7 +168,7 @@ export class PackOfferingsService {
       throw new ConflictException(
         `Una oferta de bolsa solo permite editar nombre, descripción y estado ` +
           `(isActive). No se puede modificar: ${attempted.join(', ')}. ` +
-          `Para cambiar el número de consultas, vigencia o descuento, ` +
+          `Para cambiar el número de consultas, vigencia, descuento o producto, ` +
           `cree una nueva oferta y retire esta (isActive=false).`,
       );
     }
@@ -166,70 +196,76 @@ export class PackOfferingsService {
 
   /**
    * Catálogo que ve el cliente: ofertas vigentes con el precio YA RESUELTO
-   * (derivado del ConsultationPrice vigente − descuento por volumen). El front
-   * solo pinta; nunca calcula precio. Si no hay precio de consulta activo,
-   * devuelve el catálogo con precios en null (no se puede cotizar aún).
+   * contra el ConsultationPrice vigente DE SU PRODUCTO (− descuento por
+   * volumen). El front solo pinta; nunca calcula precio. Una oferta cuyo
+   * producto no tiene precio activo NO sale (no se puede cotizar) — así el
+   * front esconde solo el carrusel de ese producto, no todo el catálogo.
    */
   async getCatalog() {
-    const [offerings, activePrice] = await Promise.all([
+    const [offerings, prices] = await Promise.all([
       this.repository.findOfferable(),
-      this.consultationPricesService.getActivePrice(),
+      this.getActivePrices(),
     ]);
 
-    return offerings.map((offering) => {
-      const pricing = activePrice
-        ? calculatePackPrice({
-            quantity: offering.quantity,
-            unitPrice: activePrice.unitPrice,
-            hasDiscount: offering.hasDiscount,
-            discountTypeCode: offering.discountType?.code as
-              | DiscountTypeCode
-              | undefined,
-            discountValue: offering.discountValue,
-          })
-        : null;
+    return offerings.flatMap((offering) => {
+      const activePrice = this.priceFor(prices, offering.productType?.code);
+      if (!activePrice) return [];
+
+      const pricing = calculatePackPrice({
+        quantity: offering.quantity,
+        unitPrice: activePrice.unitPrice,
+        hasDiscount: offering.hasDiscount,
+        discountTypeCode: offering.discountType?.code as
+          | DiscountTypeCode
+          | undefined,
+        discountValue: offering.discountValue,
+      });
 
       // Desglose de IVA con la tarifa vigente, para que el front muestre
       // base + impuesto sin calcular nada. Se aplica sobre `total` (ya con el
       // descuento por volumen), igual que en la compra — ahí el código
       // promocional entra ANTES del impuesto, así que si el usuario aplica uno
       // el desglose definitivo lo devuelve /purchase, no este catálogo.
-      const tax =
-        pricing && activePrice
-          ? calculateTax(
-              pricing.total,
-              Number(activePrice.taxRate),
-              activePrice.taxIncluded,
-            )
-          : null;
+      const tax = calculateTax(
+        pricing.total,
+        Number(activePrice.taxRate),
+        activePrice.taxIncluded,
+      );
 
-      return {
-        id: offering.id,
-        name: offering.name,
-        description: offering.description,
-        quantity: offering.quantity,
-        validityDays: offering.validityDays,
-        sortOrder: offering.sortOrder,
-        currency: activePrice?.currencyCode ?? 'COP',
-        unitPrice: pricing?.unitPrice ?? null,
-        subtotal: pricing?.subtotal ?? null,
-        discountAmount: pricing?.discountAmount ?? null,
-        // Valor comercial del pack (con descuento por volumen, sin IVA sumado).
-        total: pricing?.total ?? null,
-        // Desglose fiscal: base + amount = totalToCharge.
-        tax: tax
-          ? {
-              rate: tax.taxRate,
-              included: tax.taxIncluded, // true = `total` YA trae el IVA
-              base: tax.base,
-              amount: tax.taxAmount,
-            }
-          : null,
-        // Lo que se le cobrará al cliente. Con IVA incluido es igual a `total`;
-        // si el precio vigente NO lo incluye, es total + IVA. Es el número que
-        // debe mostrar el front como "total a pagar".
-        totalToCharge: tax?.total ?? pricing?.total ?? null,
-      };
+      return [
+        {
+          id: offering.id,
+          name: offering.name,
+          description: offering.description,
+          quantity: offering.quantity,
+          validityDays: offering.validityDays,
+          sortOrder: offering.sortOrder,
+          // Con qué producto separa el front los carruseles.
+          product: offering.productType
+            ? {
+                code: offering.productType.code,
+                label: offering.productType.label,
+              }
+            : null,
+          currency: activePrice.currencyCode,
+          unitPrice: pricing.unitPrice,
+          subtotal: pricing.subtotal,
+          discountAmount: pricing.discountAmount,
+          // Valor comercial del pack (con descuento por volumen, sin IVA sumado).
+          total: pricing.total,
+          // Desglose fiscal: base + amount = totalToCharge.
+          tax: {
+            rate: tax.taxRate,
+            included: tax.taxIncluded, // true = `total` YA trae el IVA
+            base: tax.base,
+            amount: tax.taxAmount,
+          },
+          // Lo que se le cobrará al cliente. Con IVA incluido es igual a `total`;
+          // si el precio vigente NO lo incluye, es total + IVA. Es el número que
+          // debe mostrar el front como "total a pagar".
+          totalToCharge: tax.total,
+        },
+      ];
     });
   }
 }

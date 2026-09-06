@@ -4,12 +4,17 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   ArrayMinSize,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import {
+  PACK_PRODUCT_CODES,
+  type PackProductCode,
+} from '../../common/constants/pack-products.js';
 
 /**
  * Técnica para generar la curva de precio unitario decreciente:
@@ -24,6 +29,17 @@ export enum PricingTechnique {
 }
 
 export class SimulatePricingDto {
+  @ApiPropertyOptional({
+    enum: PACK_PRODUCT_CODES,
+    default: 'creditStudy',
+    description:
+      'Producto cuyo precio activo se usa como base (P₀) de la simulación: ' +
+      'creditStudy (estudios de crédito) o bureauCheck (consulta de riesgo crediticio).',
+  })
+  @IsOptional()
+  @IsIn(PACK_PRODUCT_CODES)
+  productTypeCode?: PackProductCode;
+
   @ApiPropertyOptional({
     enum: PricingTechnique,
     default: PricingTechnique.EXPONENTIAL,

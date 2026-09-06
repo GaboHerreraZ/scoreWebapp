@@ -164,14 +164,26 @@ export interface ExperianSaldoPorCarteraPJ {
   tiposCredito?: ExperianTipoCredito[];
 }
 
+// Evolución trimestral (PN). La forma exacta de cada trimestre no está
+// documentada con muestra real → se tipa laxa y el mapper la lee defensivo.
+export interface ExperianEvolucionTrimestres {
+  conInformacion?: boolean;
+  msjExcepcion?: string | null;
+  trimestres?: Array<Record<string, unknown>> | null;
+}
+
 export interface ExperianComportamientoCrediticio {
   indicadoresValores?: ExperianIndicadoresValores;
   comportamientoPago?: ExperianComportamientoPago; // Tabla 9
   saldoPorCarteraPJ?: ExperianSaldoPorCarteraPJ; // Tabla 8 (PJ)
+  evolucionSaldoCuotaPN?: ExperianEvolucionTrimestres; // PN
+  evolucionRoPN?: ExperianEvolucionTrimestres; // PN
 }
 
 export interface ExperianAlerta {
   alerta?: string;
+  colocacion?: string; // fecha de colocación de la alerta ('YYYY-MM-DD')
+  modificacion?: string;
 }
 
 export interface ExperianInformacionRiesgo {
@@ -180,6 +192,8 @@ export interface ExperianInformacionRiesgo {
   viabilidad?: string;
   ratingRecaudos?: string;
   alertas?: ExperianAlerta[];
+  txtProbabilidad?: string; // narrativa de probabilidad de pago
+  txtRecaudos?: string; // narrativa de facilidad de recaudo
   // PJ
   puntajeScore?: string;
   nivel?: string;

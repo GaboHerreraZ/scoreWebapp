@@ -109,12 +109,15 @@ export class CreditBureauRepository {
             hasAlertas: risk.hasAlertas,
             reportedIncome: risk.reportedIncome,
             quotaToIncomePct: risk.quotaToIncomePct,
+            txtProbabilidad: risk.txtProbabilidad,
+            txtRecaudos: risk.txtRecaudos,
             creditPortfolio: toJson(risk.creditPortfolio),
             paymentBehavior: toJson(risk.paymentBehavior),
             creditSectors: toJson(risk.creditSectors),
             linkNetwork: toJson(risk.linkNetwork),
             suggestions: toJson(risk.suggestions),
             alerts: toJson(risk.alerts),
+            balanceEvolution: toJson(risk.balanceEvolution),
           },
         });
       }
@@ -163,6 +166,7 @@ export class CreditBureauRepository {
       gender: data.gender,
       ageRange: data.ageRange,
       documentStatus: data.documentStatus,
+      nationality: data.nationality,
       bureauProfile: toJson(data.bureauProfile),
       personTypeId,
       identificationTypeId,
