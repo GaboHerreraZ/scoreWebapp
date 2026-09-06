@@ -50,17 +50,8 @@ export class ZapsignService {
   private readonly logger = new Logger(ZapsignService.name);
   private readonly apiUrl: string;
   private readonly apiToken: string;
-  /**
-   * Flag sandbox de Zapsign (por documento, no un entorno/URL/token aparte).
-   * sandbox=true crea documentos de PRUEBA: no gastan cuota ni producen firmas
-   * con validez legal. Debe ir en TRUE en staging/desarrollo y FALSE en
-   * producción (si no, los documentos reales quedarían marcados como prueba).
-   */
-  private readonly sandbox: boolean;
 
   constructor(private readonly configService: ConfigService) {
-    this.sandbox =
-      this.configService.get<string>('ZAPSIGN_SANDBOX', 'false') === 'true';
     this.apiUrl =
       this.configService.get<string>('ZAPSIGN_API_URL') ??
       'https://api.zapsign.com.br/api/v1';
@@ -68,9 +59,6 @@ export class ZapsignService {
 
     if (!this.apiToken) {
       this.logger.warn('ZAPSIGN_API_TOKEN is not configured');
-    }
-    if (this.sandbox) {
-      this.logger.warn('ZapsignService en modo SANDBOX (pruebas)');
     }
   }
 
@@ -94,7 +82,6 @@ export class ZapsignService {
       template_id: params.templateId,
       signer_name: params.signerName,
       signer_email: params.signerEmail,
-      sandbox: this.sandbox,
       send_automatic_email: true,
       data: Object.entries(params.data).map(([key, value]) => ({
         de: `{{${key}}}`,
