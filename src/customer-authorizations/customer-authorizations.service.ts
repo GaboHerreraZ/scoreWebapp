@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CustomerAuthorizationsRepository } from './customer-authorizations.repository.js';
@@ -343,7 +344,9 @@ export class CustomerAuthorizationsService {
     });
     if (!auth) {
       return {
+        id: null,
         status: 'not_requested',
+        statusLabel: null,
         isSigned: false,
         signUrl: null,
         sentAt: null,
@@ -351,6 +354,8 @@ export class CustomerAuthorizationsService {
         refusedAt: null,
         refusedReason: null,
         revokedAt: null,
+        signatureSource: null,
+        signedFileName: null,
       };
     }
     return this.toStatusResponse(auth);
@@ -403,6 +408,80 @@ export class CustomerAuthorizationsService {
       }
     }
     return auth.signedDocumentUrl;
+  }
+
+  /**
+   * Carga el PDF de una autorización que el titular ya firmó FUERA de la
+   * plataforma. Es la vía alterna a la firma en línea: muchas empresas ya tienen
+   * el documento de su cliente y prefieren adjuntarlo antes que volver a pedir la
+   * firma.
+   *
+   * Deja `signedAt` puesto, que es de donde se deriva el gate del bureau, así que
+   * tras esto el from-bureau / bureau-checks sí crea el recurso. Como la fila es
+   * única por (empresa + identificación), la carga vale para los tres productos y
+   * para los estudios futuros del mismo titular.
+   *
+   * Idempotente: si ya estaba firmada y vigente no sobrescribe el documento.
+   * Sirve también sobre una fila rechazada (es justo donde más se usa: el titular
+   * se negó a firmar en línea pero la empresa ya tenía la autorización en papel).
+   */
+  async uploadSignedDocument(
+    companyId: string,
+    userId: string,
+    identificationNumber: string,
+    file: Express.Multer.File,
+  ) {
+    const typeId = await this.coreTypeId();
+    const auth = await this.repository.findByIdentity({
+      companyId,
+      identificationNumber,
+      typeId,
+    });
+
+    // El gate crea la fila al intentar la 1ª consulta: si no existe, el usuario
+    // no pasó por ahí y no hay nada que dar por firmado.
+    if (!auth) {
+      throw new NotFoundException(
+        'No hay una autorización en trámite para este titular. Vuelva a crear el estudio para generarla y luego cargue el documento firmado.',
+      );
+    }
+    // Ya firmada y vigente → nada que hacer (doble clic, dos pestañas).
+    if (auth.signedAt && !auth.revokedAt) {
+      return this.getDetailForCustomer(companyId, identificationNumber);
+    }
+
+    // Misma ruta que el respaldo de Zapsign; upsert, así que recargar reemplaza.
+    const storagePath = await this.supabaseService.uploadFile(
+      this.storageBucket,
+      `${companyId}/${auth.id}.pdf`,
+      file.buffer,
+      'application/pdf',
+    );
+
+    const signedStatusId = await this.statusId('signed');
+    await this.repository.update(auth.id, {
+      statusId: signedStatusId,
+      signedAt: new Date(),
+      signedFileStoragePath: storagePath,
+      // No hay documento hospedado por el proveedor ni nada que firmar en línea.
+      signedDocumentUrl: null,
+      signUrl: null,
+      signatureSource: 'manual_upload',
+      signedFileName: file.originalname,
+      uploadedBy: userId,
+      // Una carga manual resuelve un rechazo o una revocatoria previos.
+      refusedAt: null,
+      refusedReason: null,
+      revokedAt: null,
+      revokedBy: null,
+    });
+
+    this.logger.log(
+      `Autorización ${auth.id} FIRMADA por carga manual (empresa ${companyId}, titular ${identificationNumber}, usuario ${userId})`,
+    );
+
+    // Se re-lee para devolver el status con su label y el documentUrl ya firmado.
+    return this.getDetailForCustomer(companyId, identificationNumber);
   }
 
   /**
@@ -655,6 +734,8 @@ export class CustomerAuthorizationsService {
     refusedAt: Date | null;
     refusedReason: string | null;
     revokedAt: Date | null;
+    signatureSource?: string | null;
+    signedFileName?: string | null;
     status?: { code: string; label: string } | null;
   }) {
     return {
@@ -668,6 +749,9 @@ export class CustomerAuthorizationsService {
       refusedAt: auth.refusedAt,
       refusedReason: auth.refusedReason,
       revokedAt: auth.revokedAt,
+      // "provider" = firmada en linea; "manual_upload" = cargada por la empresa.
+      signatureSource: auth.signatureSource ?? null,
+      signedFileName: auth.signedFileName ?? null,
     };
   }
 }

@@ -280,6 +280,20 @@ class CustomerAuthorizationDto {
       'Enlace de descarga del PDF firmado (URL temporal, vigencia 1 hora); null si aún no se ha firmado',
   })
   documentUrl!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Origen de la firma: 'provider' (firmada en linea por el proveedor) o 'manual_upload' (la empresa ya la tenia firmada y la cargo)",
+  })
+  signatureSource!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Nombre del PDF cargado por la empresa; solo cuando signatureSource es manual_upload',
+  })
+  signedFileName!: string | null;
 }
 
 // ─── DTO raíz ─────────────────────────────────────────────────────────────────
