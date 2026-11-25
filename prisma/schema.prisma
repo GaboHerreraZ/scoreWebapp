@@ -151,6 +151,7 @@ model Profile {
   createdScoringConfigurations ScoringConfiguration[]   @relation("ScoringConfigurationCreatedBy")
   createdCustomerAuthorizations CustomerAuthorization[] @relation("CustomerAuthorizationCreatedBy")
   revokedCustomerAuthorizations CustomerAuthorization[] @relation("CustomerAuthorizationRevokedBy")
+  uploadedCustomerAuthorizations CustomerAuthorization[] @relation("CustomerAuthorizationUploadedBy")
 
   @@map("profiles")
 }
@@ -1421,6 +1422,14 @@ model CustomerAuthorization {
   refusedAt     DateTime? @map("refused_at")
   refusedReason String?   @map("refused_reason") @db.VarChar(1000)
 
+  // ── Origen de la firma ──
+  // 'provider'      = firmada en linea por el proveedor (Zapsign).
+  // 'manual_upload' = la empresa ya tenia la autorizacion firmada y la cargo.
+  // La carga manual deja signedAt puesto, asi que el gate del bureau la acepta igual.
+  signatureSource String  @default("provider") @map("signature_source") @db.VarChar(20)
+  signedFileName  String? @map("signed_file_name") @db.VarChar(255)
+  uploadedBy      String? @map("uploaded_by") @db.Uuid
+
   // ── Revocatoria (no borra la firma, la desactiva; el PDF sigue siendo prueba) ──
   revokedAt DateTime? @map("revoked_at")
   revokedBy String?   @map("revoked_by") @db.Uuid
@@ -1435,6 +1444,7 @@ model CustomerAuthorization {
   status             Parameter @relation("CustomerAuthorizationStatus", fields: [statusId], references: [id])
   identificationType Parameter @relation("CustomerAuthorizationIdentType", fields: [identificationTypeId], references: [id])
   revokedByUser      Profile?  @relation("CustomerAuthorizationRevokedBy", fields: [revokedBy], references: [id])
+  uploadedByUser     Profile?  @relation("CustomerAuthorizationUploadedBy", fields: [uploadedBy], references: [id])
   createdByUser      Profile   @relation("CustomerAuthorizationCreatedBy", fields: [createdBy], references: [id])
 
   // Una autorización por titular/empresa/finalidad. Cuando entre 'disclosure',
